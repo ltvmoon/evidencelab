@@ -1,11 +1,12 @@
-import React, { useRef } from 'react';
-import { SearchResult } from '../types/api';
+import React, { useRef, useState } from 'react';
+import { SearchResult, DrilldownNode } from '../types/api';
 import { LANGUAGES } from '../constants';
 import { RainbowText } from './RainbowText';
 import { AiSummaryWithCitations } from './AiSummaryWithCitations';
 import { AiSummaryReferences } from './AiSummaryReferences';
 import { DigDeeperPopover } from './DigDeeperPopover';
 import { DrilldownBreadcrumb } from './DrilldownBreadcrumb';
+import { DrilldownGraphView } from './DrilldownGraphView';
 
 interface AiSummaryPanelProps {
   enabled: boolean;
@@ -31,6 +32,9 @@ interface AiSummaryPanelProps {
   drilldownHighlight?: string;
   onDrilldown?: (selectedText: string) => void;
   onDrilldownBack?: () => void;
+  drilldownTree?: DrilldownNode | null;
+  drilldownCurrentNodeId?: string | null;
+  onDrilldownNavigate?: (nodeId: string) => void;
 }
 
 const GeneratingText = () => (
@@ -115,17 +119,9 @@ const AiSummaryContent = ({
   contentRef?: React.RefObject<HTMLDivElement | null>;
   onDrilldown?: (text: string) => void;
 }) => {
-  if (collapsed) {
-    return null;
-  }
-
-  if (loading) {
-    return <AiSummaryLoading expanded={expanded} summary={summary} />;
-  }
-
-  if (!summary) {
-    return null;
-  }
+  if (collapsed) return null;
+  if (loading) return <AiSummaryLoading expanded={expanded} summary={summary} />;
+  if (!summary) return null;
 
   return (
     <AiSummaryBody
@@ -157,9 +153,7 @@ const AiSummaryFooter = ({
   onToggleExpanded: () => void;
   onOpenPrompt: () => void;
 }) => {
-  if (collapsed || (!summary && !loading)) {
-    return null;
-  }
+  if (collapsed || (!summary && !loading)) return null;
 
   return (
     <div style={{ visibility: !summary ? 'hidden' : 'visible' }}>
@@ -187,9 +181,7 @@ const PromptModal = ({
   aiPrompt: string;
   onClose: () => void;
 }) => {
-  if (!show) {
-    return null;
-  }
+  if (!show) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -207,6 +199,156 @@ const PromptModal = ({
     </div>
   );
 };
+
+const NetworkIcon = () => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="5" r="3" />
+    <circle cx="5" cy="19" r="3" />
+    <circle cx="19" cy="19" r="3" />
+    <line x1="12" y1="8" x2="5" y2="16" />
+    <line x1="12" y1="8" x2="19" y2="16" />
+  </svg>
+);
+
+const GraphToggleButton = ({
+  showGraph,
+  onToggle,
+}: {
+  showGraph: boolean;
+  onToggle: () => void;
+}) => (
+  <button
+    className={`drilldown-graph-toggle ${showGraph ? 'active' : ''}`}
+    onClick={(e) => {
+      e.stopPropagation();
+      onToggle();
+    }}
+    title={showGraph ? 'Show summary' : 'Show drilldown graph'}
+    type="button"
+  >
+    <NetworkIcon />
+  </button>
+);
+
+const LanguageSelector = ({
+  selectedLang,
+  isTranslating,
+  translatingLang,
+  onLanguageChange,
+}: {
+  selectedLang: string;
+  isTranslating: boolean;
+  translatingLang?: string | null;
+  onLanguageChange: (newLang: string) => void;
+}) => (
+  <div
+    className="result-language-selector"
+    onClick={(e) => e.stopPropagation()}
+    style={{ position: 'relative', display: 'inline-block', marginLeft: 'auto' }}
+  >
+    {isTranslating && (
+      <div
+        className="rainbow-overlay translating-dropdown"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'white',
+          pointerEvents: 'none',
+          fontSize: '0.8rem',
+          borderRadius: '4px',
+          zIndex: 1
+        }}
+      >
+        <RainbowText text={LANGUAGES[translatingLang || 'en'] || '...'} />
+      </div>
+    )}
+    <select
+      value={selectedLang}
+      onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+        onLanguageChange(e.target.value)
+      }
+      style={{
+        fontSize: '0.8rem',
+        padding: '2px 4px',
+        border: 'none',
+        borderRadius: '4px',
+        backgroundColor: 'transparent',
+        color: '#6b7280',
+        cursor: 'pointer',
+        visibility: isTranslating ? 'hidden' : 'visible'
+      }}
+    >
+      {Object.entries(LANGUAGES).map(([code, name]) => (
+        <option key={code} value={code}>
+          {name}
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+const AiSummaryHeader = ({
+  isDrilldown,
+  collapsed,
+  hasGraph,
+  showGraph,
+  onToggleGraph,
+  aiSummary,
+  loading,
+  selectedLang,
+  isTranslating,
+  translatingLang,
+  onLanguageChange,
+  onToggleCollapsed,
+}: {
+  isDrilldown: boolean;
+  collapsed: boolean;
+  hasGraph: boolean;
+  showGraph: boolean;
+  onToggleGraph: () => void;
+  aiSummary: string;
+  loading: boolean;
+  selectedLang: string;
+  isTranslating: boolean;
+  translatingLang?: string | null;
+  onLanguageChange?: (newLang: string) => void;
+  onToggleCollapsed: () => void;
+}) => (
+  <div className="ai-summary-header" onClick={onToggleCollapsed}>
+    <h3 className="ai-summary-title">
+      {isDrilldown ? 'AI Drilldown Summary' : 'AI Summary'}
+    </h3>
+    {hasGraph && !collapsed && (
+      <GraphToggleButton showGraph={showGraph} onToggle={onToggleGraph} />
+    )}
+    {aiSummary && !loading && onLanguageChange && (
+      <LanguageSelector
+        selectedLang={selectedLang}
+        isTranslating={isTranslating}
+        translatingLang={translatingLang}
+        onLanguageChange={onLanguageChange}
+      />
+    )}
+    <button className="ai-summary-toggle" type="button">
+      {collapsed ? 'Expand' : 'Collapse'}
+    </button>
+  </div>
+);
 
 export const AiSummaryPanel = ({
   enabled,
@@ -232,107 +374,78 @@ export const AiSummaryPanel = ({
   drilldownHighlight,
   onDrilldown,
   onDrilldownBack,
+  drilldownTree,
+  drilldownCurrentNodeId,
+  onDrilldownNavigate,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
+  const [showGraph, setShowGraph] = useState(false);
 
-  if (!enabled) {
-    return null;
-  }
+  if (!enabled) return null;
 
   const filteredResults = results.filter((result) => result.score >= minScore);
   const displaySummary = translatedSummary || aiSummary;
   const selectedLang = translatedLang || 'en';
   const isDrilldown = (drilldownStackDepth || 0) > 0;
+  const hasGraph = drilldownTree && drilldownTree.children.length > 0;
+  const showGraphView = showGraph && hasGraph && onDrilldownNavigate;
 
   return (
     <>
       <div className={`ai-summary-box ${aiSummaryCollapsed ? 'collapsed' : ''}`}>
-        <div className="ai-summary-header" onClick={onToggleCollapsed}>
-          <h3 className="ai-summary-title">
-            {isDrilldown ? 'AI Drilldown Summary' : 'AI Summary'}
-          </h3>
-          {aiSummary && !aiSummaryLoading && onLanguageChange && (
-            <div
-              className="result-language-selector"
-              onClick={(e) => e.stopPropagation()}
-              style={{ position: 'relative', display: 'inline-block', marginLeft: 'auto' }}
-            >
-              {isTranslating && (
-                <div
-                  className="rainbow-overlay translating-dropdown"
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'white',
-                    pointerEvents: 'none',
-                    fontSize: '0.8rem',
-                    borderRadius: '4px',
-                    zIndex: 1
-                  }}
-                >
-                  <RainbowText text={LANGUAGES[translatingLang || 'en'] || '...'} />
-                </div>
-              )}
-              <select
-                value={selectedLang}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                  onLanguageChange(e.target.value)
-                }
-                style={{
-                  fontSize: '0.8rem',
-                  padding: '2px 4px',
-                  border: 'none',
-                  borderRadius: '4px',
-                  backgroundColor: 'transparent',
-                  color: '#6b7280',
-                  cursor: 'pointer',
-                  visibility: isTranslating ? 'hidden' : 'visible'
-                }}
-              >
-                {Object.entries(LANGUAGES).map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <button className="ai-summary-toggle" type="button">
-            {aiSummaryCollapsed ? 'Expand' : 'Collapse'}
-          </button>
-        </div>
-        {!aiSummaryCollapsed && onDrilldownBack && (
+        <AiSummaryHeader
+          isDrilldown={isDrilldown}
+          collapsed={aiSummaryCollapsed}
+          hasGraph={!!hasGraph}
+          showGraph={showGraph}
+          onToggleGraph={() => setShowGraph((prev) => !prev)}
+          aiSummary={aiSummary}
+          loading={aiSummaryLoading}
+          selectedLang={selectedLang}
+          isTranslating={!!isTranslating}
+          translatingLang={translatingLang}
+          onLanguageChange={onLanguageChange}
+          onToggleCollapsed={onToggleCollapsed}
+        />
+        {!aiSummaryCollapsed && onDrilldownBack && !showGraph && (
           <DrilldownBreadcrumb
             stackDepth={drilldownStackDepth || 0}
             onBack={onDrilldownBack}
             currentHighlight={drilldownHighlight}
           />
         )}
-        <AiSummaryContent
-          collapsed={aiSummaryCollapsed}
-          expanded={aiSummaryExpanded}
-          loading={aiSummaryLoading}
-          summary={displaySummary}
-          filteredResults={filteredResults}
-          onResultClick={onResultClick}
-          contentRef={summaryContentRef}
-          onDrilldown={onDrilldown}
-        />
-        <AiSummaryFooter
-          collapsed={aiSummaryCollapsed}
-          summary={displaySummary}
-          loading={aiSummaryLoading}
-          expanded={aiSummaryExpanded}
-          aiPrompt={aiPrompt}
-          onToggleExpanded={onToggleExpanded}
-          onOpenPrompt={onOpenPrompt}
-        />
+        {showGraphView ? (
+          <DrilldownGraphView
+            tree={drilldownTree!}
+            activeNodeId={drilldownCurrentNodeId || 'root'}
+            onNodeClick={(nodeId) => {
+              onDrilldownNavigate!(nodeId);
+              setShowGraph(false);
+            }}
+          />
+        ) : (
+          <>
+            <AiSummaryContent
+              collapsed={aiSummaryCollapsed}
+              expanded={aiSummaryExpanded}
+              loading={aiSummaryLoading}
+              summary={displaySummary}
+              filteredResults={filteredResults}
+              onResultClick={onResultClick}
+              contentRef={summaryContentRef}
+              onDrilldown={onDrilldown}
+            />
+            <AiSummaryFooter
+              collapsed={aiSummaryCollapsed}
+              summary={displaySummary}
+              loading={aiSummaryLoading}
+              expanded={aiSummaryExpanded}
+              aiPrompt={aiPrompt}
+              onToggleExpanded={onToggleExpanded}
+              onOpenPrompt={onOpenPrompt}
+            />
+          </>
+        )}
       </div>
 
       <PromptModal show={showPromptModal} aiPrompt={aiPrompt} onClose={onClosePrompt} />

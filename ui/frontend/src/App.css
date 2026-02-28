@@ -3699,6 +3699,100 @@ h6,
   position: relative;
 }
 
+/* ---- Drilldown Graph Toggle ---- */
+
+.drilldown-graph-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--gray-400);
+  cursor: pointer;
+  padding: 4px;
+  margin-left: var(--spacing-sm);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.drilldown-graph-toggle:hover {
+  color: var(--brand-primary);
+  border-color: var(--gray-300);
+}
+
+.drilldown-graph-toggle.active {
+  color: var(--brand-primary);
+  background: var(--gray-50);
+  border-color: var(--brand-primary);
+}
+
+/* ---- Drilldown Graph View ---- */
+
+.drilldown-graph-view {
+  padding: var(--spacing-sm) 0;
+  overflow-x: auto;
+}
+
+.drilldown-graph-svg {
+  display: block;
+  min-width: 200px;
+}
+
+.drilldown-graph-edge {
+  stroke: var(--gray-300);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+
+.drilldown-graph-node {
+  fill: var(--gray-300);
+  stroke: var(--gray-400);
+  stroke-width: 2;
+  cursor: pointer;
+  transition: fill 0.15s ease, stroke 0.15s ease;
+}
+
+.drilldown-graph-node.root {
+  fill: var(--brand-primary);
+  stroke: var(--brand-primary);
+}
+
+.drilldown-graph-node.active {
+  fill: var(--brand-primary);
+  stroke: var(--brand-primary);
+}
+
+.drilldown-graph-node:hover {
+  fill: var(--brand-primary);
+  stroke: var(--brand-primary-dark, #4a7a90);
+}
+
+.drilldown-graph-label {
+  font-size: 0.8125rem;
+  font-family: 'Open Sans', sans-serif;
+  color: var(--gray-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  line-height: 24px;
+  transition: color 0.15s ease;
+}
+
+.drilldown-graph-label.root {
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.drilldown-graph-label.active {
+  color: var(--brand-primary);
+  font-weight: 600;
+}
+
+.drilldown-graph-label:hover {
+  color: var(--brand-primary);
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;

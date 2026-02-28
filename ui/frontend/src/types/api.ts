@@ -177,16 +177,17 @@ export interface HighlightResponse {
   total: number;
 }
 
-/** One level of the AI summary drilldown stack */
-export interface AiSummaryStackEntry {
+/** A node in the drilldown exploration tree */
+export interface DrilldownNode {
+  id: string;
+  label: string;
   summary: string;
   prompt: string;
   results: SearchResult[];
-  highlightedText: string;
-  drilldownQuery: string;
   translatedText: string | null;
   translatedLang: string | null;
   expanded: boolean;
+  children: DrilldownNode[];
 }
 
 // Dynamic search filters using core field names

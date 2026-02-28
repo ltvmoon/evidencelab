@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Facets, FacetValue, SearchResult } from '../../types/api';
+import { Facets, FacetValue, SearchResult, DrilldownNode } from '../../types/api';
 import API_BASE_URL from '../../config';
 import { AiSummaryPanel } from '../AiSummaryPanel';
 import { FiltersPanel } from '../filters/FiltersPanel';
@@ -84,6 +84,9 @@ interface SearchTabContentProps {
   aiDrilldownHighlight?: string;
   onAiDrilldown?: (selectedText: string) => void;
   onAiDrilldownBack?: () => void;
+  aiDrilldownTree?: DrilldownNode | null;
+  aiDrilldownCurrentNodeId?: string | null;
+  onAiDrilldownNavigate?: (nodeId: string) => void;
 }
 
 const DOT_SIZES = [12, 12, 12, 12, 12];
@@ -282,6 +285,9 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   aiDrilldownHighlight,
   onAiDrilldown,
   onAiDrilldownBack,
+  aiDrilldownTree,
+  aiDrilldownCurrentNodeId,
+  onAiDrilldownNavigate,
 }) => {
   const [filteredOrgs, setFilteredOrgs] = useState<string[]>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -520,6 +526,9 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             drilldownHighlight={aiDrilldownHighlight}
             onDrilldown={onAiDrilldown}
             onDrilldownBack={onAiDrilldownBack}
+            drilldownTree={aiDrilldownTree}
+            drilldownCurrentNodeId={aiDrilldownCurrentNodeId}
+            onDrilldownNavigate={onAiDrilldownNavigate}
           />
 
           {results.length > 0 && <h3 className="search-results-heading">Search Results</h3>}
