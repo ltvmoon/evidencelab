@@ -3564,7 +3564,7 @@ h6,
 
 li.ai-fact-active {
   position: relative;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   padding: 2px 6px;
   margin-left: -6px;
   background: transparent;
@@ -3574,14 +3574,14 @@ li.ai-fact-active::before {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   padding: 2px;
   background: linear-gradient(
     90deg,
     #ff0000, #ff7700, #ffdd00, #00ff00, #0077ff, #8800ff, #ff0000
   );
   background-size: 300% 100%;
-  animation: rainbow-border 2s linear infinite;
+  animation: rainbow-border 3s linear infinite;
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
