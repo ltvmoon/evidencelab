@@ -95,19 +95,17 @@ export function useAuthState(): AuthContextValue {
           'Your email has been verified! You can now sign in.'
         );
       } catch (err: any) {
-        const detail = err.response?.data?.detail;
-        if (
-          typeof detail === 'string' &&
-          detail.toLowerCase().includes('already verified')
-        ) {
+        const detail = err.response?.data?.detail ?? '';
+        const detailNorm =
+          typeof detail === 'string' ? detail.toLowerCase() : '';
+        if (detailNorm.includes('already_verified') ||
+            detailNorm.includes('already verified')) {
           setVerificationMessage(
-            'This email is already verified. You can sign in.'
+            'Your account has already been verified. You can sign in.'
           );
         } else {
           setVerificationMessage(
-            typeof detail === 'string'
-              ? detail
-              : 'Email verification failed. The link may have expired.'
+            'Email verification failed. The link may have expired.'
           );
         }
       }
