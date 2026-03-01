@@ -15,6 +15,7 @@ import logging
 import multiprocessing
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -36,6 +37,7 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 from docling_core.types.doc import DoclingDocument, ImageRefMode
 from langdetect import detect_langs
+from pypdf import PdfReader
 
 from pipeline.processors.base import BaseProcessor
 from pipeline.processors.parsing.parser_chunking import (
@@ -978,6 +980,8 @@ class ParseProcessor(BaseProcessor):
     ) -> Tuple[str, int]:
         """Finalize parsing artifacts and return toc/word_count."""
         self._clean_markdown_file(markdown_path)
+        if Path(filepath).suffix.lower() == ".pdf":
+            self._fix_glyph_contamination(markdown_path, filepath)
 
         json_path = Path(output_folder) / f"{markdown_path.stem}.json"
         result.document.save_as_json(json_path)
@@ -1034,6 +1038,57 @@ class ParseProcessor(BaseProcessor):
 
         except Exception as e:
             logger.warning("  ⚠ Failed to clean markdown file: %s", e)
+
+    _GLYPH_PATTERN = re.compile(r"/gid\d{5}")
+    _GLYPH_THRESHOLD = 0.30  # 30% glyph content triggers fallback
+
+    def _fix_glyph_contamination(self, markdown_path: Path, pdf_path: str) -> bool:
+        """Detect glyph-ID contamination and rebuild markdown from pypdf if needed.
+
+        Returns True if fallback was applied.
+        """
+        try:
+            with open(markdown_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            return False
+
+        total = len(content)
+        if total < 200:
+            return False
+
+        glyph_chars = len(self._GLYPH_PATTERN.findall(content)) * 9
+        ratio = glyph_chars / total
+        if ratio < self._GLYPH_THRESHOLD:
+            return False
+
+        logger.warning(
+            "  ⚠ Glyph contamination %.0f%% in %s — rebuilding with pypdf",
+            ratio * 100,
+            markdown_path.name,
+        )
+
+        try:
+            reader = PdfReader(pdf_path)
+            pages = []
+            for page in reader.pages:
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages.append(text)
+            if not pages:
+                logger.warning("  ⚠ pypdf extracted no text, keeping original")
+                return False
+
+            rebuilt = PAGE_SEPARATOR.join(pages)
+            with open(markdown_path, "w", encoding="utf-8") as f:
+                f.write(rebuilt)
+            logger.info(
+                "  ✓ Rebuilt markdown via pypdf fallback (%d pages)", len(pages)
+            )
+            return True
+        except Exception as exc:
+            logger.warning("  ⚠ pypdf fallback failed: %s", exc)
+            return False
 
     def _add_page_numbers_to_breaks(self, markdown_path: Path, document) -> None:
         """Add page numbers to page break placeholders."""
