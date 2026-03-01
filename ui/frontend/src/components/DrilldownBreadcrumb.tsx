@@ -28,7 +28,6 @@ export const DrilldownBreadcrumb: React.FC<DrilldownBreadcrumbProps> = ({
         >
           <polyline points="15 18 9 12 15 6" />
         </svg>
-        Back to previous summary
       </button>
       {currentHighlight && (
         <span className="ai-drilldown-context">
