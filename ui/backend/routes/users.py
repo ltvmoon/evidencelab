@@ -87,6 +87,5 @@ async def get_my_groups(
     result = await session.execute(stmt)
     groups = result.scalars().all()
     return [
-        {"id": str(g.id), "name": g.name, "description": g.description}
-        for g in groups
+        {"id": str(g.id), "name": g.name, "description": g.description} for g in groups
     ]

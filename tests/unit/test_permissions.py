@@ -1,10 +1,5 @@
 """Unit tests for the permissions service."""
 
-import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
-
 from ui.backend.services.permissions import filter_datasources
 
 

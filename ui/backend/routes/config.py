@@ -1,7 +1,7 @@
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 
 import pipeline.db as pipeline_db
 from pipeline.db import (

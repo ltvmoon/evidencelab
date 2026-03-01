@@ -91,9 +91,7 @@ async def get_group(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Get a single group by ID (superuser only)."""
-    result = await session.execute(
-        select(UserGroup).where(UserGroup.id == group_id)
-    )
+    result = await session.execute(select(UserGroup).where(UserGroup.id == group_id))
     group = result.scalars().first()
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -108,9 +106,7 @@ async def update_group(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Update a group (superuser only)."""
-    result = await session.execute(
-        select(UserGroup).where(UserGroup.id == group_id)
-    )
+    result = await session.execute(select(UserGroup).where(UserGroup.id == group_id))
     group = result.scalars().first()
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -130,9 +126,7 @@ async def delete_group(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Delete a group (superuser only). Cannot delete the default group."""
-    result = await session.execute(
-        select(UserGroup).where(UserGroup.id == group_id)
-    )
+    result = await session.execute(select(UserGroup).where(UserGroup.id == group_id))
     group = result.scalars().first()
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -182,9 +176,7 @@ async def add_group_member(
 ):
     """Add a user to a group (superuser only)."""
     # Verify group exists
-    g_result = await session.execute(
-        select(UserGroup).where(UserGroup.id == group_id)
-    )
+    g_result = await session.execute(select(UserGroup).where(UserGroup.id == group_id))
     if g_result.scalars().first() is None:
         raise HTTPException(status_code=404, detail="Group not found")
     # Verify user exists
@@ -238,18 +230,14 @@ async def set_group_datasources(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Replace the set of datasource keys a group can access (superuser only)."""
-    result = await session.execute(
-        select(UserGroup).where(UserGroup.id == group_id)
-    )
+    result = await session.execute(select(UserGroup).where(UserGroup.id == group_id))
     group = result.scalars().first()
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
 
     # Remove existing grants
     await session.execute(
-        delete(GroupDatasourceAccess).where(
-            GroupDatasourceAccess.group_id == group_id
-        )
+        delete(GroupDatasourceAccess).where(GroupDatasourceAccess.group_id == group_id)
     )
     # Insert new grants
     for key in body.datasource_keys:

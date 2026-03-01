@@ -1,7 +1,8 @@
 """Unit tests for the email sending utility."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from ui.backend.auth.email import send_email
 
@@ -21,7 +22,9 @@ class TestSendEmail:
         """When SMTP is configured, send_email should call aiosmtplib.send."""
         with (
             patch("ui.backend.auth.email.SMTP_HOST", "smtp.example.com"),
-            patch("ui.backend.auth.email.aiosmtplib.send", new_callable=AsyncMock) as mock_send,
+            patch(
+                "ui.backend.auth.email.aiosmtplib.send", new_callable=AsyncMock
+            ) as mock_send,
         ):
             await send_email("user@test.com", "Verify", "<p>Click here</p>")
             mock_send.assert_called_once()

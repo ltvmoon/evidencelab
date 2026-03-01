@@ -34,8 +34,7 @@ import { HeatmapTabContent } from './components/app/HeatmapTabContent';
 import { TabContent } from './components/app/TabContent';
 import { CookieConsent, getGaConsent } from './components/CookieConsent';
 import { AuthContext, useAuthState } from './hooks/useAuth';
-import GroupManager from './components/admin/GroupManager';
-import UserManager from './components/admin/UserManager';
+import AdminPanel from './components/admin/AdminPanel';
 import { DEFAULT_SECTION_TYPES, DEFAULT_FIELD_BOOST_FIELDS, buildSearchURL, getSearchStateFromURL } from './utils/searchUrl';
 import { streamAiSummary } from './utils/aiSummaryStream';
 import {
@@ -2210,13 +2209,7 @@ function App() {
         onTabChange={handleTabChange}
       />
 
-      {USER_MODULE && activeTab === 'admin' && authState.user?.is_superuser && (
-        <div className="admin-panel">
-          <h2>Administration</h2>
-          <UserManager />
-          <GroupManager availableDatasources={availableDomains} />
-        </div>
-      )}
+      <AdminPanel isActive={activeTab === 'admin'} availableDatasources={availableDomains} />
 
       <footer className="app-footer">
         <button
@@ -2314,15 +2307,11 @@ function App() {
     </div >
   );
 
-  if (USER_MODULE) {
-    return (
-      <AuthContext.Provider value={authState}>
-        {appContent}
-      </AuthContext.Provider>
-    );
-  }
-
-  return appContent;
+  return (
+    <AuthContext.Provider value={authState}>
+      {appContent}
+    </AuthContext.Provider>
+  );
 }
 
 export default App;

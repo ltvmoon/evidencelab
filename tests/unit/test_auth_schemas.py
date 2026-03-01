@@ -21,21 +21,22 @@ class TestUserSchemas:
     """Tests for user-related Pydantic schemas."""
 
     def test_user_create_minimal(self):
-        user = UserCreate(email="test@example.com", password="securepass")
+        pw = "securepass"  # pragma: allowlist secret
+        user = UserCreate(email="test@example.com", password=pw)
         assert user.email == "test@example.com"
         assert user.display_name is None
 
     def test_user_create_with_display_name(self):
         user = UserCreate(
             email="test@example.com",
-            password="securepass",
+            password="securepass",  # pragma: allowlist secret
             display_name="Test User",
         )
         assert user.display_name == "Test User"
 
     def test_user_create_missing_email_fails(self):
         with pytest.raises(ValidationError):
-            UserCreate(password="securepass")
+            UserCreate(password="securepass")  # pragma: allowlist secret
 
     def test_user_create_missing_password_fails(self):
         with pytest.raises(ValidationError):
