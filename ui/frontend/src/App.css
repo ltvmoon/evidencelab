@@ -3802,8 +3802,6 @@ li.ai-fact-active::before {
 
 .drilldown-graph-toggle.active {
   color: var(--brand-primary);
-  background: var(--gray-50);
-  border-color: var(--brand-primary);
 }
 
 /* ---- Drilldown Graph View ---- */
