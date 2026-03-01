@@ -3545,9 +3545,9 @@ h6,
   border: 1px solid var(--gray-300);
   border-radius: var(--radius-sm);
   color: var(--brand-primary);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   cursor: pointer;
-  padding: 2px 8px;
+  padding: 3px 10px;
   white-space: nowrap;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
@@ -3743,9 +3743,9 @@ li.ai-fact-active::before {
   border: 1px solid var(--gray-300);
   border-radius: var(--radius-sm);
   color: var(--brand-primary);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   cursor: pointer;
-  padding: 2px 8px;
+  padding: 3px 10px;
   white-space: nowrap;
   z-index: 10;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
