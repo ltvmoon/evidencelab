@@ -3344,9 +3344,7 @@ h6,
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  cursor: pointer;
-  user-select: none;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
   gap: var(--spacing-xs);
 }
 

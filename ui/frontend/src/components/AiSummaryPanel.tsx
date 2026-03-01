@@ -346,7 +346,7 @@ const AiSummaryHeader = ({
   onLanguageChange?: (newLang: string) => void;
   onToggleCollapsed: () => void;
 }) => (
-  <div className="ai-summary-header" onClick={onToggleCollapsed}>
+  <div className="ai-summary-header">
     <h3 className="ai-summary-title">
       {isDrilldown ? 'AI Drilldown Summary' : 'AI Summary'}
     </h3>
@@ -358,7 +358,7 @@ const AiSummaryHeader = ({
         onLanguageChange={onLanguageChange}
       />
     )}
-    <button className="ai-summary-toggle" type="button">
+    <button className="ai-summary-toggle" type="button" onClick={onToggleCollapsed}>
       {collapsed ? 'Expand' : 'Collapse'}
     </button>
   </div>
