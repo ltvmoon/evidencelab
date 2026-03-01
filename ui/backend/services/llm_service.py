@@ -200,7 +200,7 @@ async def generate_ai_summary(
             elif line:  # Only add non-empty lines
                 cleaned_lines.append(line)
 
-        summary = " ".join(cleaned_lines)
+        summary = "\n".join(cleaned_lines)
 
         # Log the response
         logger.info("AI SUMMARY RESPONSE:")

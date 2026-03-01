@@ -23,7 +23,7 @@ const parseCitationNumbers = (rawNumbers: string): number[] =>
 const extractKeyFacts = (summary: string): string[] => {
   const lines = summary.split('\n');
   let inKeyFacts = false;
-  const facts: string[] = [];
+  const items: Array<{ fact: string; citations: number }> = [];
   for (const line of lines) {
     const trimmed = line.trim();
     if (HEADING_REGEX.test(trimmed)) {
@@ -32,10 +32,12 @@ const extractKeyFacts = (summary: string): string[] => {
     }
     if (inKeyFacts && BULLET_LIST_REGEX.test(trimmed)) {
       const fact = trimmed.replace(BULLET_LIST_REGEX, '').replace(CITATION_REGEX, '').trim();
-      if (fact) facts.push(fact);
+      if (fact) items.push({ fact, citations: countCitations(trimmed) });
     }
   }
-  return facts;
+  // Sort by citation count descending to match displayed order
+  items.sort((a, b) => b.citations - a.citations);
+  return items.map((i) => i.fact);
 };
 
 const buildCitationMapping = (summaryText: string): Map<number, number> => {

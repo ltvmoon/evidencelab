@@ -3563,11 +3563,36 @@ h6,
 }
 
 li.ai-fact-active {
-  background: var(--brand-primary-light, #e0f2f1);
+  position: relative;
   border-radius: var(--radius-sm);
   padding: 2px 6px;
   margin-left: -6px;
-  transition: background 0.3s ease;
+  background: transparent;
+}
+
+li.ai-fact-active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  background: linear-gradient(
+    90deg,
+    #ff0000, #ff7700, #ffdd00, #00ff00, #0077ff, #8800ff, #ff0000
+  );
+  background-size: 300% 100%;
+  animation: rainbow-border 2s linear infinite;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+@keyframes rainbow-border {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
 }
 
 .ai-summary-expand-button:hover {
