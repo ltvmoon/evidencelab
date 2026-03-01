@@ -1638,7 +1638,10 @@ function App() {
       aiSummaryAbortRef.current = null;
     }
     const target = navigateToNodeInTree(nodeId, getSnapshot());
-    if (target) restoreFromNode(target);
+    if (target) {
+      restoreFromNode(target);
+      setAiSummaryExpanded(true);
+    }
   }, [getSnapshot, navigateToNodeInTree, restoreFromNode]);
 
   // Batch-research all Key Facts: create child nodes and populate them

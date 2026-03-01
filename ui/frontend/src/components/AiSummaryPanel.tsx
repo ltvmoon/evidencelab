@@ -326,9 +326,7 @@ const LanguageSelector = ({
 const AiSummaryHeader = ({
   isDrilldown,
   collapsed,
-  hasGraph,
   showGraph,
-  onToggleGraph,
   aiSummary,
   loading,
   selectedLang,
@@ -339,9 +337,7 @@ const AiSummaryHeader = ({
 }: {
   isDrilldown: boolean;
   collapsed: boolean;
-  hasGraph: boolean;
   showGraph: boolean;
-  onToggleGraph: () => void;
   aiSummary: string;
   loading: boolean;
   selectedLang: string;
@@ -353,9 +349,6 @@ const AiSummaryHeader = ({
   <div className="ai-summary-header" onClick={onToggleCollapsed}>
     <h3 className="ai-summary-title">
       {isDrilldown ? 'AI Drilldown Summary' : 'AI Summary'}
-      {hasGraph && !collapsed && (
-        <GraphToggleButton showGraph={showGraph} onToggle={onToggleGraph} />
-      )}
     </h3>
     {aiSummary && !loading && !showGraph && onLanguageChange && (
       <LanguageSelector
@@ -420,9 +413,7 @@ export const AiSummaryPanel = ({
         <AiSummaryHeader
           isDrilldown={isDrilldown}
           collapsed={aiSummaryCollapsed}
-          hasGraph={!!hasGraph}
           showGraph={showGraph}
-          onToggleGraph={() => setShowGraph((prev) => !prev)}
           aiSummary={aiSummary}
           loading={aiSummaryLoading}
           selectedLang={selectedLang}
@@ -431,12 +422,19 @@ export const AiSummaryPanel = ({
           onLanguageChange={onLanguageChange}
           onToggleCollapsed={onToggleCollapsed}
         />
-        {!aiSummaryCollapsed && onDrilldownBack && !showGraph && (
-          <DrilldownBreadcrumb
-            stackDepth={drilldownStackDepth || 0}
-            onBack={onDrilldownBack}
-            currentHighlight={drilldownHighlight}
-          />
+        {!aiSummaryCollapsed && onDrilldownBack && (
+          <div className="ai-drilldown-nav-row">
+            {hasGraph && (
+              <GraphToggleButton showGraph={showGraph} onToggle={() => setShowGraph((prev) => !prev)} />
+            )}
+            {!showGraph && (
+              <DrilldownBreadcrumb
+                stackDepth={drilldownStackDepth || 0}
+                onBack={onDrilldownBack}
+                currentHighlight={drilldownHighlight}
+              />
+            )}
+          </div>
         )}
         {showGraphView ? (
           <DrilldownGraphView
