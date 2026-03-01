@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SearchResult, DrilldownNode } from '../types/api';
 import { LANGUAGES } from '../constants';
 import { RainbowText } from './RainbowText';
@@ -38,6 +38,7 @@ interface AiSummaryPanelProps {
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
   findOutMoreActiveFact?: string | null;
+  requestShowGraph?: boolean;
 }
 
 const GeneratingText = () => (
@@ -412,9 +413,14 @@ export const AiSummaryPanel = ({
   onFindOutMore,
   findOutMoreLoading,
   findOutMoreActiveFact,
+  requestShowGraph,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
   const [showGraph, setShowGraph] = useState(false);
+
+  useEffect(() => {
+    if (requestShowGraph) setShowGraph(true);
+  }, [requestShowGraph]);
 
   if (!enabled) return null;
 

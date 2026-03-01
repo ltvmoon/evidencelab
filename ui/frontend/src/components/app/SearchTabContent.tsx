@@ -90,6 +90,7 @@ interface SearchTabContentProps {
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
   findOutMoreActiveFact?: string | null;
+  requestShowGraph?: boolean;
 }
 
 const DOT_SIZES = [12, 12, 12, 12, 12];
@@ -294,6 +295,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   onFindOutMore,
   findOutMoreLoading,
   findOutMoreActiveFact,
+  requestShowGraph,
 }) => {
   const [filteredOrgs, setFilteredOrgs] = useState<string[]>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -538,6 +540,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             onFindOutMore={onFindOutMore}
             findOutMoreLoading={findOutMoreLoading}
             findOutMoreActiveFact={findOutMoreActiveFact}
+            requestShowGraph={requestShowGraph}
           />
 
           {results.length > 0 && <h3 className="search-results-heading">Search Results</h3>}

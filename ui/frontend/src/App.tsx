@@ -738,6 +738,7 @@ function App() {
   } = useDrilldownTree();
   const [findOutMoreLoading, setFindOutMoreLoading] = useState(false);
   const [findOutMoreActiveFact, setFindOutMoreActiveFact] = useState<string | null>(null);
+  const [findOutMoreDone, setFindOutMoreDone] = useState(false);
 
   // Debug: Log semantic threshold on startup
   useEffect(() => {
@@ -1649,6 +1650,7 @@ function App() {
   const handleFindOutMore = useCallback(async (keyFacts: string[]) => {
     if (keyFacts.length === 0) return;
     setFindOutMoreLoading(true);
+    setFindOutMoreDone(false);
 
     const snapshot = getSnapshot();
 
@@ -1698,6 +1700,7 @@ function App() {
     }
     setFindOutMoreLoading(false);
     setFindOutMoreActiveFact(null);
+    setFindOutMoreDone(true);
   }, [getSnapshot, addChildNodeInTree, updateNodeDataInTree, query, summaryModelConfig,
       filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
       recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
@@ -2268,6 +2271,7 @@ function App() {
       onFindOutMore={handleFindOutMore}
       findOutMoreLoading={findOutMoreLoading}
       findOutMoreActiveFact={findOutMoreActiveFact}
+      requestShowGraph={findOutMoreDone}
     />
   );
 
