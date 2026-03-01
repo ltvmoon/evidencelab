@@ -16,6 +16,7 @@ const CITATION_ONLY_LINE = /^\[[\d,\s]+\]$/;
 const NUMBERED_LIST_REGEX = /^\d+[\.)]\s/;
 const BULLET_LIST_REGEX = /^[-*]\s/;
 const HEADING_REGEX = /^(#{1,4})\s+(.+)$/;
+const BOLD_HEADING_REGEX = /^\*\*(.+?)\*\*:?\s*$/;
 
 const parseCitationNumbers = (rawNumbers: string): number[] =>
   rawNumbers.split(',').map((item) => parseInt(item.trim(), 10));
@@ -26,8 +27,9 @@ const extractKeyFacts = (summary: string): string[] => {
   const items: Array<{ fact: string; citations: number }> = [];
   for (const line of lines) {
     const trimmed = line.trim();
-    if (HEADING_REGEX.test(trimmed)) {
-      if (/key\s*facts/i.test(trimmed)) { inKeyFacts = true; continue; }
+    const heading = parseHeading(trimmed);
+    if (heading) {
+      if (/key\s*facts/i.test(heading.text)) { inKeyFacts = true; continue; }
       if (inKeyFacts) break;
     }
     if (inKeyFacts && BULLET_LIST_REGEX.test(trimmed)) {
@@ -59,6 +61,14 @@ const buildCitationMapping = (summaryText: string): Map<number, number> => {
 
 const splitSummaryBlocks = (summaryText: string): string[] =>
   summaryText.split(/\n\n+/);
+
+const parseHeading = (trimmed: string): { text: string; level: number } | null => {
+  const mdMatch = trimmed.match(HEADING_REGEX);
+  if (mdMatch) return { text: mdMatch[2], level: Math.min(mdMatch[1].length + 2, 6) };
+  const boldMatch = trimmed.match(BOLD_HEADING_REGEX);
+  if (boldMatch) return { text: boldMatch[1], level: 4 };
+  return null;
+};
 
 
 const stripListPrefix = (line: string, listType: 'numbered' | 'bullet'): string => {
@@ -238,14 +248,14 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
           if (!trimmed) return;
           if (CITATION_ONLY_LINE.test(trimmed)) return;
 
-          const headingMatch = trimmed.match(HEADING_REGEX);
-          if (headingMatch) {
+          const heading = parseHeading(trimmed);
+          if (heading) {
             flushParagraph();
             flushList();
-            const isKeyFacts = /key\s*facts/i.test(headingMatch[2]);
+            const isKeyFacts = /key\s*facts/i.test(heading.text);
             afterKeyFacts = isKeyFacts;
-            const content = renderLineWithCitations(headingMatch[2], searchResults, citationMapping, onResultClick, `${blockIndex}-h-${elements.length}`);
-            const level = Math.min(headingMatch[1].length + 2, 6);
+            const content = renderLineWithCitations(heading.text, searchResults, citationMapping, onResultClick, `${blockIndex}-h-${elements.length}`);
+            const level = heading.level;
             if (isKeyFacts && onFindOutMore) {
               elements.push(
                 <div key={`${blockIndex}-h-${elements.length}`} className="ai-key-facts-header">
