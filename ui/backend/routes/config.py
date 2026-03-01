@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +15,8 @@ from pipeline.db import (
 from ui.backend.schemas import LLMConfig, ModelComboConfig, ModelConfig
 from ui.backend.utils.app_limits import get_rate_limits, limiter
 from ui.backend.utils.app_state import get_pg_for_source
+
+logger = logging.getLogger(__name__)
 
 _USER_MODULE = os.environ.get("USER_MODULE", "false").lower() in ("1", "true", "yes")
 
@@ -192,7 +195,9 @@ async def get_datasources_config(request: Request):
         except Exception:
             pass
 
-    # Filter datasources by user permissions when user module is active
+    # Filter datasources by user permissions when user module is active.
+    # Security: deny-by-default — if the permission check fails, return empty
+    # rather than leaking all datasources to an unauthenticated request.
     if _USER_MODULE:
         try:
             from ui.backend.auth.db import get_async_session
@@ -204,12 +209,16 @@ async def get_datasources_config(request: Request):
 
             # Resolve the current user via the bearer/cookie auth backends
             user = await optional_current_user(request)
-            if user is not None and not user.is_superuser:
+            if user is None:
+                # Not authenticated — return empty datasources
+                datasources = {}
+            elif not user.is_superuser:
                 async for session in get_async_session():
                     allowed = await get_user_datasource_keys(session, user.id)
                     datasources = filter_datasources(datasources, allowed)
         except Exception:
-            pass  # If auth fails, return all datasources (graceful degradation)
+            logger.exception("Permission check failed — denying datasource access")
+            datasources = {}  # Deny by default on error
 
     return datasources
 

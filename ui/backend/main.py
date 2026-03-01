@@ -664,11 +664,17 @@ app.include_router(documents_routes.router)
 
 # User authentication & permissions module (opt-in via USER_MODULE env var)
 if USER_MODULE:
+    from ui.backend.auth.rate_limit import check_auth_rate_limit
     from ui.backend.routes import auth as auth_routes
     from ui.backend.routes import groups as groups_routes
     from ui.backend.routes import users as users_routes
 
-    app.include_router(auth_routes.router, prefix="/auth", tags=["auth"])
+    app.include_router(
+        auth_routes.router,
+        prefix="/auth",
+        tags=["auth"],
+        dependencies=[Depends(check_auth_rate_limit)],
+    )
     app.include_router(users_routes.router, prefix="/users", tags=["users"])
     app.include_router(groups_routes.router, prefix="/groups", tags=["groups"])
     logger.info("User module enabled (USER_MODULE=true)")
