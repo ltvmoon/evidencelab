@@ -34,7 +34,6 @@ import { HeatmapTabContent } from './components/app/HeatmapTabContent';
 import { TabContent } from './components/app/TabContent';
 import { CookieConsent, getGaConsent } from './components/CookieConsent';
 import { AuthContext, useAuthState } from './hooks/useAuth';
-import EmailVerificationHandler from './components/auth/EmailVerificationHandler';
 import AdminPanel from './components/admin/AdminPanel';
 import { DEFAULT_SECTION_TYPES, DEFAULT_FIELD_BOOST_FIELDS, buildSearchURL, getSearchStateFromURL } from './utils/searchUrl';
 import { streamAiSummary } from './utils/aiSummaryStream';
@@ -2310,7 +2309,6 @@ function App() {
 
   return (
     <AuthContext.Provider value={authState}>
-      <EmailVerificationHandler />
       {appContent}
     </AuthContext.Provider>
   );

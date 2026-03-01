@@ -9,7 +9,7 @@ interface LoginModalProps {
 type TabMode = 'login' | 'register';
 
 const LoginModal: React.FC<LoginModalProps> = ({ onClose }) => {
-  const { login, register } = useAuth();
+  const { login, register, verificationMessage, clearVerificationMessage } = useAuth();
   const [mode, setMode] = useState<TabMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,12 +18,18 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose }) => {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const handleClose = () => {
+    clearVerificationMessage();
+    onClose();
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
       await login({ username: email, password });
+      clearVerificationMessage();
       onClose();
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');
@@ -55,8 +61,11 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose }) => {
     }
   };
 
+  // Show verification message from context, or local success state
+  const displaySuccess = verificationMessage || success;
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
       <div className="modal-content login-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="login-tabs">
@@ -73,12 +82,12 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose }) => {
               Register
             </button>
           </div>
-          <button className="modal-close" onClick={onClose}>&times;</button>
+          <button className="modal-close" onClick={handleClose}>&times;</button>
         </div>
 
         <div className="modal-body">
           {error && <div className="auth-error">{error}</div>}
-          {success && <div className="auth-success">{success}</div>}
+          {displaySuccess && <div className="auth-success">{displaySuccess}</div>}
 
           <OAuthButtons action={mode === 'login' ? 'Sign in' : 'Sign up'} />
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import LoginModal from './LoginModal';
 import ProfileModal from './ProfileModal';
@@ -8,10 +8,17 @@ interface UserMenuProps {
 }
 
 const UserMenu: React.FC<UserMenuProps> = ({ onAdminClick }) => {
-  const { user, isAuthenticated, isLoading, logout } = useAuth();
+  const { user, isAuthenticated, isLoading, logout, verificationMessage } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+
+  // Auto-open the login modal when a verification message arrives
+  useEffect(() => {
+    if (verificationMessage && !isAuthenticated) {
+      setShowLogin(true);
+    }
+  }, [verificationMessage, isAuthenticated]);
 
   if (isLoading) return null;
 

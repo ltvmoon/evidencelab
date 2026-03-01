@@ -43,6 +43,8 @@ export const AuthContext = createContext<AuthContextValue>({
   register: async () => {},
   logout: async () => {},
   refreshUser: async () => {},
+  verificationMessage: null,
+  clearVerificationMessage: () => {},
 });
 
 /** Hook to access the auth context. */
@@ -53,6 +55,11 @@ export function useAuth(): AuthContextValue {
 /** Custom hook that provides auth state management. Use inside AuthProvider. */
 export function useAuthState(): AuthContextValue {
   const [state, setState] = useState<AuthState>(initialState);
+  const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
+
+  const clearVerificationMessage = useCallback(() => {
+    setVerificationMessage(null);
+  }, []);
 
   const refreshUser = useCallback(async () => {
     try {
@@ -68,6 +75,44 @@ export function useAuthState(): AuthContextValue {
   useEffect(() => {
     refreshUser();
   }, [refreshUser]);
+
+  // Handle ?verify=TOKEN from email verification links
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('verify');
+    if (!token) return;
+
+    // Clean the URL immediately so a refresh won't re-verify
+    params.delete('verify');
+    const clean = params.toString();
+    const newUrl = window.location.pathname + (clean ? `?${clean}` : '');
+    window.history.replaceState({}, '', newUrl);
+
+    (async () => {
+      try {
+        await axios.post(`${API_BASE_URL}/auth/verify`, { token });
+        setVerificationMessage(
+          'Your email has been verified! You can now sign in.'
+        );
+      } catch (err: any) {
+        const detail = err.response?.data?.detail;
+        if (
+          typeof detail === 'string' &&
+          detail.toLowerCase().includes('already verified')
+        ) {
+          setVerificationMessage(
+            'This email is already verified. You can sign in.'
+          );
+        } else {
+          setVerificationMessage(
+            typeof detail === 'string'
+              ? detail
+              : 'Email verification failed. The link may have expired.'
+          );
+        }
+      }
+    })();
+  }, []);
 
   const login = useCallback(async (credentials: LoginCredentials) => {
     const form = new URLSearchParams();
@@ -100,7 +145,15 @@ export function useAuthState(): AuthContextValue {
     setState({ user: null, token: null, isLoading: false, isAuthenticated: false });
   }, []);
 
-  return { ...state, login, register, logout, refreshUser };
+  return {
+    ...state,
+    login,
+    register,
+    logout,
+    refreshUser,
+    verificationMessage,
+    clearVerificationMessage,
+  };
 }
 
 export default useAuth;
