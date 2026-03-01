@@ -3562,6 +3562,14 @@ h6,
   cursor: default;
 }
 
+li.ai-fact-active {
+  background: var(--brand-primary-light, #e0f2f1);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  margin-left: -6px;
+  transition: background 0.3s ease;
+}
+
 .ai-summary-expand-button:hover {
   opacity: 1;
 }

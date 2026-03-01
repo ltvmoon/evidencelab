@@ -37,6 +37,7 @@ interface AiSummaryPanelProps {
   onDrilldownNavigate?: (nodeId: string) => void;
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
+  findOutMoreActiveFact?: string | null;
 }
 
 const GeneratingText = () => (
@@ -69,6 +70,7 @@ const AiSummaryBody = ({
   loading,
   onFindOutMore,
   findOutMoreLoading,
+  findOutMoreActiveFact,
 }: {
   expanded: boolean;
   summary: string;
@@ -79,6 +81,7 @@ const AiSummaryBody = ({
   loading?: boolean;
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
+  findOutMoreActiveFact?: string | null;
 }) => (
   <div
     className={`ai-summary-content ${expanded ? 'expanded' : ''}`}
@@ -92,6 +95,7 @@ const AiSummaryBody = ({
         onResultClick={onResultClick}
         onFindOutMore={onFindOutMore}
         findOutMoreLoading={findOutMoreLoading}
+        findOutMoreActiveFact={findOutMoreActiveFact}
       />
     </div>
     <AiSummaryReferences
@@ -119,6 +123,7 @@ const AiSummaryContent = ({
   onDrilldown,
   onFindOutMore,
   findOutMoreLoading,
+  findOutMoreActiveFact,
 }: {
   collapsed: boolean;
   expanded: boolean;
@@ -130,6 +135,7 @@ const AiSummaryContent = ({
   onDrilldown?: (text: string) => void;
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
+  findOutMoreActiveFact?: string | null;
 }) => {
   if (collapsed) return null;
   if (loading) return <AiSummaryLoading expanded={expanded} summary={summary} />;
@@ -146,6 +152,7 @@ const AiSummaryContent = ({
       loading={loading}
       onFindOutMore={onFindOutMore}
       findOutMoreLoading={findOutMoreLoading}
+      findOutMoreActiveFact={findOutMoreActiveFact}
     />
   );
 };
@@ -393,6 +400,7 @@ export const AiSummaryPanel = ({
   onDrilldownNavigate,
   onFindOutMore,
   findOutMoreLoading,
+  findOutMoreActiveFact,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
   const [showGraph, setShowGraph] = useState(false);
@@ -452,6 +460,7 @@ export const AiSummaryPanel = ({
               onDrilldown={onDrilldown}
               onFindOutMore={onFindOutMore}
               findOutMoreLoading={findOutMoreLoading}
+              findOutMoreActiveFact={findOutMoreActiveFact}
             />
             <AiSummaryFooter
               collapsed={aiSummaryCollapsed}

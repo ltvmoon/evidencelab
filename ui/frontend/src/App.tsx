@@ -737,6 +737,7 @@ function App() {
     navigateToNode: navigateToNodeInTree,
   } = useDrilldownTree();
   const [findOutMoreLoading, setFindOutMoreLoading] = useState(false);
+  const [findOutMoreActiveFact, setFindOutMoreActiveFact] = useState<string | null>(null);
 
   // Debug: Log semantic threshold on startup
   useEffect(() => {
@@ -1656,6 +1657,7 @@ function App() {
     for (let i = 0; i < keyFacts.length; i++) {
       const fact = keyFacts[i];
       const nodeId = nodeIds[i];
+      setFindOutMoreActiveFact(fact);
       try {
         const params = buildSearchParams({
           query: fact, filters, searchDenseWeight, rerankEnabled,
@@ -1691,6 +1693,7 @@ function App() {
       }
     }
     setFindOutMoreLoading(false);
+    setFindOutMoreActiveFact(null);
   }, [getSnapshot, addChildNodeInTree, updateNodeDataInTree, query, summaryModelConfig,
       filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
       recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
@@ -2260,6 +2263,7 @@ function App() {
       onAiDrilldownNavigate={navigateDrilldownToNode}
       onFindOutMore={handleFindOutMore}
       findOutMoreLoading={findOutMoreLoading}
+      findOutMoreActiveFact={findOutMoreActiveFact}
     />
   );
 

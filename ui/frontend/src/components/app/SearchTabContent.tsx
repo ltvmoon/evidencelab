@@ -89,6 +89,7 @@ interface SearchTabContentProps {
   onAiDrilldownNavigate?: (nodeId: string) => void;
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
+  findOutMoreActiveFact?: string | null;
 }
 
 const DOT_SIZES = [12, 12, 12, 12, 12];
@@ -292,6 +293,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   onAiDrilldownNavigate,
   onFindOutMore,
   findOutMoreLoading,
+  findOutMoreActiveFact,
 }) => {
   const [filteredOrgs, setFilteredOrgs] = useState<string[]>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -535,6 +537,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             onDrilldownNavigate={onAiDrilldownNavigate}
             onFindOutMore={onFindOutMore}
             findOutMoreLoading={findOutMoreLoading}
+            findOutMoreActiveFact={findOutMoreActiveFact}
           />
 
           {results.length > 0 && <h3 className="search-results-heading">Search Results</h3>}

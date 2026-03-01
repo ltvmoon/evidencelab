@@ -8,9 +8,11 @@ interface AiSummaryWithCitationsProps {
   onResultClick: (result: SearchResult) => void;
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
+  findOutMoreActiveFact?: string | null;
 }
 
 const CITATION_REGEX = /\[(\d+(?:,\s*\d+)*)\]/g;
+const CITATION_ONLY_LINE = /^\[[\d,\s]+\]$/;
 const NUMBERED_LIST_REGEX = /^\d+[\.)]\s/;
 const BULLET_LIST_REGEX = /^[-*]\s/;
 const HEADING_REGEX = /^(#{1,4})\s+(.+)$/;
@@ -169,6 +171,7 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
   onResultClick,
   onFindOutMore,
   findOutMoreLoading,
+  findOutMoreActiveFact,
 }) => {
   const citationMapping = buildCitationMapping(summaryText);
   const blocks = splitSummaryBlocks(summaryText);
@@ -211,11 +214,16 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
             : pendingListItems;
           elements.push(
             <ListTag key={`${blockIndex}-list-${elements.length}`}>
-              {items.map((item, li) => (
-                <li key={li}>
-                  {renderLineWithCitations(stripListPrefix(item, lt), searchResults, citationMapping, onResultClick, `${blockIndex}-${elements.length}-${li}`)}
-                </li>
-              ))}
+              {items.map((item, li) => {
+                const stripped = stripListPrefix(item, lt);
+                const isActive = afterKeyFacts && findOutMoreActiveFact &&
+                  stripped.replace(CITATION_REGEX, '').trim() === findOutMoreActiveFact;
+                return (
+                  <li key={li} className={isActive ? 'ai-fact-active' : ''}>
+                    {renderLineWithCitations(stripped, searchResults, citationMapping, onResultClick, `${blockIndex}-${elements.length}-${li}`)}
+                  </li>
+                );
+              })}
             </ListTag>
           );
           pendingListItems = [];
@@ -226,6 +234,7 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
         lines.forEach((line) => {
           const trimmed = line.trim();
           if (!trimmed) return;
+          if (CITATION_ONLY_LINE.test(trimmed)) return;
 
           const headingMatch = trimmed.match(HEADING_REGEX);
           if (headingMatch) {
