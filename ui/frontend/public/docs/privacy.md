@@ -57,7 +57,7 @@ You have the right to:
 
 - **Access** your data — view your profile, email, and group memberships from the Profile page.
 - **Correct** your data — update your display name at any time from the Profile page.
-- **Delete** your account — permanently remove your account and all associated data from the Profile page. This action is irreversible.
+- **Delete** your account — to permanently delete your account, click your user icon in the top-right corner, open **Profile**, scroll to the **Danger zone** section, and follow the confirmation steps. Deletion removes your personal data, group memberships, and OAuth links. This action is irreversible.
 - **Export** your data — contact us to request a copy of your data.
 - **Withdraw consent** — decline or revoke analytics cookies at any time.
 
