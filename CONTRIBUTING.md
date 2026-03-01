@@ -572,8 +572,9 @@ feature/fix branches ──► rc/vX.Y.Z ──► main
    gh pr edit <PR_NUMBER> --base rc/v1.2.0
    ```
 
-4. **Dependabot PRs** may target `main` directly since they are safe
-   dependency bumps that do not require RC staging.
+4. **Dependabot PRs** also target the RC branch (configured via
+   `target-branch` in `.github/dependabot.yml`). Update this value
+   when creating a new RC branch.
 
 5. **Merge RC to main** once all PRs are merged and the release is validated:
    ```bash
