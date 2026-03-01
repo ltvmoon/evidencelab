@@ -134,6 +134,14 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose }) => {
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               />
             </div>
+            {mode === 'register' && (
+              <p className="auth-legal-text">
+                By creating an account, you agree to our{' '}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer">
+                  Privacy Policy
+                </a>.
+              </p>
+            )}
             <button type="submit" className="auth-submit" disabled={loading}>
               {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
             </button>

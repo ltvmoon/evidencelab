@@ -1,16 +1,27 @@
 """User management routes — profile, user listing (admin)."""
 
+import logging
 import uuid
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ui.backend.auth.audit import write_audit_event
 from ui.backend.auth.db import get_async_session
-from ui.backend.auth.models import User, UserGroup, UserGroupMember
+from ui.backend.auth.models import (
+    AuditLog,
+    OAuthAccount,
+    User,
+    UserGroup,
+    UserGroupMember,
+)
+from ui.backend.auth.rate_limit import current_request_ip
 from ui.backend.auth.schemas import UserRead, UserUpdate
 from ui.backend.auth.users import current_active_user, current_superuser, fastapi_users
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -89,3 +100,66 @@ async def get_my_groups(
     return [
         {"id": str(g.id), "name": g.name, "description": g.description} for g in groups
     ]
+
+
+# ---------------------------------------------------------------------------
+# Self-service account deletion
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/me/account", tags=["users"])
+async def delete_my_account(
+    response: Response,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Permanently delete the current user's account and associated data.
+
+    This removes:
+    - Group memberships
+    - OAuth account links
+    - The user record itself
+
+    Audit log entries are anonymised (user_id set to NULL) so security
+    records are preserved without retaining personal data.
+    """
+    ip = current_request_ip.get("unknown")
+    user_id = user.id
+    user_email = user.email
+
+    # Write the audit event *before* deleting so we capture who deleted
+    await write_audit_event(
+        "account_deleted",
+        user_id=user_id,
+        user_email=user_email,
+        ip_address=ip,
+    )
+
+    # Anonymise audit log entries for this user
+    await session.execute(
+        update(AuditLog).where(AuditLog.user_id == user_id).values(user_id=None)
+    )
+
+    # Remove group memberships
+    await session.execute(
+        delete(UserGroupMember).where(UserGroupMember.user_id == user_id)
+    )
+
+    # Remove OAuth links
+    await session.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
+
+    # Delete the user record
+    await session.execute(delete(User).where(User.id == user_id))
+
+    await session.commit()
+
+    logger.info("Account deleted: %s (%s)", user_email, user_id)
+
+    # Clear the auth cookie so the browser is logged out
+    response.delete_cookie(
+        "evidencelab_auth",
+        httponly=True,
+        samesite="lax",
+    )
+
+    return {"detail": "Account deleted successfully."}

@@ -10,12 +10,15 @@ interface ProfileModalProps {
 type ProfileTab = 'profile' | 'groups';
 
 const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, logout } = useAuth();
   const [tab, setTab] = useState<ProfileTab>('profile');
   const [displayName, setDisplayName] = useState(user?.display_name || '');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [groups, setGroups] = useState<Array<{ id: string; name: string; description: string | null }>>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (tab === 'groups') {
@@ -37,6 +40,23 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
       setMessage('Failed to update profile');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') return;
+    setDeleting(true);
+    try {
+      await axios.delete(`${API_BASE_URL}/users/me/account`);
+      // Server clears the auth cookie; update client state
+      await logout();
+      onClose();
+    } catch {
+      setMessage('Failed to delete account. Please try again.');
+      setShowDeleteConfirm(false);
+      setDeleteConfirmText('');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -65,36 +85,83 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
 
         <div className="modal-body">
           {tab === 'profile' && (
-            <form onSubmit={handleSave}>
-              {message && <div className="auth-success">{message}</div>}
-              <div className="form-group">
-                <label htmlFor="profile-email">Email</label>
-                <input id="profile-email" type="email" value={user.email} disabled />
-              </div>
-              <div className="form-group">
-                <label htmlFor="profile-name">Display Name</label>
-                <input
-                  id="profile-name"
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Your name"
-                />
-              </div>
-              <div className="form-group">
-                <label>Status</label>
-                <div className="profile-badges">
-                  {user.is_verified
-                    ? <span className="badge badge-success">Verified</span>
-                    : <span className="badge badge-warning">Unverified</span>
-                  }
-                  {user.is_superuser && <span className="badge badge-admin">Admin</span>}
+            <>
+              <form onSubmit={handleSave}>
+                {message && <div className="auth-success">{message}</div>}
+                <div className="form-group">
+                  <label htmlFor="profile-email">Email</label>
+                  <input id="profile-email" type="email" value={user.email} disabled />
                 </div>
+                <div className="form-group">
+                  <label htmlFor="profile-name">Display Name</label>
+                  <input
+                    id="profile-name"
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Your name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Status</label>
+                  <div className="profile-badges">
+                    {user.is_verified
+                      ? <span className="badge badge-success">Verified</span>
+                      : <span className="badge badge-warning">Unverified</span>
+                    }
+                    {user.is_superuser && <span className="badge badge-admin">Admin</span>}
+                  </div>
+                </div>
+                <button type="submit" className="auth-submit" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </form>
+
+              <div className="account-danger-zone">
+                <h4>Danger zone</h4>
+                {!showDeleteConfirm ? (
+                  <button
+                    className="btn-danger-outline"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    Delete my account
+                  </button>
+                ) : (
+                  <div className="delete-confirm-box">
+                    <p>
+                      This will permanently delete your account, group memberships,
+                      and all associated data. This action <strong>cannot be undone</strong>.
+                    </p>
+                    <label htmlFor="delete-confirm-input">
+                      Type <strong>DELETE</strong> to confirm:
+                    </label>
+                    <input
+                      id="delete-confirm-input"
+                      type="text"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder="DELETE"
+                      autoComplete="off"
+                    />
+                    <div className="delete-confirm-actions">
+                      <button
+                        className="btn-danger"
+                        disabled={deleteConfirmText !== 'DELETE' || deleting}
+                        onClick={handleDeleteAccount}
+                      >
+                        {deleting ? 'Deleting...' : 'Permanently delete account'}
+                      </button>
+                      <button
+                        className="btn-cancel"
+                        onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <button type="submit" className="auth-submit" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </form>
+            </>
           )}
 
           {tab === 'groups' && (
