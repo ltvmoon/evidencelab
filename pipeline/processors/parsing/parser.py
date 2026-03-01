@@ -1099,35 +1099,12 @@ class ParseProcessor(BaseProcessor):
             logger.warning("  ⚠ pypdf fallback failed: %s", exc)
             return None
 
-    _MAX_ITEM_CHARS = 12000  # keep text items well below embedding char limit
-
-    @staticmethod
-    def _group_text_items_by_page(texts: List[Dict]) -> Dict[int, List[int]]:
-        """Map page numbers to text item indices."""
-        page_items: Dict[int, List[int]] = {}
-        for i, item in enumerate(texts):
-            provs = item.get("prov", [])
-            if not provs:
-                continue
-            page_no = provs[0].get("page_no", 0)
-            page_items.setdefault(page_no, []).append(i)
-        return page_items
-
-    @staticmethod
-    def _distribute_text(text: str, indices: List[int], texts: List[Dict], limit: int):
-        """Assign text across text items, splitting if it exceeds limit."""
-        if len(text) <= limit or len(indices) <= 1:
-            texts[indices[0]]["text"] = text
-            for idx in indices[1:]:
-                texts[idx]["text"] = ""
-            return
-        pos = 0
-        for idx in indices:
-            texts[idx]["text"] = text[pos : pos + limit] if pos < len(text) else ""
-            pos += limit
-
     def _fix_glyph_json(self, json_path: Path, pages_by_number: Dict[int, str]) -> None:
-        """Replace glyph-contaminated text in docling JSON with pypdf text."""
+        """Replace glyph-contaminated text in docling JSON with pypdf text.
+
+        For each page in the JSON, assigns the pypdf text to the first text
+        item on that page and clears subsequent items to avoid duplication.
+        """
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
@@ -1135,15 +1112,24 @@ class ParseProcessor(BaseProcessor):
         if not texts:
             return
 
-        page_items = self._group_text_items_by_page(texts)
+        # Group text item indices by page number
+        page_items: Dict[int, List[int]] = {}
+        for i, item in enumerate(texts):
+            provs = item.get("prov", [])
+            if not provs:
+                continue
+            page_no = provs[0].get("page_no", 0)
+            page_items.setdefault(page_no, []).append(i)
 
         replaced = 0
         for page_no, pypdf_text in pages_by_number.items():
             indices = page_items.get(page_no, [])
             if not indices:
                 continue
-            self._distribute_text(pypdf_text, indices, texts, self._MAX_ITEM_CHARS)
+            texts[indices[0]]["text"] = pypdf_text
             replaced += 1
+            for idx in indices[1:]:
+                texts[idx]["text"] = ""
 
         data["texts"] = texts
         with open(json_path, "w", encoding="utf-8") as f:

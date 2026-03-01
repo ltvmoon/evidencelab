@@ -269,35 +269,6 @@ class TestGlyphJson:
         result = json.loads(json_path.read_text())
         assert result["texts"][0]["text"] == "Page one."
 
-    def test_large_page_distributed_across_items(self, tmp_path):
-        """Text exceeding _MAX_ITEM_CHARS is split across available items."""
-        from pipeline.processors.parsing.parser import ParseProcessor
-
-        json_path = tmp_path / "doc.json"
-        data = self._make_docling_json(
-            [
-                (1, "/gid00028 item A"),
-                (1, "/gid01154 item B"),
-                (1, "/gid00853 item C"),
-            ]
-        )
-        json_path.write_text(json.dumps(data))
-
-        # Text larger than _MAX_ITEM_CHARS should be distributed
-        large_text = "X" * (ParseProcessor._MAX_ITEM_CHARS + 5000)
-
-        parser = _make_parser()
-        parser._fix_glyph_json(json_path, {1: large_text})
-
-        result = json.loads(json_path.read_text())
-        # First two items should have content, third cleared
-        assert len(result["texts"][0]["text"]) == ParseProcessor._MAX_ITEM_CHARS
-        assert len(result["texts"][1]["text"]) == 5000
-        assert result["texts"][2]["text"] == ""
-        # All text accounted for
-        total = sum(len(t["text"]) for t in result["texts"])
-        assert total == len(large_text)
-
     def test_empty_texts_array(self, tmp_path):
         """JSON with no text items should not fail."""
         json_path = tmp_path / "doc.json"
