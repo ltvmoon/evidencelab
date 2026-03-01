@@ -18,6 +18,8 @@ interface UseDrilldownTreeResult {
   currentHighlight: string | undefined;
   resetTree: () => void;
   startDrilldown: (highlightedText: string, snapshot: AiSummarySnapshot, rootLabel?: string) => string;
+  addChildNode: (label: string, snapshot: AiSummarySnapshot, rootLabel?: string) => string;
+  updateNodeData: (nodeId: string, data: Partial<AiSummarySnapshot>) => void;
   navigateBack: (snapshot: AiSummarySnapshot) => DrilldownNode | null;
   navigateToNode: (nodeId: string, snapshot: AiSummarySnapshot) => DrilldownNode | null;
 }
@@ -179,6 +181,59 @@ export const useDrilldownTree = (): UseDrilldownTreeResult => {
     return target;
   }, [drilldownTree, currentNodeId]);
 
+  /**
+   * Add a child node without navigating to it.
+   * Returns the new child node ID.
+   */
+  const addChildNode = useCallback((
+    label: string,
+    snapshot: AiSummarySnapshot,
+    rootLabel?: string
+  ): string => {
+    const newId = `dd-${++idCounter.current}`;
+    const childStub: DrilldownNode = {
+      id: newId,
+      label,
+      summary: '',
+      prompt: '',
+      results: [],
+      translatedText: null,
+      translatedLang: null,
+      expanded: false,
+      children: [],
+    };
+
+    setDrilldownTree((prev) => {
+      if (!prev) {
+        return {
+          id: 'root',
+          label: rootLabel || '',
+          ...snapshot,
+          children: [childStub],
+        } as DrilldownNode;
+      }
+      const targetId = currentNodeId || 'root';
+      const saved = saveSnapshot(prev, targetId, snapshot);
+      return updateNodeInTree(saved, targetId, (node) => ({
+        ...node,
+        children: [...node.children, childStub],
+      }));
+    });
+
+    return newId;
+  }, [currentNodeId]);
+
+  /** Update a node's data (summary, results, etc.) without navigating */
+  const updateNodeData = useCallback((
+    nodeId: string,
+    data: Partial<AiSummarySnapshot>
+  ): void => {
+    setDrilldownTree((prev) => {
+      if (!prev) return prev;
+      return updateNodeInTree(prev, nodeId, (node) => ({ ...node, ...data }));
+    });
+  }, []);
+
   return {
     drilldownTree,
     currentNodeId,
@@ -186,6 +241,8 @@ export const useDrilldownTree = (): UseDrilldownTreeResult => {
     currentHighlight,
     resetTree,
     startDrilldown,
+    addChildNode,
+    updateNodeData,
     navigateBack,
     navigateToNode,
   };

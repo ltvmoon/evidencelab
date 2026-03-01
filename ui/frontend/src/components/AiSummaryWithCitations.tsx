@@ -6,6 +6,8 @@ interface AiSummaryWithCitationsProps {
   summaryText: string;
   searchResults: SearchResult[];
   onResultClick: (result: SearchResult) => void;
+  onFindOutMore?: (keyFacts: string[]) => void;
+  findOutMoreLoading?: boolean;
 }
 
 const CITATION_REGEX = /\[(\d+(?:,\s*\d+)*)\]/g;
@@ -15,6 +17,24 @@ const HEADING_REGEX = /^(#{1,4})\s+(.+)$/;
 
 const parseCitationNumbers = (rawNumbers: string): number[] =>
   rawNumbers.split(',').map((item) => parseInt(item.trim(), 10));
+
+const extractKeyFacts = (summary: string): string[] => {
+  const lines = summary.split('\n');
+  let inKeyFacts = false;
+  const facts: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (HEADING_REGEX.test(trimmed)) {
+      if (/key\s*facts/i.test(trimmed)) { inKeyFacts = true; continue; }
+      if (inKeyFacts) break;
+    }
+    if (inKeyFacts && BULLET_LIST_REGEX.test(trimmed)) {
+      const fact = trimmed.replace(BULLET_LIST_REGEX, '').replace(CITATION_REGEX, '').trim();
+      if (fact) facts.push(fact);
+    }
+  }
+  return facts;
+};
 
 const buildCitationMapping = (summaryText: string): Map<number, number> => {
   const citedNumbers = new Set<number>();
@@ -147,6 +167,8 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
   summaryText,
   searchResults,
   onResultClick,
+  onFindOutMore,
+  findOutMoreLoading,
 }) => {
   const citationMapping = buildCitationMapping(summaryText);
   const blocks = splitSummaryBlocks(summaryText);
@@ -209,10 +231,30 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
           if (headingMatch) {
             flushParagraph();
             flushList();
+            const isKeyFacts = /key\s*facts/i.test(headingMatch[2]);
+            afterKeyFacts = isKeyFacts;
             const content = renderLineWithCitations(headingMatch[2], searchResults, citationMapping, onResultClick, `${blockIndex}-h-${elements.length}`);
             const level = Math.min(headingMatch[1].length + 2, 6);
-            elements.push(React.createElement(`h${level}`, { key: `${blockIndex}-h-${elements.length}` }, content));
-            afterKeyFacts = /key\s*facts/i.test(headingMatch[2]);
+            if (isKeyFacts && onFindOutMore) {
+              elements.push(
+                <div key={`${blockIndex}-h-${elements.length}`} className="ai-key-facts-header">
+                  {React.createElement(`h${level}`, null, content)}
+                  <button
+                    className="ai-find-out-more-btn"
+                    disabled={findOutMoreLoading}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const facts = extractKeyFacts(summaryText);
+                      onFindOutMore(facts);
+                    }}
+                  >
+                    {findOutMoreLoading ? 'Researching...' : 'Find out more'}
+                  </button>
+                </div>
+              );
+            } else {
+              elements.push(React.createElement(`h${level}`, { key: `${blockIndex}-h-${elements.length}` }, content));
+            }
             return;
           }
 

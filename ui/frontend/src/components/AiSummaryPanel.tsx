@@ -35,6 +35,8 @@ interface AiSummaryPanelProps {
   drilldownTree?: DrilldownNode | null;
   drilldownCurrentNodeId?: string | null;
   onDrilldownNavigate?: (nodeId: string) => void;
+  onFindOutMore?: (keyFacts: string[]) => void;
+  findOutMoreLoading?: boolean;
 }
 
 const GeneratingText = () => (
@@ -65,6 +67,8 @@ const AiSummaryBody = ({
   contentRef,
   onDrilldown,
   loading,
+  onFindOutMore,
+  findOutMoreLoading,
 }: {
   expanded: boolean;
   summary: string;
@@ -73,6 +77,8 @@ const AiSummaryBody = ({
   contentRef?: React.RefObject<HTMLDivElement | null>;
   onDrilldown?: (text: string) => void;
   loading?: boolean;
+  onFindOutMore?: (keyFacts: string[]) => void;
+  findOutMoreLoading?: boolean;
 }) => (
   <div
     className={`ai-summary-content ${expanded ? 'expanded' : ''}`}
@@ -84,6 +90,8 @@ const AiSummaryBody = ({
         summaryText={summary}
         searchResults={filteredResults}
         onResultClick={onResultClick}
+        onFindOutMore={onFindOutMore}
+        findOutMoreLoading={findOutMoreLoading}
       />
     </div>
     <AiSummaryReferences
@@ -109,6 +117,8 @@ const AiSummaryContent = ({
   onResultClick,
   contentRef,
   onDrilldown,
+  onFindOutMore,
+  findOutMoreLoading,
 }: {
   collapsed: boolean;
   expanded: boolean;
@@ -118,6 +128,8 @@ const AiSummaryContent = ({
   onResultClick: (result: SearchResult) => void;
   contentRef?: React.RefObject<HTMLDivElement | null>;
   onDrilldown?: (text: string) => void;
+  onFindOutMore?: (keyFacts: string[]) => void;
+  findOutMoreLoading?: boolean;
 }) => {
   if (collapsed) return null;
   if (loading) return <AiSummaryLoading expanded={expanded} summary={summary} />;
@@ -132,6 +144,8 @@ const AiSummaryContent = ({
       contentRef={contentRef}
       onDrilldown={onDrilldown}
       loading={loading}
+      onFindOutMore={onFindOutMore}
+      findOutMoreLoading={findOutMoreLoading}
     />
   );
 };
@@ -377,6 +391,8 @@ export const AiSummaryPanel = ({
   drilldownTree,
   drilldownCurrentNodeId,
   onDrilldownNavigate,
+  onFindOutMore,
+  findOutMoreLoading,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
   const [showGraph, setShowGraph] = useState(false);
@@ -434,6 +450,8 @@ export const AiSummaryPanel = ({
               onResultClick={onResultClick}
               contentRef={summaryContentRef}
               onDrilldown={onDrilldown}
+              onFindOutMore={onFindOutMore}
+              findOutMoreLoading={findOutMoreLoading}
             />
             <AiSummaryFooter
               collapsed={aiSummaryCollapsed}

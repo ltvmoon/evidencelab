@@ -731,9 +731,12 @@ function App() {
     drilldownTree, currentNodeId, isDrilldown, currentHighlight: drilldownHighlight,
     resetTree: resetDrilldownTree,
     startDrilldown: startDrilldownInTree,
+    addChildNode: addChildNodeInTree,
+    updateNodeData: updateNodeDataInTree,
     navigateBack: navigateBackInTree,
     navigateToNode: navigateToNodeInTree,
   } = useDrilldownTree();
+  const [findOutMoreLoading, setFindOutMoreLoading] = useState(false);
 
   // Debug: Log semantic threshold on startup
   useEffect(() => {
@@ -1637,6 +1640,63 @@ function App() {
     if (target) restoreFromNode(target);
   }, [getSnapshot, navigateToNodeInTree, restoreFromNode]);
 
+  // Batch-research all Key Facts: create child nodes and populate them
+  const handleFindOutMore = useCallback(async (keyFacts: string[]) => {
+    if (keyFacts.length === 0) return;
+    setFindOutMoreLoading(true);
+
+    const snapshot = getSnapshot();
+
+    // Create stub child nodes for all facts
+    const nodeIds = keyFacts.map((fact) =>
+      addChildNodeInTree(fact, snapshot, query)
+    );
+
+    // Sequentially search and summarize each fact
+    for (let i = 0; i < keyFacts.length; i++) {
+      const fact = keyFacts[i];
+      const nodeId = nodeIds[i];
+      try {
+        const params = buildSearchParams({
+          query: fact, filters, searchDenseWeight, rerankEnabled,
+          recencyBoostEnabled, recencyWeight, recencyScaleDays, sectionTypes,
+          keywordBoostShortQueries, minChunkSize, rerankModel, rerankModelPageSize,
+          searchModel, dataSource, autoMinScore, deduplicateEnabled,
+          fieldBoostEnabled, fieldBoostFields,
+        });
+        const searchResp = await axios.get<SearchResponse>(`${API_BASE_URL}/search?${params}`);
+        const freshResults = searchResp.data.results.slice(0, 20);
+
+        const summaryQuery = `Regarding: "${fact}"\n\nProvide detail about this, in the context of: "${query}"`;
+        const leanResults = freshResults.map((r) => ({
+          chunk_id: r.chunk_id, doc_id: r.doc_id, text: r.text,
+          title: r.title, organization: r.organization, year: r.year,
+          page_num: r.page_num, headings: r.headings, score: r.score,
+        }));
+        const summaryResp = await axios.post<{ summary: string; prompt: string }>(`${API_BASE_URL}/ai-summary?data_source=${dataSource}`, {
+          query: summaryQuery,
+          results: leanResults,
+          max_results: 20,
+          ...(summaryModelConfig ? { summary_model_config: summaryModelConfig } : {}),
+        });
+
+        updateNodeDataInTree(nodeId, {
+          summary: summaryResp.data.summary,
+          prompt: summaryResp.data.prompt,
+          results: freshResults,
+        });
+      } catch (error) {
+        console.error(`Find out more failed for: ${fact}`, error);
+        updateNodeDataInTree(nodeId, { summary: 'Failed to generate summary.' });
+      }
+    }
+    setFindOutMoreLoading(false);
+  }, [getSnapshot, addChildNodeInTree, updateNodeDataInTree, query, summaryModelConfig,
+      filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
+      recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
+      minChunkSize, rerankModel, rerankModelPageSize, searchModel, dataSource,
+      autoMinScore, deduplicateEnabled, fieldBoostEnabled, fieldBoostFields]);
+
   const handlePostSearchResults = useCallback((data: SearchResponse) => {
     if (data.results.length > 0) {
       const calculatedMaxScore = Math.max(...data.results.map(r => r.score || 0));
@@ -2198,6 +2258,8 @@ function App() {
       aiDrilldownTree={drilldownTree}
       aiDrilldownCurrentNodeId={currentNodeId}
       onAiDrilldownNavigate={navigateDrilldownToNode}
+      onFindOutMore={handleFindOutMore}
+      findOutMoreLoading={findOutMoreLoading}
     />
   );
 
