@@ -22,10 +22,14 @@ class TestComputeMaxEmbedChars:
 
     def _make_processor(self):
         """Create an IndexProcessor without triggering DB or model loading."""
+        chunk_config = {
+            "dense_model": "intfloat/multilingual-e5-large",
+            "max_tokens": 450,
+        }
         with patch("pipeline.processors.indexing.indexer.get_db"), patch(
             "pipeline.processors.indexing.indexer.PostgresClient"
         ):
-            return IndexProcessor()
+            return IndexProcessor(chunk_config=chunk_config)
 
     def test_uses_smallest_model_limit(self):
         """When multiple models have max_tokens, use the smallest."""
@@ -49,49 +53,35 @@ class TestComputeMaxEmbedChars:
             result = proc._compute_max_embed_chars(["azure_small"])
         assert result == 8192 * _CHARS_PER_TOKEN
 
-    def test_fallback_when_no_max_tokens(self):
-        """Models without max_tokens fall back to _DEFAULT_MAX_EMBED_TOKENS."""
+    def test_raises_when_model_missing_max_tokens(self):
+        """Models without max_tokens raise ValueError."""
         proc = self._make_processor()
         fake_vectors = {"e5_large": {"size": 1024, "model_id": "e5"}}
         with patch("pipeline.processors.indexing.indexer.DB_VECTORS", fake_vectors):
-            result = proc._compute_max_embed_chars(["e5_large"])
-        assert result == _DEFAULT_MAX_EMBED_TOKENS * _CHARS_PER_TOKEN
+            with pytest.raises(ValueError, match="no 'max_tokens'"):
+                proc._compute_max_embed_chars(["e5_large"])
 
-    def test_empty_targets_uses_default(self):
-        """No targets at all falls back to _DEFAULT_MAX_EMBED_TOKENS."""
-        proc = self._make_processor()
-        with patch("pipeline.processors.indexing.indexer.DB_VECTORS", {}):
-            result = proc._compute_max_embed_chars([])
-        assert result == _DEFAULT_MAX_EMBED_TOKENS * _CHARS_PER_TOKEN
-
-    def test_mixed_models_only_considers_those_with_limit(self):
-        """Models without max_tokens are ignored; limit comes from those that have it."""
-        proc = self._make_processor()
-        fake_vectors = {
-            "azure_small": {"max_tokens": 8192},
-            "e5_large": {"size": 1024},  # no max_tokens
-        }
-        with patch("pipeline.processors.indexing.indexer.DB_VECTORS", fake_vectors):
-            result = proc._compute_max_embed_chars(["azure_small", "e5_large"])
-        assert result == 8192 * _CHARS_PER_TOKEN
-
-    def test_unknown_model_name_ignored(self):
-        """A target not in DB_VECTORS is silently skipped."""
+    def test_raises_when_model_not_in_registry(self):
+        """A target not in DB_VECTORS raises ValueError."""
         proc = self._make_processor()
         fake_vectors = {"azure_small": {"max_tokens": 8192}}
         with patch("pipeline.processors.indexing.indexer.DB_VECTORS", fake_vectors):
-            result = proc._compute_max_embed_chars(["azure_small", "nonexistent"])
-        assert result == 8192 * _CHARS_PER_TOKEN
+            with pytest.raises(ValueError, match="no 'max_tokens'"):
+                proc._compute_max_embed_chars(["azure_small", "nonexistent"])
 
 
 class TestFilterValidChunks:
     """Test _filter_valid_chunks removes empty chunks and rejects oversized ones."""
 
     def _make_processor(self, max_embed_chars=None):
+        chunk_config = {
+            "dense_model": "intfloat/multilingual-e5-large",
+            "max_tokens": 450,
+        }
         with patch("pipeline.processors.indexing.indexer.get_db"), patch(
             "pipeline.processors.indexing.indexer.PostgresClient"
         ):
-            proc = IndexProcessor()
+            proc = IndexProcessor(chunk_config=chunk_config)
         if max_embed_chars is not None:
             proc._max_embed_chars = max_embed_chars
         return proc

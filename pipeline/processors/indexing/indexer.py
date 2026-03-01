@@ -115,16 +115,20 @@ class IndexProcessor(BaseProcessor):
         self.index_config = index_config or {}
         self.chunk_config = chunk_config or {}
 
-        # Strict Config Parsing
-        self.max_chunk_tokens = self.chunk_config.get("max_tokens", 512)
+        # Strict Config Parsing — fail fast on missing required settings
+        if "dense_model" not in self.chunk_config:
+            raise ValueError(
+                "Indexer: 'dense_model' is required in chunk config. "
+                "Add it to datasources.<name>.pipeline.chunk in config.json."
+            )
+        if "max_tokens" not in self.chunk_config:
+            raise ValueError(
+                "Indexer: 'max_tokens' is required in chunk config. "
+                "Add it to datasources.<name>.pipeline.chunk in config.json."
+            )
+        self.max_chunk_tokens = self.chunk_config["max_tokens"]
         self.min_sub_size = self.chunk_config.get("min_substantive_size", 100)
-        self.dense_model_id = self.chunk_config.get("dense_model")
-
-        if not self.dense_model_id:
-            # Fallback to defaults? User said strict valid.
-            # If chunk config is missing, default to 512/100 is safe.
-            # But dense_model_id is critical.
-            pass
+        self.dense_model_id = self.chunk_config["dense_model"]
 
         self.batch_size = self.index_config.get("batch_size", 10)
         self.embedding_workers = self.index_config.get("embedding_workers", 4)
@@ -243,7 +247,12 @@ class IndexProcessor(BaseProcessor):
             mt = vec_config.get("max_tokens")
             if mt:
                 limits.append(int(mt))
-        min_tokens = min(limits) if limits else _DEFAULT_MAX_EMBED_TOKENS
+            else:
+                raise ValueError(
+                    f"Embedding model '{vec_name}' has no 'max_tokens' in config. "
+                    "Add it to supported_embedding_models in config.json."
+                )
+        min_tokens = min(limits)
         return int(min_tokens * _CHARS_PER_TOKEN)
 
     def _chunk_document(self, json_path: str) -> List[Dict[str, Any]]:
