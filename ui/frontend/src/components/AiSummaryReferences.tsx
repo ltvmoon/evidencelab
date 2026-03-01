@@ -86,31 +86,25 @@ export const AiSummaryReferences: React.FC<AiSummaryReferencesProps> = ({
       <h4>References:</h4>
       {groups.map((group) => (
         <div key={group.title} className="ai-summary-ref-group">
-          <div className="ai-summary-ref-group-title">
-            {group.title}
-            {(group.organization || group.year) && (
-              <span className="ai-summary-ref-group-meta">
-                {group.organization && `, ${group.organization}`}
-                {group.year && `, ${group.year}`}
-              </span>
-            )}
-          </div>
-          <ul>
-            {group.refs.map(({ sequential, result }) => (
-              <li key={sequential}>
-                <a
-                  href="#"
-                  onClick={(event: React.MouseEvent) => {
-                    event.preventDefault();
-                    onResultClick(result);
-                  }}
-                >
-                  <span className="ai-summary-ref-number">[{sequential}]</span>
-                  {result.page_num ? ` Page ${result.page_num}` : ' (full document)'}
-                </a>
-              </li>
-            ))}
-          </ul>
+          {group.title}
+          {group.organization && `, ${group.organization}`}
+          {group.year && `, ${group.year}`}
+          {' : '}
+          {group.refs.map(({ sequential, result }, idx) => (
+            <React.Fragment key={sequential}>
+              {idx > 0 && '; '}
+              <a
+                href="#"
+                onClick={(event: React.MouseEvent) => {
+                  event.preventDefault();
+                  onResultClick(result);
+                }}
+              >
+                <span className="ai-summary-ref-number">[{sequential}]</span>
+                {result.page_num ? ` Page ${result.page_num}` : ' (full document)'}
+              </a>
+            </React.Fragment>
+          ))}
         </div>
       ))}
     </div>

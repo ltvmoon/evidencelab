@@ -336,7 +336,7 @@ const AiSummaryHeader = ({
         <GraphToggleButton showGraph={showGraph} onToggle={onToggleGraph} />
       )}
     </h3>
-    {aiSummary && !loading && onLanguageChange && (
+    {aiSummary && !loading && !showGraph && onLanguageChange && (
       <LanguageSelector
         selectedLang={selectedLang}
         isTranslating={isTranslating}
