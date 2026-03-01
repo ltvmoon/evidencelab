@@ -1701,6 +1701,7 @@ function App() {
     setFindOutMoreLoading(false);
     setFindOutMoreActiveFact(null);
     setFindOutMoreDone(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [getSnapshot, addChildNodeInTree, updateNodeDataInTree, query, summaryModelConfig,
       filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
       recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
