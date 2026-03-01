@@ -3451,21 +3451,26 @@ h6,
 .ai-summary-citation {
   color: var(--primary-blue);
   text-decoration: none;
+  font-size: 0.8em;
   font-weight: 600;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: color 0.2s ease, background 0.15s ease;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 3px;
+  padding: 0 3px;
 }
 
 .ai-summary-citation:hover {
   color: var(--primary-blue-dark);
-  text-decoration: underline;
+  background: var(--gray-100);
+  text-decoration: none;
 }
 
 .citation-doc-group {
-  background: var(--gray-50);
-  border: 1px solid var(--gray-200);
+  background: var(--gray-100);
   border-radius: 3px;
-  padding: 0 2px;
+  padding: 0 1px;
 }
 
 .ai-summary-references {
