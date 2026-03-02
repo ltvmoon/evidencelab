@@ -24,6 +24,7 @@ from pipeline.db import (
     SUPPORTED_RERANK_MODELS,
     UI_MODEL_COMBOS,
     get_filter_fields,
+    load_datasources_config,
 )
 from pipeline.utilities.tasks import app as celery_app
 from ui.backend.routes import config as config_routes
@@ -168,12 +169,22 @@ async def startup_event():
         logger.info("🔄 Preloading reranker model...")
         get_rerank_model()
         logger.info("✅ Reranker model preloaded and ready")
-    # Warm pipeline data cache in background thread
+    # Warm pipeline data cache for all configured data sources
     import threading
 
-    threading.Thread(
-        target=stats_routes.warm_pipeline_cache, args=("uneg",), daemon=True
-    ).start()
+    _config = load_datasources_config()
+    _data_subdirs = [
+        v.get("data_subdir")
+        for v in _config.get("datasources", {}).values()
+        if isinstance(v, dict) and v.get("data_subdir")
+    ]
+    if not _data_subdirs:
+        logger.error("No datasources found in config — skipping cache warm")
+        return
+    for _source in _data_subdirs:
+        threading.Thread(
+            target=stats_routes.warm_pipeline_cache, args=(_source,), daemon=True
+        ).start()
 
 
 @app.on_event("shutdown")
