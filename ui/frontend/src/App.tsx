@@ -1927,12 +1927,7 @@ function App() {
       const summaryDurationMs = summaryStartMsRef.current
         ? Math.round(performance.now() - summaryStartMsRef.current)
         : undefined;
-      console.debug('[Activity] Summary PATCH:', {
-        searchId: activitySearchIdRef.current,
-        summaryDurationMs,
-        summaryStartMs: summaryStartMsRef.current,
-        hasDrilldownTree: !!drilldownTree,
-      });
+      console.debug('[Activity] Summary PATCH: summaryDurationMs=' + summaryDurationMs);
       updateActivitySummary(
         activitySearchIdRef.current,
         aiSummary,

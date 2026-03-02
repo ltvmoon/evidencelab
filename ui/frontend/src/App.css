@@ -3028,12 +3028,17 @@ h6,
   width: 100%;
 }
 
-/* Grouped setting with sub-settings border */
+/* Grouped setting with sub-settings — no border/padding on wrapper so
+   the main checkbox stays the same width as other settings. */
 .settings-subsettings-group {
+  margin-bottom: var(--spacing-xs);
+}
+
+/* Draw the faint border only around the sub-controls below the checkbox */
+.settings-subsettings-group .recency-slider-group,
+.settings-subsettings-group .field-boost-fields {
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-md);
-  padding: var(--spacing-sm);
-  margin-bottom: var(--spacing-xs);
 }
 
 /* Field boost controls */

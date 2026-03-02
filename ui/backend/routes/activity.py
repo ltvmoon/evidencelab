@@ -1,5 +1,6 @@
 """Activity routes — log search activity, append summary; admin list & export."""
 
+import copy
 import io
 import logging
 import uuid
@@ -183,9 +184,11 @@ async def update_activity_summary(
     if body.ai_summary is not None:
         activity.ai_summary = body.ai_summary
 
-    # Merge timing & drilldown tree into existing filters JSONB
+    # Merge timing & drilldown tree into existing filters JSONB.
+    # Deep-copy to ensure SQLAlchemy detects the mutation (shallow copy
+    # shares nested dicts, so the ORM may skip the UPDATE).
     if body.summary_duration_ms is not None or body.drilldown_tree is not None:
-        merged = dict(activity.filters or {})
+        merged = copy.deepcopy(activity.filters or {})
         if body.summary_duration_ms is not None:
             timing = merged.get("timing", {})
             timing["summary_duration_ms"] = body.summary_duration_ms

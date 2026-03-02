@@ -4,6 +4,9 @@ import axios from 'axios';
 import API_BASE_URL from '../../config';
 import { SortableHeader } from '../documents/SortableHeader';
 
+/** Collapse triple+ newlines to double newlines */
+const cleanNewlines = (text: string): string => text.replace(/\n{3,}/g, '\n\n');
+
 interface ActivityRow {
   id: string;
   user_id: string;
@@ -181,7 +184,10 @@ const AdminReferences: React.FC<{ summary: string; results: any[] }> = ({ summar
                   {result.page_num ? ` p.${result.page_num}` : ''}
                 </a>
               ) : (
-                <span className="admin-citation-badge">{num}</span>
+                <>
+                  <span className="admin-citation-badge">{num}</span>
+                  {result.page_num ? <span className="admin-ref-page"> p.{result.page_num}</span> : ''}
+                </>
               )}
             </React.Fragment>
           ))}
@@ -231,7 +237,7 @@ const ResultsSnapshotList: React.FC<{ results: any[] }> = ({ results }) => {
             </div>
             {r.chunk_text && (
               <div className="admin-result-chunk-text">
-                {r.chunk_text}
+                {cleanNewlines(r.chunk_text)}
               </div>
             )}
           </div>
@@ -361,7 +367,7 @@ const AiSummaryBlock: React.FC<{ summary: string; results?: any[] }> = ({ summar
             h3: ({ node, ...props }) => <h5 style={{ marginTop: '0.6rem', marginBottom: '0.3rem' }} {...props} />,
           }}
         >
-          {summary}
+          {cleanNewlines(summary)}
         </ReactMarkdown>
         {results.length > 0 && <AdminReferences summary={summary} results={results} />}
       </div>
