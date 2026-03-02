@@ -7820,6 +7820,49 @@ li.ai-fact-active::before {
   display: none;
 }
 
+/* Heatmap rating bar — bottom-right of heatmap grid */
+.heatmap-rating-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+}
+.heatmap-rating-label {
+  font-size: 0.82rem;
+  color: #666;
+}
+
+/* Heatmap cell-counts table (admin panels) */
+.heatmap-counts-table {
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-top: 4px;
+  min-width: 200px;
+}
+.heatmap-counts-table th,
+.heatmap-counts-table td {
+  border: 1px solid #e2e8f0;
+  padding: 3px 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+.heatmap-counts-table th {
+  background: #f7fafc;
+  font-weight: 600;
+  color: #4a5568;
+}
+.heatmap-counts-table td.heatmap-counts-row-label {
+  text-align: left;
+  font-weight: 500;
+  background: #f7fafc;
+  color: #2d3748;
+}
+.heatmap-counts-table td.zero {
+  color: #cbd5e0;
+}
+
 /* ======================================================================
    User Module — Auth, Profile, Admin
    ====================================================================== */

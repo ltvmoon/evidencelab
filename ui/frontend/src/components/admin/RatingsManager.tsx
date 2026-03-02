@@ -101,7 +101,88 @@ const AutoLink: React.FC<{ value: string; style?: React.CSSProperties }> = ({ va
 const RESULT_CARD_FIELDS = new Set([
   'title', 'doc_id', 'chunk_id', 'page_num', 'chunk_text', 'score',
   'relevance_score', 'link', 'ai_summary', 'results_snapshot', 'summary',
+  'cellCounts',
 ]);
+
+// ---------------------------------------------------------------------------
+// Heatmap cell-counts table
+// ---------------------------------------------------------------------------
+/**
+ * Render a dict of `{ "rowLabel::colLabel": count }` as an HTML table.
+ * Falls back to a flat key-value list when keys don't follow the `::` pattern.
+ */
+const HeatmapCellCountsTable: React.FC<{ counts: Record<string, number> }> = ({ counts }) => {
+  if (!counts || typeof counts !== 'object' || Object.keys(counts).length === 0) return null;
+
+  // Parse row/col from cell keys (format: "RowValue::ColValue")
+  const rowSet = new Set<string>();
+  const colSet = new Set<string>();
+  const parsed: { row: string; col: string; count: number }[] = [];
+  let hasSeparator = false;
+
+  for (const [key, count] of Object.entries(counts)) {
+    const sep = key.indexOf('::');
+    if (sep > -1) {
+      hasSeparator = true;
+      const row = key.slice(0, sep);
+      const col = key.slice(sep + 2);
+      rowSet.add(row);
+      colSet.add(col);
+      parsed.push({ row, col, count: Number(count) });
+    }
+  }
+
+  // If no `::` separator found, render as simple key-value pairs
+  if (!hasSeparator) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <div className="admin-context-label">Cell Counts</div>
+        <div className="admin-filters-block">
+          {Object.entries(counts).map(([key, val]) => (
+            <React.Fragment key={key}>
+              <span className="admin-filter-key">{key}:</span>
+              <span className="admin-filter-value">{String(val)}</span>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const rows = Array.from(rowSet).sort();
+  const cols = Array.from(colSet).sort();
+
+  // Build a lookup map
+  const lookup = new Map<string, number>();
+  for (const p of parsed) lookup.set(p.row + '::' + p.col, p.count);
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="admin-context-label">Cell Counts</div>
+      <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+        <table className="heatmap-counts-table">
+          <thead>
+            <tr>
+              <th></th>
+              {cols.map((c) => <th key={c}>{c}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r}>
+                <td className="heatmap-counts-row-label">{r}</td>
+                {cols.map((c) => {
+                  const v = lookup.get(r + '::' + c) ?? 0;
+                  return <td key={c} className={v === 0 ? 'zero' : ''}>{v}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
 
 /**
  * Build a citation renderer that creates clickable citation badges.
@@ -351,6 +432,8 @@ const RatingContextPanel: React.FC<{ rating: RatingRow }> = ({ rating }) => {
   const aiSummary = ctx.ai_summary || ctx.summary || '';
   const resultsSnapshot = ctx.results_snapshot;
 
+  const cellCounts = ctx.cellCounts;
+
   return (
     <div>
       <ContextFields context={ctx} />
@@ -360,6 +443,9 @@ const RatingContextPanel: React.FC<{ rating: RatingRow }> = ({ rating }) => {
       )}
       {resultsSnapshot && Array.isArray(resultsSnapshot) && (
         <ResultsSnapshotList results={resultsSnapshot} />
+      )}
+      {cellCounts && typeof cellCounts === 'object' && !Array.isArray(cellCounts) && (
+        <HeatmapCellCountsTable counts={cellCounts} />
       )}
     </div>
   );

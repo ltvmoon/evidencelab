@@ -122,7 +122,13 @@ class GroupDatasourceSet(BaseModel):
 # Rating & activity schemas
 # ---------------------------------------------------------------------------
 
-VALID_RATING_TYPES = {"search_result", "ai_summary", "doc_summary", "taxonomy"}
+VALID_RATING_TYPES = {
+    "search_result",
+    "ai_summary",
+    "doc_summary",
+    "taxonomy",
+    "heatmap",
+}
 
 
 class RatingCreate(BaseModel):
