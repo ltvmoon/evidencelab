@@ -57,6 +57,8 @@ Evidence Lab includes an optional user module that adds authentication and data-
 - **User profiles** with display name and group membership
 - **Group-based permissions** — admins can create groups and control which data sources each group can access
 - **Admin panel** — manage users, groups, and data source assignments
+- **User feedback** — rate search results, AI summaries, document summaries, and taxonomy tags with 1–5 stars and optional comments
+- **Activity logging** — automatic logging of search queries and results for authenticated users, with admin views and XLSX export
 
 The module is built on [fastapi-users](https://fastapi-users.github.io/fastapi-users/) for industry-standard authentication patterns and is designed with future MFA support in mind.
 

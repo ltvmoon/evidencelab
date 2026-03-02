@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { Facets, FacetValue, SearchResult, DrilldownNode } from '../../types/api';
 import API_BASE_URL from '../../config';
 import { AiSummaryPanel } from '../AiSummaryPanel';
@@ -6,6 +6,9 @@ import { FiltersPanel } from '../filters/FiltersPanel';
 import { MobileFiltersToggle } from '../MobileFiltersToggle';
 import { SearchResultsList } from '../SearchResultsList';
 import { useCarouselScroll } from '../../hooks/useCarouselScroll';
+import { useRatings } from '../../hooks/useRatings';
+import { useAuth } from '../../hooks/useAuth';
+import RatingModal from '../ratings/RatingModal';
 
 interface SearchTabContentProps {
   filtersExpanded: boolean;
@@ -79,7 +82,7 @@ interface SearchTabContentProps {
   aiSummaryTranslatingLang?: string | null;
   aiSummaryTranslatedLang?: string | null;
   onAiSummaryLanguageChange?: (newLang: string) => void;
-  searchId: number;
+  searchId: string;
   aiDrilldownStackDepth?: number;
   aiDrilldownHighlight?: string;
   onAiDrilldown?: (selectedText: string) => void;
@@ -311,10 +314,66 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   const prevSearchIdRef = useRef(searchId);
   const pendingUrlFilterRegen = useRef(filteredOrgs.length > 0 || filteredDocIds.length > 0);
 
+  // Auth state for ratings
+  const { isAuthenticated } = useAuth();
+
+  // Ratings for search results (keyed by chunk_id)
+  const {
+    ratings: searchResultRatings,
+    submitRating,
+    deleteRating,
+  } = useRatings({
+    ratingType: 'search_result',
+    referenceId: searchId,
+    enabled: isAuthenticated && results.length > 0,
+  });
+
+  // AI summary rating (keyed by '' since no item_id)
+  const {
+    ratings: aiSummaryRatings,
+    submitRating: submitAiRating,
+    deleteRating: deleteAiRating,
+  } = useRatings({
+    ratingType: 'ai_summary',
+    referenceId: searchId,
+    enabled: isAuthenticated && !!aiSummary,
+  });
+
+  const [aiRatingModalOpen, setAiRatingModalOpen] = useState(false);
+  const [aiRatingModalInitialScore, setAiRatingModalInitialScore] = useState(0);
+  const aiRating = aiSummaryRatings.get('');
+
   // Score-filtered results (same threshold used throughout)
   const visibleResults = useMemo(() =>
     results.filter((r) => r.score >= minScore),
     [results, minScore]);
+
+  // Build a compact snapshot of visible results for rating context
+  const buildResultsSnapshot = useCallback(() =>
+    visibleResults.slice(0, 20).map((r) => ({
+      title: r.title,
+      doc_id: r.doc_id,
+      chunk_id: r.chunk_id,
+      page_num: r.page_num || null,
+      score: r.score,
+      chunk_text: (r.text || '').slice(0, 300),
+    })),
+    [visibleResults]
+  );
+
+  // Wrap submitRating so search-result ratings automatically include the
+  // AI summary and results list in context for admin visibility
+  const enrichedSubmitRating = useCallback(
+    async (params: Parameters<typeof submitRating>[0]) => {
+      const enrichedContext = {
+        ...params.context,
+        ai_summary: (aiSummary || '').slice(0, 3000),
+        results_snapshot: buildResultsSnapshot(),
+      };
+      return submitRating({ ...params, context: enrichedContext });
+    },
+    [submitRating, aiSummary, buildResultsSnapshot]
+  );
 
   // Reset carousel filters when a new search is performed.
   // searchId increments in App.tsx each time performSearch is called.
@@ -541,7 +600,37 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             findOutMoreLoading={findOutMoreLoading}
             findOutMoreActiveFact={findOutMoreActiveFact}
             requestShowGraph={requestShowGraph}
+            isAuthenticated={isAuthenticated}
+            ratingScore={aiRating?.score || 0}
+            onRequestRatingModal={(selectedScore) => {
+              setAiRatingModalInitialScore(aiRating?.score || selectedScore);
+              setAiRatingModalOpen(true);
+            }}
           />
+          {aiRatingModalOpen && (
+            <RatingModal
+              isOpen={aiRatingModalOpen}
+              onClose={() => setAiRatingModalOpen(false)}
+              title="Rate this AI summary"
+              initialScore={aiRatingModalInitialScore}
+              initialComment={aiRating?.comment || ''}
+              onSubmit={(score, comment) => {
+                submitAiRating({
+                  ratingType: 'ai_summary',
+                  referenceId: searchId,
+                  score,
+                  comment,
+                  context: {
+                    query,
+                    ai_summary: (aiSummary || '').slice(0, 3000),
+                    results_snapshot: buildResultsSnapshot(),
+                    link: window.location.href,
+                  },
+                });
+              }}
+              onDelete={aiRating?.id ? () => deleteAiRating(aiRating.id) : undefined}
+            />
+          )}
 
           {results.length > 0 && <h3 className="search-results-heading">Search Results</h3>}
           {showFilters && (
@@ -654,6 +743,11 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             onOpenMetadata={onOpenMetadata}
             onLanguageChange={onLanguageChange}
             onRequestHighlight={onRequestHighlight}
+            searchId={searchId}
+            isAuthenticated={isAuthenticated}
+            ratingsMap={searchResultRatings}
+            onSubmitRating={enrichedSubmitRating}
+            onDeleteRating={deleteRating}
           />
         </main>
       </div>

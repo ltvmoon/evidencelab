@@ -4265,9 +4265,7 @@ li.ai-fact-active::before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: var(--spacing-sm);
-  padding-top: var(--spacing-sm);
-  border-top: 1px solid var(--gray-200);
+  padding-top: 0;
 }
 
 .badge {
@@ -8554,4 +8552,133 @@ li.ai-fact-active::before {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+/* Admin download button (consistent with heatmap download) */
+.admin-download-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--gray-700);
+  background: var(--white);
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.admin-download-button:hover:not(:disabled) {
+  border-color: var(--gray-400);
+  background: var(--gray-100);
+}
+
+.admin-download-button:disabled {
+  color: var(--gray-500);
+  border-color: var(--gray-200);
+  background: var(--gray-100);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.admin-download-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: #217346;
+}
+
+.admin-download-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.admin-download-button:disabled .admin-download-icon {
+  color: var(--gray-400);
+}
+
+/* Star Rating Component */
+.star-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.star-rating.read-only {
+  cursor: default;
+}
+
+.star-rating-star {
+  color: #d0d0d0;
+  transition: color 0.15s ease;
+  line-height: 1;
+}
+
+.star-rating-star.filled {
+  color: #d4a017;
+}
+
+.star-rating-star.hovered {
+  color: #e8b92a;
+}
+
+.star-rating:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Rating Modal */
+.rating-modal-stars {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 1rem;
+}
+
+.rating-modal-stars .star-rating-star {
+  font-size: 28px;
+  cursor: pointer;
+}
+
+.rating-modal-comment {
+  width: 100%;
+  min-height: 80px;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.rating-modal-comment:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+}
+
+.rating-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* AI Summary rating inline */
+.ai-summary-rating {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.ai-summary-rating .rating-label {
+  font-size: 0.8rem;
+  color: var(--gray-500);
 }

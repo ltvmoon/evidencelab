@@ -1,19 +1,23 @@
 import React, { useState } from 'react';
 import { USER_MODULE } from '../../config';
 import { useAuth } from '../../hooks/useAuth';
+import ActivityManager from './ActivityManager';
 import GroupManager from './GroupManager';
 import GroupSettingsManager from './GroupSettingsManager';
+import RatingsManager from './RatingsManager';
 import UserManager from './UserManager';
 
 interface AdminPanelProps {
   isActive: boolean;
 }
 
-type AdminTab = 'users' | 'groups' | 'group-settings';
+type AdminTab = 'users' | 'groups' | 'group-settings' | 'ratings' | 'activity';
 
 const TAB_USERS: AdminTab = 'users';
 const TAB_GROUPS: AdminTab = 'groups';
 const TAB_GROUP_SETTINGS: AdminTab = 'group-settings';
+const TAB_RATINGS: AdminTab = 'ratings';
+const TAB_ACTIVITY: AdminTab = 'activity';
 const ACTIVE_CLASS = 'admin-tab-active';
 
 const tabClass = (tab: AdminTab, current: AdminTab) =>
@@ -48,12 +52,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isActive }) => {
           >
             Group Settings
           </button>
+          <button
+            className={tabClass(tab, TAB_RATINGS)}
+            onClick={() => setTab(TAB_RATINGS)}
+          >
+            Ratings
+          </button>
+          <button
+            className={tabClass(tab, TAB_ACTIVITY)}
+            onClick={() => setTab(TAB_ACTIVITY)}
+          >
+            Activity
+          </button>
         </div>
       </div>
       <div className="admin-tab-content">
         {tab === TAB_USERS && <UserManager />}
         {tab === TAB_GROUPS && <GroupManager />}
         {tab === TAB_GROUP_SETTINGS && <GroupSettingsManager />}
+        {tab === TAB_RATINGS && <RatingsManager />}
+        {tab === TAB_ACTIVITY && <ActivityManager />}
       </div>
     </div>
   );

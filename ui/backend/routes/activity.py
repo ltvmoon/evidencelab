@@ -1,0 +1,235 @@
+"""Activity routes — log search activity, append summary; admin list & export."""
+
+import io
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ui.backend.auth.db import get_async_session
+from ui.backend.auth.models import User, UserActivity
+from ui.backend.auth.schemas import ActivityCreate, ActivityRead, ActivitySummaryUpdate
+from ui.backend.auth.users import current_active_user, current_superuser
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _activity_to_read(activity: UserActivity, user: User | None = None) -> ActivityRead:
+    """Convert a UserActivity ORM object to an ActivityRead response."""
+    return ActivityRead(
+        id=activity.id,
+        user_id=activity.user_id,
+        user_email=user.email if user else None,
+        user_display_name=user.display_name if user else None,
+        search_id=activity.search_id,
+        query=activity.query,
+        filters=activity.filters,
+        search_results=activity.search_results,
+        ai_summary=activity.ai_summary,
+        url=activity.url,
+        has_ratings=activity.has_ratings,
+        created_at=activity.created_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# User endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/", response_model=ActivityRead, tags=["activity"])
+async def log_activity(
+    body: ActivityCreate,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Log a search activity event (fire-and-forget from the frontend)."""
+    try:
+        search_uuid = uuid.UUID(body.search_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="search_id must be a valid UUID")
+
+    activity = UserActivity(
+        user_id=user.id,
+        search_id=search_uuid,
+        query=body.query,
+        filters=body.filters,
+        search_results=body.search_results,
+        ai_summary=body.ai_summary,
+        url=body.url,
+    )
+    session.add(activity)
+    await session.commit()
+    await session.refresh(activity)
+    return _activity_to_read(activity, user)
+
+
+@router.patch("/{search_id}/summary", response_model=ActivityRead, tags=["activity"])
+async def update_activity_summary(
+    search_id: uuid.UUID,
+    body: ActivitySummaryUpdate,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Append / replace the AI summary on an existing activity record.
+
+    Called after the AI summary stream finishes so we can capture the
+    full summary text.
+    """
+    result = await session.execute(
+        select(UserActivity).where(
+            UserActivity.user_id == user.id,
+            UserActivity.search_id == search_id,
+        )
+    )
+    activity = result.scalars().first()
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Activity record not found")
+    activity.ai_summary = body.ai_summary
+    await session.commit()
+    await session.refresh(activity)
+    return _activity_to_read(activity, user)
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/all", tags=["activity"])
+async def list_all_activity(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None),
+    sort_by: str = Query("created_at"),
+    order: str = Query("desc"),
+    admin: User = Depends(current_superuser),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """List all user activity with pagination (superuser only)."""
+    base = select(UserActivity, User).outerjoin(User, UserActivity.user_id == User.id)
+
+    if search:
+        pattern = f"%{search}%"
+        base = base.where(User.email.ilike(pattern) | UserActivity.query.ilike(pattern))
+
+    # Count total
+    count_stmt = select(func.count()).select_from(base.subquery())
+    total = (await session.execute(count_stmt)).scalar() or 0
+
+    # Sorting
+    sort_col_map = {
+        "created_at": UserActivity.created_at,
+        "query": UserActivity.query,
+        "user_email": User.email,
+        "has_ratings": UserActivity.has_ratings,
+    }
+    sort_col = sort_col_map.get(sort_by, UserActivity.created_at)
+    if order == "asc":
+        base = base.order_by(sort_col.asc())
+    else:
+        base = base.order_by(sort_col.desc())
+
+    # Pagination
+    offset = (page - 1) * page_size
+    base = base.offset(offset).limit(page_size)
+
+    result = await session.execute(base)
+    rows = result.unique().all()
+    items = [_activity_to_read(activity, user) for activity, user in rows]
+
+    return {
+        "items": [item.model_dump(mode="json") for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/export", tags=["activity"])
+async def export_activity(
+    admin: User = Depends(current_superuser),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Export all activity as XLSX (superuser only)."""
+    import openpyxl
+
+    stmt = (
+        select(UserActivity, User)
+        .outerjoin(User, UserActivity.user_id == User.id)
+        .order_by(UserActivity.created_at.desc())
+    )
+
+    result = await session.execute(stmt)
+    rows = result.unique().all()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Activity"
+    headers = [
+        "Date",
+        "User Email",
+        "User Name",
+        "Query",
+        "# Results",
+        "AI Summary",
+        "URL",
+        "Has Ratings",
+        "Search ID",
+    ]
+    ws.append(headers)
+
+    for activity, user in rows:
+        num_results = 0
+        if activity.search_results and isinstance(activity.search_results, list):
+            num_results = len(activity.search_results)
+        elif activity.search_results and isinstance(activity.search_results, dict):
+            num_results = len(activity.search_results.get("results", []))
+
+        summary_text = activity.ai_summary or ""
+        # Truncate for Excel readability (max 1000 chars)
+        if len(summary_text) > 1000:
+            summary_text = summary_text[:997] + "..."
+
+        ws.append(
+            [
+                (
+                    activity.created_at.strftime("%Y-%m-%d %H:%M")
+                    if activity.created_at
+                    else ""
+                ),
+                user.email if user else "",
+                user.display_name if user else "",
+                activity.query,
+                num_results,
+                summary_text,
+                activity.url or "",
+                "Yes" if activity.has_ratings else "No",
+                str(activity.search_id),
+            ]
+        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = (
+        f"activity_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.xlsx"
+    )
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

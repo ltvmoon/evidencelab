@@ -121,6 +121,11 @@ async def verify_api_key(request: Request, api_key: str = Depends(api_key_header
         "/groups/"
     ):
         return None
+    # Ratings and activity routes use cookie-based JWT auth; exempt from API key.
+    if request.url.path.startswith("/ratings/") or request.url.path.startswith(
+        "/activity/"
+    ):
+        return None
     if not API_KEY:
         # If no API key configured, allow all requests (development mode)
         return None
@@ -722,6 +727,12 @@ if USER_MODULE:
     )
     app.include_router(users_routes.router, prefix="/users", tags=["users"])
     app.include_router(groups_routes.router, prefix="/groups", tags=["groups"])
+
+    from ui.backend.routes import activity as activity_routes
+    from ui.backend.routes import ratings as ratings_routes
+
+    app.include_router(ratings_routes.router, prefix="/ratings", tags=["ratings"])
+    app.include_router(activity_routes.router, prefix="/activity", tags=["activity"])
     logger.info("User module enabled (USER_MODULE=true)")
 
     # Auto-promote first superuser on startup (if configured)

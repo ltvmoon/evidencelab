@@ -36,6 +36,7 @@ import { TabContent } from './components/app/TabContent';
 import { CookieConsent, getGaConsent } from './components/CookieConsent';
 import { AuthContext, useAuthState } from './hooks/useAuth';
 import { useGroupDefaults } from './hooks/useGroupDefaults';
+import { useActivityLogging } from './hooks/useActivityLogging';
 import AdminPanel from './components/admin/AdminPanel';
 import { DEFAULT_SECTION_TYPES, DEFAULT_FIELD_BOOST_FIELDS, buildSearchURL, getSearchStateFromURL } from './utils/searchUrl';
 import { streamAiSummary } from './utils/aiSummaryStream';
@@ -419,6 +420,9 @@ function App() {
   // Auth state (only active when USER_MODULE is enabled)
   const authState = useAuthState();
 
+  // Activity logging (fire-and-forget)
+  const { logSearch, updateSummary: updateActivitySummary } = useActivityLogging();
+
   // Initialize search state from URL parameters
   const initialSearchState = getSearchStateFromURL(
     CORE_FILTER_FIELDS,
@@ -663,7 +667,7 @@ function App() {
   // Initialize search state from URL parameters - MOVED TO TOP
   const [query, setQuery] = useState(initialSearchState.query);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searchId, setSearchId] = useState(0);
+  const [searchId, setSearchId] = useState(() => crypto.randomUUID());
   const [facets, setFacets] = useState<Facets | null>(null);
   const [allFacets, setAllFacets] = useState<Facets | null>(null);
   const [facetsDataSource, setFacetsDataSource] = useState<string | null>(null);
@@ -1782,7 +1786,7 @@ function App() {
     setSearchError(null);
     processingHighlightsRef.current.clear(); // Clear highlight locks
     isSearchingRef.current = true;
-    setSearchId((prev) => prev + 1);
+    setSearchId(crypto.randomUUID());
 
     try {
       const params = buildSearchParams({
@@ -1821,6 +1825,11 @@ function App() {
       // Initialize all headings as collapsed by default
       setCollapsedHeadings(new Set(data.results.map((_, index) => index)));
 
+      // Log search activity (fire-and-forget, only when authenticated)
+      if (USER_MODULE && authState.user) {
+        logSearch(searchId, query, filters, data.results);
+      }
+
       // Reload facets to reflect search result distribution (with query)
       loadFacets({ includeQuery: true, queryValue: query });
 
@@ -1856,6 +1865,9 @@ function App() {
     deduplicateEnabled,
     fieldBoostEnabled,
     fieldBoostFields,
+    logSearch,
+    searchId,
+    authState.user,
   ]);
 
   // Track if we've done initial search to avoid double-searching on load
@@ -1884,6 +1896,24 @@ function App() {
     query,
     searchModel,
   ]);
+
+  // Activity logging: update summary when AI summary stream finishes
+  const prevAiSummaryLoadingRef = useRef(false);
+  useEffect(() => {
+    // Detect transition from loading → done and log the completed summary
+    if (
+      prevAiSummaryLoadingRef.current &&
+      !aiSummaryLoading &&
+      USER_MODULE &&
+      authState.user &&
+      aiSummary &&
+      aiSummary !== AI_SUMMARY_ERROR &&
+      !isDrilldown
+    ) {
+      updateActivitySummary(searchId, aiSummary);
+    }
+    prevAiSummaryLoadingRef.current = aiSummaryLoading;
+  }, [aiSummaryLoading, aiSummary, searchId, isDrilldown, authState.user, updateActivitySummary]);
 
   // Handler for toggling auto min score mode
   const handleAutoMinScoreToggle = useCallback((enabled: boolean) => {
