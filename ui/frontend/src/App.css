@@ -8400,10 +8400,29 @@ li.ai-fact-active::before {
 }
 
 .admin-group-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
   padding: var(--spacing-lg);
   background: var(--white);
   border-radius: var(--radius-lg);
   border: 1px solid var(--gray-200);
+}
+
+.admin-group-settings > p {
+  width: 100%;
+  margin: 0;
+}
+
+.admin-group-settings > .filter-section {
+  flex: 1 1 280px;
+  max-width: 400px;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.admin-group-settings > .admin-inline-form {
+  width: 100%;
 }
 
 .badge {
