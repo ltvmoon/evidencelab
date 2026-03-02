@@ -41,23 +41,16 @@ describe('GroupSettingsManager', () => {
     mockedAxios.get.mockResolvedValue({ data: mockGroups });
   });
 
-  test('renders group dropdown after loading', async () => {
+  test('renders group chips after loading', async () => {
     render(<GroupSettingsManager />);
     await waitFor(() => {
-      expect(screen.getByText('Select a group...')).toBeInTheDocument();
+      expect(screen.getByText('Analysts')).toBeInTheDocument();
     });
-    expect(screen.getByText('Analysts')).toBeInTheDocument();
     expect(screen.getByText('Default (Default)')).toBeInTheDocument();
   });
 
-  test('shows settings panel when group is selected', async () => {
+  test('auto-selects default group and shows settings panel', async () => {
     render(<GroupSettingsManager />);
-    await waitFor(() => {
-      expect(screen.getByText('Select a group...')).toBeInTheDocument();
-    });
-
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'g1' } });
-
     await waitFor(() => {
       expect(screen.getByText('Search Settings')).toBeInTheDocument();
       expect(screen.getByText('Content Settings')).toBeInTheDocument();
@@ -67,10 +60,11 @@ describe('GroupSettingsManager', () => {
   test('loads group search_settings values into controls', async () => {
     render(<GroupSettingsManager />);
     await waitFor(() => {
-      expect(screen.getByText('Select a group...')).toBeInTheDocument();
+      expect(screen.getByText('Analysts')).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'g1' } });
+    // Click the Analysts chip to select it
+    fireEvent.click(screen.getByText('Analysts'));
 
     await waitFor(() => {
       expect(screen.getByText('Search Settings')).toBeInTheDocument();
@@ -87,10 +81,10 @@ describe('GroupSettingsManager', () => {
 
     render(<GroupSettingsManager />);
     await waitFor(() => {
-      expect(screen.getByText('Select a group...')).toBeInTheDocument();
+      expect(screen.getByText('Analysts')).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'g1' } });
+    fireEvent.click(screen.getByText('Analysts'));
 
     await waitFor(() => {
       expect(screen.getByText('Save Settings')).toBeInTheDocument();
@@ -110,10 +104,10 @@ describe('GroupSettingsManager', () => {
 
     render(<GroupSettingsManager />);
     await waitFor(() => {
-      expect(screen.getByText('Select a group...')).toBeInTheDocument();
+      expect(screen.getByText('Analysts')).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'g1' } });
+    fireEvent.click(screen.getByText('Analysts'));
 
     await waitFor(() => {
       expect(screen.getByText('Reset to Defaults')).toBeInTheDocument();
@@ -135,16 +129,10 @@ describe('GroupSettingsManager', () => {
   });
 
   test('changing a setting marks it as overridden in save payload', async () => {
-    // Start with group g2 which has no overrides (search_settings: null)
+    // Default group (g2) is auto-selected and has no overrides (search_settings: null)
     mockedAxios.patch.mockResolvedValue({ data: { ...mockGroups[1] } });
 
     render(<GroupSettingsManager />);
-    await waitFor(() => {
-      expect(screen.getByText('Select a group...')).toBeInTheDocument();
-    });
-
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'g2' } });
-
     await waitFor(() => {
       expect(screen.getByText('Search Settings')).toBeInTheDocument();
     });
