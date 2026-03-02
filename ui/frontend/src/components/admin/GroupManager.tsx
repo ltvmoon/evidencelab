@@ -20,6 +20,10 @@ const GroupManager: React.FC = () => {
   // Add member picker
   const [selectedUserId, setSelectedUserId] = useState('');
 
+  // Edit group fields
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
@@ -71,6 +75,8 @@ const GroupManager: React.FC = () => {
 
   const selectGroup = async (group: UserGroup) => {
     setSelectedGroup(group);
+    setEditName(group.name);
+    setEditDesc(group.description || '');
     setSelectedUserId('');
     try {
       const resp = await axios.get<GroupMember[]>(`${API_BASE_URL}/groups/${group.id}/members`);
@@ -123,7 +129,7 @@ const GroupManager: React.FC = () => {
       setSelectedGroup(resp.data);
       await fetchGroups();
     } catch {
-      setError('Failed to update datasources');
+      setError('Failed to update datasets');
     }
   };
 
@@ -152,6 +158,30 @@ const GroupManager: React.FC = () => {
       setError(err.response?.data?.detail || 'Failed to add member');
     }
   };
+
+  const updateGroup = async () => {
+    if (!selectedGroup) return;
+    const payload: { name?: string; description?: string } = {};
+    const trimmedName = editName.trim();
+    const trimmedDesc = editDesc.trim();
+    if (trimmedName && trimmedName !== selectedGroup.name) payload.name = trimmedName;
+    if (trimmedDesc !== (selectedGroup.description || '')) payload.description = trimmedDesc || '';
+    if (Object.keys(payload).length === 0) return;
+    try {
+      const resp = await axios.patch<UserGroup>(`${API_BASE_URL}/groups/${selectedGroup.id}`, payload);
+      setSelectedGroup(resp.data);
+      setEditName(resp.data.name);
+      setEditDesc(resp.data.description || '');
+      await fetchGroups();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to update group');
+    }
+  };
+
+  const hasGroupChanges = selectedGroup && (
+    editName.trim() !== selectedGroup.name ||
+    editDesc.trim() !== (selectedGroup.description || '')
+  );
 
   // Users not already in the selected group (for the picker dropdown)
   const memberIds = new Set(members.map((m) => m.id));
@@ -193,7 +223,7 @@ const GroupManager: React.FC = () => {
               <tr>
                 <th>Group</th>
                 <th>Members</th>
-                <th>Datasources</th>
+                <th>Datasets</th>
                 <th></th>
               </tr>
             </thead>
@@ -230,9 +260,32 @@ const GroupManager: React.FC = () => {
         {/* Right: selected group detail */}
         {selectedGroup && (
           <div className="admin-group-detail">
-            <h4>Datasource Access</h4>
+            <h4>Name</h4>
+            <div className="admin-inline-form">
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Group name"
+              />
+            </div>
+
+            <h4>Description</h4>
+            <div className="admin-inline-form">
+              <input
+                type="text"
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                placeholder="Group description"
+              />
+              {hasGroupChanges && (
+                <button className="btn-sm" onClick={updateGroup}>Save</button>
+              )}
+            </div>
+
+            <h4>Dataset Access</h4>
             {availableDatasources.length === 0 ? (
-              <p className="text-muted">No datasources configured.</p>
+              <p className="text-muted">No datasets configured.</p>
             ) : (
               <div className="admin-checkbox-list">
                 {availableDatasources.map((ds) => (
