@@ -11,7 +11,6 @@ This processor handles PDF, DOCX, and DOC file parsing with:
 - Automatic conversion of DOC/DOCX to PDF for consistent viewing
 """
 
-import json
 import logging
 import multiprocessing
 import os
@@ -38,7 +37,6 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 from docling_core.types.doc import DoclingDocument, ImageRefMode
 from langdetect import detect_langs
-from pypdf import PdfReader
 
 from pipeline.processors.base import BaseProcessor
 from pipeline.processors.parsing.parser_chunking import (
@@ -981,14 +979,11 @@ class ParseProcessor(BaseProcessor):
     ) -> Tuple[str, int]:
         """Finalize parsing artifacts and return toc/word_count."""
         self._clean_markdown_file(markdown_path)
-        glyph_pages = None
         if Path(filepath).suffix.lower() == ".pdf":
-            glyph_pages = self._fix_glyph_contamination(markdown_path, filepath)
+            self._check_glyph_contamination(markdown_path)
 
         json_path = Path(output_folder) / f"{markdown_path.stem}.json"
         result.document.save_as_json(json_path)
-        if glyph_pages is not None:
-            self._fix_glyph_json(json_path, glyph_pages)
         self._fix_picture_captions(json_path)
 
         table_images = self._save_table_images(result.document, output_folder)
@@ -1044,98 +1039,38 @@ class ParseProcessor(BaseProcessor):
             logger.warning("  ⚠ Failed to clean markdown file: %s", e)
 
     _GLYPH_PATTERN = re.compile(r"/gid\d{5}")
-    _GLYPH_THRESHOLD = 0.30  # 30% glyph content triggers fallback
+    _GLYPH_THRESHOLD = 0.30  # 30% glyph content → parse failure
 
-    def _fix_glyph_contamination(
-        self, markdown_path: Path, pdf_path: str
-    ) -> Optional[Dict[int, str]]:
-        """Detect glyph-ID contamination and rebuild markdown from pypdf if needed.
+    def _check_glyph_contamination(self, markdown_path: Path) -> None:
+        """Detect glyph-ID contamination and raise on failure.
 
-        Returns a dict mapping 1-based page numbers to extracted text when
-        fallback is applied, or None when no fallback was needed.
+        Docling's PDF backend sometimes emits raw /gidXXXXX glyph IDs instead
+        of decoded text (see https://github.com/docling-project/docling/issues/2334).
+        When this exceeds the threshold the parsed output is unusable, so we
+        fail the document with a clear error rather than indexing garbage.
         """
         try:
             with open(markdown_path, "r", encoding="utf-8") as f:
                 content = f.read()
         except OSError:
-            return None
+            return
 
         total = len(content)
         if total < 200:
-            return None
+            return
 
         glyph_chars = len(self._GLYPH_PATTERN.findall(content)) * 9
         ratio = glyph_chars / total
         if ratio < self._GLYPH_THRESHOLD:
-            return None
-
-        logger.warning(
-            "  ⚠ Glyph contamination %.0f%% in %s — rebuilding with pypdf",
-            ratio * 100,
-            markdown_path.name,
-        )
-
-        try:
-            reader = PdfReader(pdf_path)
-            pages_by_number: Dict[int, str] = {}
-            page_texts = []
-            for idx, page in enumerate(reader.pages):
-                text = page.extract_text() or ""
-                if text.strip():
-                    page_texts.append(text)
-                    pages_by_number[idx + 1] = text  # 1-based page numbers
-            if not page_texts:
-                logger.warning("  ⚠ pypdf extracted no text, keeping original")
-                return None
-
-            rebuilt = PAGE_SEPARATOR.join(page_texts)
-            with open(markdown_path, "w", encoding="utf-8") as f:
-                f.write(rebuilt)
-            logger.info(
-                "  ✓ Rebuilt markdown via pypdf fallback (%d pages)", len(page_texts)
-            )
-            return pages_by_number
-        except Exception as exc:
-            logger.warning("  ⚠ pypdf fallback failed: %s", exc)
-            return None
-
-    def _fix_glyph_json(self, json_path: Path, pages_by_number: Dict[int, str]) -> None:
-        """Replace glyph-contaminated text in docling JSON with pypdf text.
-
-        For each page in the JSON, assigns the pypdf text to the first text
-        item on that page and clears subsequent items to avoid duplication.
-        """
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        texts = data.get("texts", [])
-        if not texts:
             return
 
-        # Group text item indices by page number
-        page_items: Dict[int, List[int]] = {}
-        for i, item in enumerate(texts):
-            provs = item.get("prov", [])
-            if not provs:
-                continue
-            page_no = provs[0].get("page_no", 0)
-            page_items.setdefault(page_no, []).append(i)
-
-        replaced = 0
-        for page_no, pypdf_text in pages_by_number.items():
-            indices = page_items.get(page_no, [])
-            if not indices:
-                continue
-            texts[indices[0]]["text"] = pypdf_text
-            replaced += 1
-            for idx in indices[1:]:
-                texts[idx]["text"] = ""
-
-        data["texts"] = texts
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-
-        logger.info("  ✓ Fixed glyph content in JSON (%d pages replaced)", replaced)
+        pct = int(ratio * 100)
+        raise ValueError(
+            f"Glyph contamination detected ({pct}% of parsed text is /gidXXXXX "
+            f"glyph IDs). This is a known docling-parse bug "
+            f"(https://github.com/docling-project/docling/issues/2334). "
+            f"The document cannot be parsed correctly until the bug is fixed upstream."
+        )
 
     def _add_page_numbers_to_breaks(self, markdown_path: Path, document) -> None:
         """Add page numbers to page break placeholders."""
