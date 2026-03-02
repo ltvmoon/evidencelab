@@ -198,20 +198,13 @@ const GroupSettingsManager: React.FC = () => {
         </div>
       )}
 
-      <div style={{ marginBottom: '16px' }}>
+      <div className="admin-group-settings">
         <h4>Group</h4>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        <div className="admin-group-chips">
           {groups.map((g) => (
             <label
               key={g.id}
-              className="rerank-checkbox-label"
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: `1px solid ${selectedGroupId === g.id ? '#0066cc' : '#d1d5db'}`,
-                background: selectedGroupId === g.id ? '#e0f2fe' : '#fff',
-                cursor: 'pointer',
-              }}
+              className={`admin-group-chip${selectedGroupId === g.id ? ' selected' : ''}`}
             >
               <input
                 type="radio"
@@ -221,30 +214,29 @@ const GroupSettingsManager: React.FC = () => {
                 onChange={() => { setSelectedGroupId(g.id); setSuccess(''); }}
                 style={{ display: 'none' }}
               />
-              <span>{g.name}{g.is_default ? ' (Default)' : ''}</span>
+              {g.name}{g.is_default ? ' (Default)' : ''}
             </label>
           ))}
         </div>
-      </div>
 
-      {selectedGroup && (
-        <div className="admin-group-settings">
-          <h4>Settings</h4>
-          <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '16px' }}>
-            Configure default search and content settings for <strong>{selectedGroup.name}</strong> members.
-            Changed settings are saved per-group; users can still override.
-          </p>
+        {selectedGroup && (
+          <>
+            <p className="admin-group-settings-description">
+              Configure default search and content settings for <strong>{selectedGroup.name}</strong> members.
+              Changed settings are saved per-group; users can still override.
+            </p>
 
-          {/* Search Settings — matches SearchSettingsPanel layout */}
-          <div className="filter-section">
-            <div className="filter-section-header" onClick={() => toggleSection('search_settings')}>
-              <span className="filter-section-toggle">
-                {collapsedSections.has('search_settings') ? '▼' : '▶'}
-              </span>
-              <span className="filter-section-title">Search Settings</span>
-            </div>
-            {collapsedSections.has('search_settings') && (
-              <div className="filter-section-content">
+            <div className="admin-group-settings-columns">
+              {/* Search Settings */}
+              <div className="filter-section">
+                <div className="filter-section-header" onClick={() => toggleSection('search_settings')}>
+                  <span className="filter-section-toggle">
+                    {collapsedSections.has('search_settings') ? '▼' : '▶'}
+                  </span>
+                  <span className="filter-section-title">Search Settings</span>
+                </div>
+                {collapsedSections.has('search_settings') && (
+                  <div className="filter-section-content">
                 {/* Search Mode (denseWeight) */}
                 <div className="search-settings-group">
                   <label className="search-settings-label">Search Mode</label>
@@ -472,19 +464,19 @@ const GroupSettingsManager: React.FC = () => {
                   </div>
                 )}
               </div>
-            )}
-          </div>
+                )}
+              </div>
 
-          {/* Content Settings — matches SearchSettingsPanel layout */}
-          <div className="filter-section">
-            <div className="filter-section-header" onClick={() => toggleSection('content_settings')}>
-              <span className="filter-section-toggle">
-                {collapsedSections.has('content_settings') ? '▼' : '▶'}
-              </span>
-              <span className="filter-section-title">Content Settings</span>
-            </div>
-            {collapsedSections.has('content_settings') && (
-              <div className="filter-section-content">
+              {/* Content Settings */}
+              <div className="filter-section">
+                <div className="filter-section-header" onClick={() => toggleSection('content_settings')}>
+                  <span className="filter-section-toggle">
+                    {collapsedSections.has('content_settings') ? '▼' : '▶'}
+                  </span>
+                  <span className="filter-section-title">Content Settings</span>
+                </div>
+                {collapsedSections.has('content_settings') && (
+                  <div className="filter-section-content">
                 {/* Min Chunk Size */}
                 <div
                   className="search-settings-group"
@@ -574,21 +566,23 @@ const GroupSettingsManager: React.FC = () => {
                     </label>
                   ))}
                 </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
 
-          {/* Actions */}
-          <div className="admin-inline-form" style={{ marginTop: '16px', gap: '8px' }}>
-            <button className="btn-sm" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save Settings'}
-            </button>
-            <button className="btn-sm btn-danger" onClick={handleReset} disabled={saving}>
-              Reset to Defaults
-            </button>
-          </div>
-        </div>
-      )}
+            {/* Actions */}
+            <div className="admin-inline-form" style={{ marginTop: '16px', gap: '8px' }}>
+              <button className="btn-sm" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save Settings'}
+              </button>
+              <button className="btn-sm btn-danger" onClick={handleReset} disabled={saving}>
+                Reset to Defaults
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };

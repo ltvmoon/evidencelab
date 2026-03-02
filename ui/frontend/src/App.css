@@ -8336,7 +8336,7 @@ li.ai-fact-active::before {
 
 .admin-group-detail {
   padding: var(--spacing-lg);
-  background: var(--gray-50);
+  background: var(--white);
   border-radius: var(--radius-lg);
   border: 1px solid var(--gray-200);
 }
@@ -8400,29 +8400,64 @@ li.ai-fact-active::before {
 }
 
 .admin-group-settings {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-lg);
   padding: var(--spacing-lg);
   background: var(--white);
   border-radius: var(--radius-lg);
   border: 1px solid var(--gray-200);
 }
 
-.admin-group-settings > p {
-  width: 100%;
-  margin: 0;
+.admin-group-settings-description {
+  font-size: 0.875rem;
+  color: var(--gray-500);
+  margin: 0 0 var(--spacing-lg) 0;
 }
 
-.admin-group-settings > .filter-section {
+.admin-group-settings-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-lg);
+}
+
+.admin-group-settings-columns > .filter-section {
   flex: 1 1 280px;
-  max-width: 400px;
   margin-bottom: 0;
   border-bottom: none;
 }
 
 .admin-group-settings > .admin-inline-form {
-  width: 100%;
+  margin-top: var(--spacing-lg);
+}
+
+.admin-group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: var(--spacing-md);
+}
+
+.admin-group-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--gray-300);
+  background: var(--white);
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--gray-700);
+  transition: all 0.15s ease;
+}
+
+.admin-group-chip:hover {
+  border-color: var(--primary);
+  background: var(--blue-50, #eff6ff);
+}
+
+.admin-group-chip.selected {
+  border-color: var(--primary);
+  background: var(--blue-50, #eff6ff);
+  color: var(--primary);
+  font-weight: 600;
 }
 
 .badge {
