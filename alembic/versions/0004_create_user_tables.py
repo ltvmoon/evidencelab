@@ -86,11 +86,11 @@ def upgrade() -> None:
         """
     )
 
-    # Seed default group with access to all data sources
+    # Seed default group
     op.execute(
         """
         INSERT INTO user_groups (name, description, is_default)
-        VALUES ('Default', 'Default group — access to all data sources', true)
+        VALUES ('Default', 'Default Group', true)
         ON CONFLICT (name) DO NOTHING
         """
     )
