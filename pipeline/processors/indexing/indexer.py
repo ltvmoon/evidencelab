@@ -77,10 +77,6 @@ def year_to_unix(year_str: Optional[str]) -> Optional[int]:
         return None
 
 
-_DEFAULT_MAX_EMBED_TOKENS = 8192
-_CHARS_PER_TOKEN = 2  # conservative for Azure/OpenAI tokenizers
-
-
 class IndexProcessor(BaseProcessor):
     """
     Document indexing processor for Qdrant.
@@ -153,7 +149,7 @@ class IndexProcessor(BaseProcessor):
         self._primary_dense_model = self._select_primary_dense_model()
         self._load_sparse_model()
         self._init_tokenizer_and_chunker()
-        self._max_embed_chars = self._compute_max_embed_chars(targets)
+        self._max_embed_tokens = self._compute_max_embed_tokens(targets)
 
         logger.info("✓ %s Embedding models and chunker loaded", len(self._dense_models))
         super().setup()
@@ -239,8 +235,8 @@ class IndexProcessor(BaseProcessor):
             tokenizer=self._tokenizer, chunker=hybrid_chunker
         )
 
-    def _compute_max_embed_chars(self, targets: List[str]) -> int:
-        """Derive max chunk chars from the smallest embedding model token limit."""
+    def _compute_max_embed_tokens(self, targets: List[str]) -> int:
+        """Derive max embed tokens from the smallest embedding model token limit."""
         limits = []
         for vec_name in targets:
             vec_config = DB_VECTORS.get(vec_name, {})
@@ -252,8 +248,7 @@ class IndexProcessor(BaseProcessor):
                     f"Embedding model '{vec_name}' has no 'max_tokens' in config. "
                     "Add it to supported_embedding_models in config.json."
                 )
-        min_tokens = min(limits)
-        return int(min_tokens * _CHARS_PER_TOKEN)
+        return min(limits)
 
     def _chunk_document(self, json_path: str) -> List[Dict[str, Any]]:
         """
@@ -341,14 +336,22 @@ class IndexProcessor(BaseProcessor):
             logger.warning(
                 "Filtered out %s empty chunks.", len(chunks) - len(valid_chunks)
             )
-        max_chars = getattr(
-            self, "_max_embed_chars", _DEFAULT_MAX_EMBED_TOKENS * _CHARS_PER_TOKEN
-        )
+        max_tokens = getattr(self, "_max_embed_tokens", None)
+        if max_tokens is None:
+            raise ValueError(
+                "Indexer: _max_embed_tokens not set. "
+                "Ensure all embedding models have 'max_tokens' in config.json."
+            )
+        tokenizer = getattr(self, "_tokenizer", None)
         oversized = []
         for i, chunk in enumerate(valid_chunks):
             text = chunk.get("text", "")
-            if len(text) > max_chars:
-                oversized.append(f"Chunk {i}: {len(text)} chars (limit {max_chars})")
+            if tokenizer is not None:
+                n_tokens = len(tokenizer.encode(text, add_special_tokens=False))
+            else:
+                n_tokens = len(text) // 4  # rough fallback
+            if n_tokens > max_tokens:
+                oversized.append(f"Chunk {i}: {n_tokens} tokens (limit {max_tokens})")
         if oversized:
             details = "; ".join(oversized)
             raise ValueError(
