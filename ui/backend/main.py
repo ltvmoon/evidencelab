@@ -526,12 +526,25 @@ if not CORS_ORIGINS or CORS_ORIGINS == [""]:
         "http://127.0.0.1:8000",
     ]
 
+# CORS allowed headers - explicit whitelist instead of "*"
+_CORS_HEADERS_RAW = os.environ.get("CORS_ALLOWED_HEADERS", "")
+CORS_HEADERS = [h.strip() for h in _CORS_HEADERS_RAW.split(",") if h.strip()]
+if not CORS_HEADERS:
+    CORS_HEADERS = [
+        "Content-Type",
+        "Authorization",
+        "X-API-Key",
+        "X-CSRF-Token",
+        "Accept",
+        "Accept-Language",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=CORS_HEADERS,
 )
 
 # Security response headers (always active — defence-in-depth)

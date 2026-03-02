@@ -1,5 +1,6 @@
 """Permission checking logic for data-source access."""
 
+import logging
 import uuid
 from typing import Optional, Set
 
@@ -7,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ui.backend.auth.models import GroupDatasourceAccess, UserGroup, UserGroupMember
+
+logger = logging.getLogger(__name__)
 
 
 async def get_user_datasource_keys(
@@ -73,6 +76,11 @@ async def add_user_to_default_group(
     result = await session.execute(stmt)
     default_group = result.scalars().first()
     if default_group is None:
+        logger.warning(
+            "No default group configured — new user %s will have no "
+            "datasource access. Create a default group in the admin panel.",
+            user_id,
+        )
         return
     membership = UserGroupMember(user_id=user_id, group_id=default_group.id)
     session.add(membership)

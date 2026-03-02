@@ -110,3 +110,77 @@ class TestGroupSchemas:
     def test_group_datasource_set_empty(self):
         body = GroupDatasourceSet(datasource_keys=[])
         assert body.datasource_keys == []
+
+
+class TestDisplayNameValidation:
+    """Tests for display_name field validation on UserCreate and UserUpdate."""
+
+    def test_display_name_max_length_enforced_on_create(self):
+        """display_name longer than 255 chars should be rejected."""
+        long_name = "A" * 256
+        with pytest.raises(ValidationError) as exc:
+            UserCreate(
+                email="test@example.com",
+                password="Secure1Pass",  # pragma: allowlist secret
+                display_name=long_name,
+            )
+        assert "display_name" in str(exc.value)
+
+    def test_display_name_max_length_enforced_on_update(self):
+        """display_name longer than 255 chars should be rejected on update."""
+        long_name = "A" * 256
+        with pytest.raises(ValidationError) as exc:
+            UserUpdate(display_name=long_name)
+        assert "display_name" in str(exc.value)
+
+    def test_display_name_255_chars_accepted(self):
+        """display_name exactly at the 255-char limit should be accepted."""
+        name = "A" * 255
+        user = UserCreate(
+            email="test@example.com",
+            password="Secure1Pass",  # pragma: allowlist secret
+            display_name=name,
+        )
+        assert user.display_name == name
+
+    def test_display_name_whitespace_stripped_on_create(self):
+        """Leading/trailing whitespace should be stripped."""
+        user = UserCreate(
+            email="test@example.com",
+            password="Secure1Pass",  # pragma: allowlist secret
+            display_name="  Alice Baker  ",
+        )
+        assert user.display_name == "Alice Baker"
+
+    def test_display_name_whitespace_stripped_on_update(self):
+        """Leading/trailing whitespace should be stripped on update."""
+        update = UserUpdate(display_name="  Bob  ")
+        assert update.display_name == "Bob"
+
+    def test_display_name_blank_becomes_none_on_create(self):
+        """A whitespace-only display_name should become None."""
+        user = UserCreate(
+            email="test@example.com",
+            password="Secure1Pass",  # pragma: allowlist secret
+            display_name="   ",
+        )
+        assert user.display_name is None
+
+    def test_display_name_blank_becomes_none_on_update(self):
+        """A whitespace-only display_name should become None on update."""
+        update = UserUpdate(display_name="  ")
+        assert update.display_name is None
+
+    def test_display_name_none_stays_none(self):
+        """Explicitly passing None should remain None."""
+        user = UserCreate(
+            email="test@example.com",
+            password="Secure1Pass",  # pragma: allowlist secret
+            display_name=None,
+        )
+        assert user.display_name is None
+
+    def test_display_name_empty_string_becomes_none(self):
+        """Empty string display_name should become None after strip."""
+        update = UserUpdate(display_name="")
+        assert update.display_name is None

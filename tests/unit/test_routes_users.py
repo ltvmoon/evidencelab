@@ -345,7 +345,8 @@ class TestDeleteMyAccount:
 
         assert "deleted" in result["detail"].lower()
         session.commit.assert_called_once()
-        response.delete_cookie.assert_called_once()
+        # Should clear both auth and CSRF cookies
+        assert response.delete_cookie.call_count == 2
 
     @pytest.mark.asyncio
     async def test_clears_auth_cookie(self):
@@ -358,11 +359,36 @@ class TestDeleteMyAccount:
         with patch("ui.backend.routes.users.write_audit_event", new_callable=AsyncMock):
             await delete_my_account(response=response, user=user, session=session)
 
-        response.delete_cookie.assert_called_once_with(
-            "evidencelab_auth",
-            httponly=True,
-            samesite="lax",
-        )
+        # Auth cookie should be cleared
+        auth_calls = [
+            c
+            for c in response.delete_cookie.call_args_list
+            if c[0][0] == "evidencelab_auth"
+        ]
+        assert len(auth_calls) == 1
+        assert auth_calls[0].kwargs["httponly"] is True
+        assert auth_calls[0].kwargs["samesite"] == "lax"
+
+    @pytest.mark.asyncio
+    async def test_clears_csrf_cookie_on_delete(self):
+        """Should clear the evidencelab_csrf cookie on account deletion."""
+        user = _make_user(email="selfdelete@test.com")
+        session = _make_session()
+        session.execute = AsyncMock(return_value=MagicMock())
+        response = MagicMock()
+
+        with patch("ui.backend.routes.users.write_audit_event", new_callable=AsyncMock):
+            await delete_my_account(response=response, user=user, session=session)
+
+        # CSRF cookie should be cleared
+        csrf_calls = [
+            c
+            for c in response.delete_cookie.call_args_list
+            if c[0][0] == "evidencelab_csrf"
+        ]
+        assert len(csrf_calls) == 1
+        assert csrf_calls[0].kwargs["samesite"] == "lax"
+        assert csrf_calls[0].kwargs["path"] == "/"
 
     @pytest.mark.asyncio
     async def test_writes_audit_event_before_delete(self):

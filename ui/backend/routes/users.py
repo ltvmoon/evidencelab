@@ -1,6 +1,7 @@
 """User management routes — profile, user listing (admin)."""
 
 import logging
+import os
 import uuid
 from typing import List
 
@@ -195,11 +196,19 @@ async def delete_my_account(
 
     logger.info("Account deleted: %s (%s)", user_email, user_id)
 
-    # Clear the auth cookie so the browser is logged out
+    # Clear auth and CSRF cookies so the browser is fully logged out
+    _cookie_secure = os.environ.get("AUTH_COOKIE_SECURE", "true").lower() != "false"
     response.delete_cookie(
         "evidencelab_auth",
         httponly=True,
         samesite="lax",
+        secure=_cookie_secure,
+    )
+    response.delete_cookie(
+        "evidencelab_csrf",
+        samesite="lax",
+        secure=_cookie_secure,
+        path="/",
     )
 
     return {"detail": "Account deleted successfully."}

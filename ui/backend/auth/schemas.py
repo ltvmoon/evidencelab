@@ -5,11 +5,20 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi_users import schemas
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # fastapi-users schemas (registration, login, profile)
 # ---------------------------------------------------------------------------
+
+
+def _clean_display_name(v: Optional[str]) -> Optional[str]:
+    """Strip whitespace from display names; treat blank as None."""
+    if v is not None:
+        v = v.strip()
+        if len(v) == 0:
+            return None
+    return v
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -23,13 +32,23 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
 class UserCreate(schemas.BaseUserCreate):
     """Fields accepted when registering a new user."""
 
-    display_name: Optional[str] = None
+    display_name: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: Optional[str]) -> Optional[str]:
+        return _clean_display_name(v)
 
 
 class UserUpdate(schemas.BaseUserUpdate):
     """Fields accepted when updating the current user's profile."""
 
-    display_name: Optional[str] = None
+    display_name: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: Optional[str]) -> Optional[str]:
+        return _clean_display_name(v)
 
 
 # ---------------------------------------------------------------------------

@@ -97,41 +97,57 @@ class TestPasswordValidation:
 
     @pytest.mark.asyncio
     async def test_rejects_disallowed_email_domain(self):
-        """When ALLOWED_EMAIL_DOMAINS is set, reject non-matching domains."""
+        """When ALLOWED_EMAIL_DOMAINS is set, reject non-matching domains on registration."""
+        from fastapi_users.schemas import BaseUserCreate
+
         manager = _make_manager()
-        user = _make_user(email="user@evil.com")
+        # Use a schema object (registration path) — not an ORM model
+        schema_user = BaseUserCreate(
+            email="user@evil.com",
+            password="Secure1Pass",  # pragma: allowlist secret
+        )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset({"example.com", "corp.org"}),
         ):
             with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
                 pw = "Secure1Pass"  # pragma: allowlist secret
-                await manager.validate_password(pw, user)
+                await manager.validate_password(pw, schema_user)
             assert "restricted" in str(exc.value.reason).lower()
 
     @pytest.mark.asyncio
     async def test_allows_matching_email_domain(self):
         """When ALLOWED_EMAIL_DOMAINS is set, matching domains are accepted."""
+        from fastapi_users.schemas import BaseUserCreate
+
         manager = _make_manager()
-        user = _make_user(email="user@corp.org")
+        schema_user = BaseUserCreate(
+            email="user@corp.org",
+            password="Secure1Pass",  # pragma: allowlist secret
+        )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset({"example.com", "corp.org"}),
         ):
             pw = "Secure1Pass"  # pragma: allowlist secret
-            await manager.validate_password(pw, user)
+            await manager.validate_password(pw, schema_user)
 
     @pytest.mark.asyncio
     async def test_no_domain_restriction_when_empty(self):
         """When ALLOWED_EMAIL_DOMAINS is empty, any domain is accepted."""
+        from fastapi_users.schemas import BaseUserCreate
+
         manager = _make_manager()
-        user = _make_user(email="user@anydomain.io")
+        schema_user = BaseUserCreate(
+            email="user@anydomain.io",
+            password="Secure1Pass",  # pragma: allowlist secret
+        )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset(),
         ):
             pw = "Secure1Pass"  # pragma: allowlist secret
-            await manager.validate_password(pw, user)
+            await manager.validate_password(pw, schema_user)
 
     @pytest.mark.asyncio
     async def test_minimum_length_is_configurable(self):
@@ -385,3 +401,229 @@ class TestAuthSecretValidation:
 
             importlib.reload(mod)
             assert mod.AUTH_SECRET == good_secret
+
+
+# ---------------------------------------------------------------------------
+# Password reset lockout-clear tests
+# ---------------------------------------------------------------------------
+
+
+class TestPasswordResetClearsLockout:
+    """Tests that on_after_reset_password resets lockout counters."""
+
+    @pytest.mark.asyncio
+    async def test_reset_password_clears_lockout(self):
+        """After password reset, failed_login_attempts and locked_until are cleared."""
+        manager = _make_manager()
+        user = _make_user(
+            failed_login_attempts=LOCKOUT_THRESHOLD,
+            locked_until=datetime.now(timezone.utc) + timedelta(minutes=10),
+        )
+
+        mock_session = AsyncMock()
+        mock_request = MagicMock()
+        mock_request.client.host = "192.168.1.1"
+
+        with (
+            patch(
+                "ui.backend.auth.users.get_async_session",
+            ) as mock_get_session,
+            patch(
+                "ui.backend.auth.users.write_audit_event",
+                new_callable=AsyncMock,
+            ) as mock_audit,
+        ):
+            # Make get_async_session yield a mock session
+            async def _session_gen():
+                yield mock_session
+
+            mock_get_session.return_value = _session_gen()
+
+            await manager.on_after_reset_password(user, mock_request)
+
+            # Session should have executed a statement and committed
+            mock_session.execute.assert_called_once()
+            mock_session.commit.assert_called_once()
+
+            # Audit event should be written
+            mock_audit.assert_called_once()
+            assert mock_audit.call_args[0][0] == "password_reset_success"
+            assert mock_audit.call_args[1]["user_id"] == user.id
+
+    @pytest.mark.asyncio
+    async def test_reset_password_logs_ip(self):
+        """Password reset audit event should include the client IP."""
+        manager = _make_manager()
+        user = _make_user()
+
+        mock_session = AsyncMock()
+        mock_request = MagicMock()
+        mock_request.client.host = "10.0.0.1"
+
+        with (
+            patch(
+                "ui.backend.auth.users.get_async_session",
+            ) as mock_get_session,
+            patch(
+                "ui.backend.auth.users.write_audit_event",
+                new_callable=AsyncMock,
+            ) as mock_audit,
+        ):
+
+            async def _session_gen():
+                yield mock_session
+
+            mock_get_session.return_value = _session_gen()
+
+            await manager.on_after_reset_password(user, mock_request)
+
+            assert mock_audit.call_args[1]["ip_address"] == "10.0.0.1"
+
+    @pytest.mark.asyncio
+    async def test_reset_password_handles_no_request(self):
+        """Password reset should handle missing request gracefully."""
+        manager = _make_manager()
+        user = _make_user()
+
+        mock_session = AsyncMock()
+
+        with (
+            patch(
+                "ui.backend.auth.users.get_async_session",
+            ) as mock_get_session,
+            patch(
+                "ui.backend.auth.users.write_audit_event",
+                new_callable=AsyncMock,
+            ) as mock_audit,
+        ):
+
+            async def _session_gen():
+                yield mock_session
+
+            mock_get_session.return_value = _session_gen()
+
+            await manager.on_after_reset_password(user, None)
+
+            assert mock_audit.call_args[1]["ip_address"] == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Domain check: registration-only (not password change)
+# ---------------------------------------------------------------------------
+
+
+class TestDomainCheckRegistrationOnly:
+    """Domain whitelist should only be enforced during registration."""
+
+    @pytest.mark.asyncio
+    async def test_domain_check_enforced_on_schema(self):
+        """Domain check runs when user is a BaseUserCreate schema (registration)."""
+        from fastapi_users.schemas import BaseUserCreate
+
+        manager = _make_manager()
+        schema_user = BaseUserCreate(
+            email="user@evil.com",
+            password="Secure1Pass",  # pragma: allowlist secret
+        )
+        with patch(
+            "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
+            frozenset({"example.com"}),
+        ):
+            with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
+                pw = "Secure1Pass"  # pragma: allowlist secret
+                await manager.validate_password(pw, schema_user)
+            assert "restricted" in str(exc.value.reason).lower()
+
+    @pytest.mark.asyncio
+    async def test_domain_check_skipped_on_orm_model(self):
+        """Domain check should NOT run when user is an ORM model (password change)."""
+        manager = _make_manager()
+        # ORM model (MagicMock) is not isinstance of BaseUserCreate
+        orm_user = _make_user(email="user@evil.com")
+        with patch(
+            "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
+            frozenset({"example.com"}),
+        ):
+            # Should NOT raise — domain check skipped for ORM model
+            pw = "Secure1Pass"  # pragma: allowlist secret
+            await manager.validate_password(pw, orm_user)
+
+
+# ---------------------------------------------------------------------------
+# Token lifetime configuration tests
+# ---------------------------------------------------------------------------
+
+
+class TestTokenLifetimeConfiguration:
+    """Tests for configurable token lifetimes."""
+
+    def test_reset_token_lifetime_configurable(self):
+        """AUTH_RESET_TOKEN_LIFETIME should control reset token lifetime."""
+        env = {
+            "AUTH_RESET_TOKEN_LIFETIME": "3600",
+            "AUTH_SECRET_KEY": "a" * 64,  # pragma: allowlist secret
+        }
+        with patch.dict("os.environ", env, clear=False):
+            import importlib
+
+            import ui.backend.auth.users as mod
+
+            importlib.reload(mod)
+            assert mod.RESET_PASSWORD_TOKEN_LIFETIME == 3600
+
+    def test_verify_token_lifetime_configurable(self):
+        """AUTH_VERIFY_TOKEN_LIFETIME should control verify token lifetime."""
+        env = {
+            "AUTH_VERIFY_TOKEN_LIFETIME": "172800",
+            "AUTH_SECRET_KEY": "a" * 64,  # pragma: allowlist secret
+        }
+        with patch.dict("os.environ", env, clear=False):
+            import importlib
+
+            import ui.backend.auth.users as mod
+
+            importlib.reload(mod)
+            assert mod.VERIFY_TOKEN_LIFETIME == 172800
+
+    def test_reset_token_default_24_hours(self):
+        """Default reset token lifetime should be 86400 seconds (24 hours)."""
+        env = {"AUTH_SECRET_KEY": "a" * 64}  # pragma: allowlist secret
+        with patch.dict("os.environ", env, clear=False):
+            import os
+
+            os.environ.pop("AUTH_RESET_TOKEN_LIFETIME", None)
+            import importlib
+
+            import ui.backend.auth.users as mod
+
+            importlib.reload(mod)
+            assert mod.RESET_PASSWORD_TOKEN_LIFETIME == 86400
+
+    def test_verify_token_default_7_days(self):
+        """Default verify token lifetime should be 604800 seconds (7 days)."""
+        env = {"AUTH_SECRET_KEY": "a" * 64}  # pragma: allowlist secret
+        with patch.dict("os.environ", env, clear=False):
+            import os
+
+            os.environ.pop("AUTH_VERIFY_TOKEN_LIFETIME", None)
+            import importlib
+
+            import ui.backend.auth.users as mod
+
+            importlib.reload(mod)
+            assert mod.VERIFY_TOKEN_LIFETIME == 604800
+
+    def test_user_manager_uses_configured_lifetimes(self):
+        """UserManager class should use the configured token lifetimes."""
+        manager = _make_manager()
+        # These should be set from the module-level constants
+        from ui.backend.auth.users import (
+            RESET_PASSWORD_TOKEN_LIFETIME,
+            VERIFY_TOKEN_LIFETIME,
+        )
+
+        assert (
+            manager.reset_password_token_lifetime_seconds
+            == RESET_PASSWORD_TOKEN_LIFETIME
+        )
+        assert manager.verification_token_lifetime_seconds == VERIFY_TOKEN_LIFETIME

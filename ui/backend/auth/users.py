@@ -10,6 +10,7 @@ from typing import AsyncGenerator, Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
 from fastapi_users import exceptions as fu_exceptions
+from fastapi_users import schemas as fu_schemas
 from fastapi_users.authentication import (
     AuthenticationBackend,
     BearerTransport,
@@ -17,6 +18,7 @@ from fastapi_users.authentication import (
     JWTStrategy,
 )
 from fastapi_users.db import SQLAlchemyUserDatabase
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ui.backend.auth.audit import write_audit_event
@@ -72,6 +74,15 @@ MIN_PASSWORD_LENGTH = int(os.environ.get("AUTH_MIN_PASSWORD_LENGTH", "8"))
 LOCKOUT_THRESHOLD = int(os.environ.get("AUTH_LOCKOUT_THRESHOLD", "5"))
 LOCKOUT_DURATION_MINUTES = int(os.environ.get("AUTH_LOCKOUT_DURATION_MINUTES", "15"))
 
+# Token lifetimes for password reset and email verification.
+# These are independent of the JWT access token lifetime (1 hour).
+RESET_PASSWORD_TOKEN_LIFETIME = int(
+    os.environ.get("AUTH_RESET_TOKEN_LIFETIME", "86400")  # 24 hours
+)
+VERIFY_TOKEN_LIFETIME = int(
+    os.environ.get("AUTH_VERIFY_TOKEN_LIFETIME", "604800")  # 7 days
+)
+
 
 # ---------------------------------------------------------------------------
 # User database adapter
@@ -94,7 +105,9 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     """Custom user manager with email verification and password reset."""
 
     reset_password_token_secret = AUTH_SECRET
+    reset_password_token_lifetime_seconds = RESET_PASSWORD_TOKEN_LIFETIME
     verification_token_secret = AUTH_SECRET
+    verification_token_lifetime_seconds = VERIFY_TOKEN_LIFETIME
 
     # ------------------------------------------------------------------
     # Account lockout — override authenticate to track failures
@@ -220,8 +233,10 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 reason="Password must contain at least one letter."
             )
 
-        # Domain whitelist check (only on creation, not update)
-        if ALLOWED_EMAIL_DOMAINS and hasattr(user, "email"):
+        # Domain whitelist — only on registration (not password change).
+        # fastapi-users passes a schema object during creation and an ORM
+        # model during update; we check for the schema type.
+        if ALLOWED_EMAIL_DOMAINS and isinstance(user, fu_schemas.BaseUserCreate):
             domain = user.email.rsplit("@", 1)[-1].lower()
             if domain not in ALLOWED_EMAIL_DOMAINS:
                 raise fu_exceptions.InvalidPasswordException(
@@ -270,6 +285,26 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             to=user.email,
             subject="Reset your Evidence Lab password",
             body_html=password_reset_email_html(reset_url),
+        )
+
+    async def on_after_reset_password(
+        self, user: User, request: Optional[Request] = None
+    ) -> None:
+        """Reset lockout counters after a successful password reset."""
+        async for session in get_async_session():
+            stmt = (
+                update(User)
+                .where(User.id == user.id)
+                .values(failed_login_attempts=0, locked_until=None)
+            )
+            await session.execute(stmt)
+            await session.commit()
+        ip = request.client.host if request and request.client else "unknown"
+        await write_audit_event(
+            "password_reset_success",
+            user_id=user.id,
+            user_email=user.email,
+            ip_address=ip,
         )
 
 
