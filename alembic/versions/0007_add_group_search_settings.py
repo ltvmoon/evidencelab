@@ -1,7 +1,7 @@
 """Add search_settings JSONB column to user_groups.
 
 Revision ID: 0007_add_group_search_settings
-Revises: 0006_fix_default_group_description
+Revises: 0006_fix_default_grp_desc
 Create Date: 2026-03-01 20:00:00
 """
 
@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from alembic import op  # type: ignore[attr-defined]
 
 revision = "0007_add_group_search_settings"
-down_revision = "0006_fix_default_group_description"
+down_revision = "0006_fix_default_grp_desc"
 branch_labels = None
 depends_on = None
 

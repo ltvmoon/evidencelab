@@ -1,13 +1,13 @@
 """Fix default group description.
 
-Revision ID: 0006_fix_default_group_description
+Revision ID: 0006_fix_default_grp_desc
 Revises: 0005_add_lockout_and_audit
 Create Date: 2026-03-01 18:00:00
 """
 
 from alembic import op  # type: ignore[attr-defined]
 
-revision = "0006_fix_default_group_description"
+revision = "0006_fix_default_grp_desc"
 down_revision = "0005_add_lockout_and_audit"
 branch_labels = None
 depends_on = None
