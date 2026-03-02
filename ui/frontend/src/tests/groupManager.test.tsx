@@ -113,7 +113,7 @@ describe('GroupManager', () => {
     render(<GroupManager />);
     await waitFor(() => {
       // Default group should be auto-selected, showing the detail panel
-      expect(screen.getByText('Datasource Access')).toBeInTheDocument();
+      expect(screen.getByText('Dataset Access')).toBeInTheDocument();
     });
   });
 
@@ -127,10 +127,10 @@ describe('GroupManager', () => {
     expect(deleteButtons).toHaveLength(1);
   });
 
-  test('shows datasource checkboxes for selected group', async () => {
+  test('shows dataset checkboxes for selected group', async () => {
     render(<GroupManager />);
     await waitFor(() => {
-      expect(screen.getByText('Datasource Access')).toBeInTheDocument();
+      expect(screen.getByText('Dataset Access')).toBeInTheDocument();
     });
     // All three datasources should be shown as checkboxes
     expect(screen.getByText('UNEG')).toBeInTheDocument();

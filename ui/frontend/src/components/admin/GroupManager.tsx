@@ -129,7 +129,7 @@ const GroupManager: React.FC = () => {
       setSelectedGroup(resp.data);
       await fetchGroups();
     } catch {
-      setError('Failed to update datasources');
+      setError('Failed to update datasets');
     }
   };
 
@@ -223,7 +223,7 @@ const GroupManager: React.FC = () => {
               <tr>
                 <th>Group</th>
                 <th>Members</th>
-                <th>Datasources</th>
+                <th>Datasets</th>
                 <th></th>
               </tr>
             </thead>
@@ -260,37 +260,32 @@ const GroupManager: React.FC = () => {
         {/* Right: selected group detail */}
         {selectedGroup && (
           <div className="admin-group-detail">
-            <div className="admin-inline-form" style={{ marginBottom: '1rem' }}>
-              <label>
-                Name
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  placeholder="Group name"
-                />
-              </label>
-              <label>
-                Description
-                <input
-                  type="text"
-                  value={editDesc}
-                  onChange={(e) => setEditDesc(e.target.value)}
-                  placeholder="Group description"
-                />
-              </label>
-              <button
-                className="btn-sm"
-                onClick={updateGroup}
-                disabled={!hasGroupChanges}
-              >
-                Save
-              </button>
+            <h4>Name</h4>
+            <div className="admin-inline-form">
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Group name"
+              />
             </div>
 
-            <h4>Datasource Access</h4>
+            <h4>Description</h4>
+            <div className="admin-inline-form">
+              <input
+                type="text"
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                placeholder="Group description"
+              />
+              {hasGroupChanges && (
+                <button className="btn-sm" onClick={updateGroup}>Save</button>
+              )}
+            </div>
+
+            <h4>Dataset Access</h4>
             {availableDatasources.length === 0 ? (
-              <p className="text-muted">No datasources configured.</p>
+              <p className="text-muted">No datasets configured.</p>
             ) : (
               <div className="admin-checkbox-list">
                 {availableDatasources.map((ds) => (
