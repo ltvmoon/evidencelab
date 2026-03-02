@@ -15,28 +15,18 @@ async def get_user_datasource_keys(
 ) -> Set[str]:
     """Return the set of datasource keys the user is allowed to access.
 
-    A user inherits access from all groups they belong to.  Members of the
-    default group (``is_default=True``) get access to *all* datasources,
-    which is signalled by returning an empty set.
+    A user inherits access from every group they belong to (including the
+    default group).  Each group has explicit datasource grants; there is no
+    implicit "all access" shortcut.
 
     Args:
         session: Async database session.
         user_id: The user whose permissions to resolve.
 
     Returns:
-        A set of datasource key strings, or an empty set meaning "all".
+        A set of datasource key strings.  An empty set means the user has
+        no datasource access.
     """
-    # Check if user belongs to the default (all-access) group
-    default_check = (
-        select(UserGroup.id)
-        .join(UserGroupMember, UserGroupMember.group_id == UserGroup.id)
-        .where(UserGroupMember.user_id == user_id, UserGroup.is_default.is_(True))
-    )
-    result = await session.execute(default_check)
-    if result.scalars().first() is not None:
-        return set()  # empty = all access
-
-    # Collect explicit datasource grants from all groups
     stmt = (
         select(GroupDatasourceAccess.datasource_key)
         .join(
@@ -57,13 +47,14 @@ def filter_datasources(
 
     Args:
         datasources: Full datasources config dict (key → config).
-        allowed_keys: Keys the user may access.  ``None`` or empty set
-            means no filtering (user has access to all).
+        allowed_keys: Keys the user may access.  ``None`` means no
+            filtering (anonymous / user module disabled).  An empty
+            set means no access.
 
     Returns:
         Filtered datasources dict.
     """
-    if allowed_keys is None or len(allowed_keys) == 0:
+    if allowed_keys is None:
         return datasources
     return {k: v for k, v in datasources.items() if k in allowed_keys}
 

@@ -58,6 +58,17 @@ const GroupManager: React.FC = () => {
     fetchDatasources();
   }, [fetchGroups, fetchAllUsers, fetchDatasources]);
 
+  // Auto-select the default group on first load
+  useEffect(() => {
+    if (groups.length > 0 && selectedGroup === null) {
+      const defaultGroup = groups.find((g) => g.is_default);
+      if (defaultGroup) {
+        selectGroup(defaultGroup);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
+
   const selectGroup = async (group: UserGroup) => {
     setSelectedGroup(group);
     setSelectedUserId('');
@@ -199,7 +210,7 @@ const GroupManager: React.FC = () => {
                     {g.is_default && <span className="badge badge-default">Default</span>}
                   </td>
                   <td>{g.member_count}</td>
-                  <td>{g.datasource_keys.length || 'All'}</td>
+                  <td>{g.datasource_keys.length}</td>
                   <td>
                     {!g.is_default && (
                       <button
@@ -220,9 +231,7 @@ const GroupManager: React.FC = () => {
         {selectedGroup && (
           <div className="admin-group-detail">
             <h4>Datasource Access</h4>
-            {selectedGroup.is_default ? (
-              <p className="text-muted">Default group has access to all datasources.</p>
-            ) : availableDatasources.length === 0 ? (
+            {availableDatasources.length === 0 ? (
               <p className="text-muted">No datasources configured.</p>
             ) : (
               <div className="admin-checkbox-list">

@@ -11,10 +11,10 @@ class TestFilterDatasources:
         result = filter_datasources(ds, None)
         assert result == ds
 
-    def test_no_filtering_when_allowed_is_empty_set(self):
+    def test_empty_set_means_no_access(self):
         ds = {"A": {"data_subdir": "a"}, "B": {"data_subdir": "b"}}
         result = filter_datasources(ds, set())
-        assert result == ds
+        assert result == {}
 
     def test_filters_to_allowed_keys(self):
         ds = {
