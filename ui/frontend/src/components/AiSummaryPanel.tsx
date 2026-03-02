@@ -474,7 +474,7 @@ export const AiSummaryPanel = ({
           onLanguageChange={onLanguageChange}
           onToggleCollapsed={onToggleCollapsed}
         />
-        {!aiSummaryCollapsed && aiSummary && !aiSummaryLoading && (
+        {!aiSummaryCollapsed && aiSummary && !aiSummaryLoading && !showGraphView && (
           <p className="ai-summary-hint">Highlight text below to find out more.</p>
         )}
         {!aiSummaryCollapsed && onDrilldownBack && (
