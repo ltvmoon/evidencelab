@@ -187,6 +187,9 @@
         "published_year": "Year Published",
         "document_type": "Document Type",
         "country": "Country",
+        "src_geographic_scope": "Geographic Scope",
+        "tag_sdg": "United Nations Sustainable Development Goals",
+        "tag_cross_cutting_theme": "Cross-cutting Themes",
         "language": "Language"
       },
       "pipeline": {

@@ -398,14 +398,14 @@ const getTabFromPath = (): TabName => {
   return VALID_TABS.includes(path as TabName) ? (path as TabName) : 'search';
 };
 
-// Core field names used in URL and API (order matters for display)
-const CORE_FILTER_FIELDS = ['organization', 'title', 'published_year', 'document_type', 'country', 'language'];
+// Default filter fields (fallback for URL parsing before facets load)
+const DEFAULT_FILTER_FIELDS = ['organization', 'title', 'published_year', 'document_type', 'country', 'language'];
 const DEFAULT_PUBLISHED_YEARS = ['2020', '2021', '2022', '2023', '2024', '2025'];
 
 function App() {
   // Initialize search state from URL parameters
   const initialSearchState = getSearchStateFromURL(
-    CORE_FILTER_FIELDS,
+    DEFAULT_FILTER_FIELDS,
     DEFAULT_SECTION_TYPES
   );
   const initialQueryFromUrlRef = useRef(Boolean(initialSearchState.query.trim()));
@@ -791,7 +791,7 @@ function App() {
       setActiveTab(getTabFromPath());
       // Also restore search state from URL
       const searchState = getSearchStateFromURL(
-        CORE_FILTER_FIELDS,
+        DEFAULT_FILTER_FIELDS,
         DEFAULT_SECTION_TYPES
       );
       setQuery(searchState.query);
@@ -822,7 +822,7 @@ function App() {
     // Also check URL on mount and when availableDomains changes (for direct navigation)
     const checkURLForDataset = () => {
       const searchState = getSearchStateFromURL(
-        CORE_FILTER_FIELDS,
+        DEFAULT_FILTER_FIELDS,
         DEFAULT_SECTION_TYPES
       );
       if (searchState.dataset && availableDomains.includes(searchState.dataset) && selectedDomain !== searchState.dataset) {
@@ -852,18 +852,39 @@ function App() {
     setHeatmapFiltersExpanded((prev) => !prev);
   }, []);
 
-  const buildEmptySelectedFilters = () => {
+  const buildEmptySelectedFilters = useCallback(() => {
     const cleared: Record<string, string[]> = {};
-    for (const field of CORE_FILTER_FIELDS) {
+    const fields = facets?.filter_fields
+      ? Object.keys(facets.filter_fields)
+      : DEFAULT_FILTER_FIELDS;
+    for (const field of fields) {
       cleared[field] = [];
     }
     return cleared;
-  };
+  }, [facets]);
 
   const defaultYearFiltersAppliedRef = useRef(false);
 
   // Multi-select filters (dynamic by core field name) - initialize from URL
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>(initialSearchState.selectedFilters);
+
+  // Sync selectedFilters when facets load with new config-driven fields
+  useEffect(() => {
+    if (!facets?.filter_fields) return;
+    const configFields = Object.keys(facets.filter_fields);
+    setSelectedFilters((prev) => {
+      const hasNewFields = configFields.some((f) => !(f in prev));
+      if (!hasNewFields) return prev;
+      const next = { ...prev };
+      for (const field of configFields) {
+        if (!(field in next)) {
+          next[field] = [];
+        }
+      }
+      return next;
+    });
+  }, [facets]);
+
   const [heatmapFilters, setHeatmapFilters] = useState<SearchFilters>({});
   const [heatmapSelectedFilters, setHeatmapSelectedFilters] = useState<Record<string, string[]>>(
     buildEmptySelectedFilters()

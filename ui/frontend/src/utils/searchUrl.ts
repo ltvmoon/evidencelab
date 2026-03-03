@@ -100,6 +100,14 @@ const parseFilters = (
     }
   }
 
+  // Pick up config-driven filter params (src_*, tag_*) from URL
+  for (const [key, value] of params.entries()) {
+    if ((key.startsWith('src_') || key.startsWith('tag_')) && value && !filters[key]) {
+      filters[key] = value;
+      selectedFilters[key] = parseFilterParam(params, key);
+    }
+  }
+
   return { filters, selectedFilters };
 };
 

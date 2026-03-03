@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from qdrant_client.http import models as qmodels
 
-from pipeline.db import get_field_mapping, get_filter_fields, get_taxonomy_filter_fields
+from pipeline.db import get_field_mapping, get_filter_fields
 from pipeline.utilities.text_cleaning import clean_text
 from ui.backend.routes.highlight import infer_paragraphs_from_bboxes
 from ui.backend.schemas import Facets, FacetValue, SearchResponse, SearchResult
@@ -551,10 +551,23 @@ def _parse_boost_fields(raw: Optional[str]) -> Dict[str, float]:
     return config
 
 
-def _add_taxonomy_filters(core_filters: Dict, query_params) -> None:
-    """Pick up tag_* query params (taxonomy filters) dynamically."""
+def _add_dynamic_filters(
+    core_filters: Dict,
+    query_params,
+    data_source: Optional[str] = None,
+) -> None:
+    """Pick up config-driven filter params (src_*, tag_*, etc.) dynamically."""
+    filter_fields = get_filter_fields(data_source or "uneg")
+    hardcoded = {
+        "organization",
+        "title",
+        "published_year",
+        "document_type",
+        "country",
+        "language",
+    }
     for name, value in query_params.items():
-        if name.startswith("tag_") and value:
+        if value and name in filter_fields and name not in hardcoded:
             core_filters[name] = value
 
 
@@ -730,7 +743,7 @@ async def search(
             country,
             language,
         )
-        _add_taxonomy_filters(core_filters, request.query_params)
+        _add_dynamic_filters(core_filters, request.query_params, source)
         # Language is doc-level only; convert to doc_id filter for chunk search
         _convert_language_to_doc_ids(core_filters, pg)
 
@@ -932,9 +945,7 @@ async def docsearch(
         core_filters = _build_core_filters(
             organization, title, published_year, document_type, country, language
         )
-        for param_name, param_value in request.query_params.items():
-            if param_name.startswith("tag_") and param_value:
-                core_filters[param_name] = param_value
+        _add_dynamic_filters(core_filters, request.query_params, source)
 
         combined_filter = _build_docsearch_filters(q, core_filters, indexed_doc_ids, db)
 
@@ -1030,8 +1041,6 @@ async def get_facets(
         db = get_db_for_source(source)
         pg = get_pg_for_source(source)
         filter_fields_config = get_filter_fields(source)
-        taxonomy_fields = get_taxonomy_filter_fields(source)
-        filter_fields_config = {**filter_fields_config, **taxonomy_fields}
 
         core_filters = _build_core_filters_from_params(
             organization,
@@ -1041,6 +1050,7 @@ async def get_facets(
             country,
             language,
         )
+        _add_dynamic_filters(core_filters, request.query_params, source)
         title_filter = core_filters.get("title")
         if title_filter and q:
             title_doc_ids = pg.fetch_doc_ids_by_title(title_filter)
