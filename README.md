@@ -65,6 +65,8 @@ Evidence Lab document processing pipeline includes the following features:
 - Account lockout, rate limiting, and audit logging for security
 - Group-based data-source access control — restrict which datasets users can see
 - Admin panel for managing users, groups, and permissions
+- User feedback — rate search results, AI summaries, documents, and taxonomy with 1–5 stars
+- Activity logging — automatic search activity capture with admin views and XLSX export
 - Self-service profile management and account deletion
 - Built on [fastapi-users](https://fastapi-users.github.io/fastapi-users/) with future MFA support in mind
 - Enabled via `USER_MODULE=true` in `.env` (disabled by default)

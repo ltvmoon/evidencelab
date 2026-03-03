@@ -7,6 +7,7 @@ import { AiSummaryReferences } from './AiSummaryReferences';
 import { DigDeeperPopover } from './DigDeeperPopover';
 import { DrilldownBreadcrumb } from './DrilldownBreadcrumb';
 import { DrilldownGraphView } from './DrilldownGraphView';
+import StarRating from './ratings/StarRating';
 
 interface AiSummaryPanelProps {
   enabled: boolean;
@@ -39,6 +40,12 @@ interface AiSummaryPanelProps {
   findOutMoreLoading?: boolean;
   findOutMoreActiveFact?: string | null;
   requestShowGraph?: boolean;
+  /** Whether user is authenticated */
+  isAuthenticated?: boolean;
+  /** Current AI summary rating score (0 = unrated) */
+  ratingScore?: number;
+  /** Callback when user clicks a star to open the rating modal */
+  onRequestRatingModal?: (selectedScore: number) => void;
 }
 
 const GeneratingText = () => (
@@ -166,6 +173,9 @@ const AiSummaryFooter = ({
   aiPrompt,
   onToggleExpanded,
   onOpenPrompt,
+  isAuthenticated,
+  ratingScore,
+  onRequestRatingModal,
 }: {
   collapsed: boolean;
   summary: string;
@@ -174,6 +184,9 @@ const AiSummaryFooter = ({
   aiPrompt: string;
   onToggleExpanded: () => void;
   onOpenPrompt: () => void;
+  isAuthenticated?: boolean;
+  ratingScore?: number;
+  onRequestRatingModal?: (selectedScore: number) => void;
 }) => {
   if (collapsed || (!summary && !loading)) return null;
 
@@ -184,11 +197,23 @@ const AiSummaryFooter = ({
       </button>
       <div className="ai-summary-footer">
         <span className="ai-disclaimer">AI can, and will, gleefully make mistakes</span>
-        {aiPrompt && (
-          <button className="view-prompt-link" onClick={onOpenPrompt}>
-            View Prompt
-          </button>
-        )}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+          {aiPrompt && (
+            <button className="view-prompt-link" onClick={onOpenPrompt}>
+              View Prompt
+            </button>
+          )}
+          {isAuthenticated && expanded && onRequestRatingModal && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--brand-text-tertiary)' }}>Rate</span>
+              <StarRating
+                score={ratingScore || 0}
+                onRequestModal={onRequestRatingModal}
+                size={13}
+              />
+            </span>
+          )}
+        </span>
       </div>
     </div>
   );
@@ -414,6 +439,9 @@ export const AiSummaryPanel = ({
   findOutMoreLoading,
   findOutMoreActiveFact,
   requestShowGraph,
+  isAuthenticated,
+  ratingScore = 0,
+  onRequestRatingModal,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
   const [showGraph, setShowGraph] = useState(false);
@@ -446,6 +474,9 @@ export const AiSummaryPanel = ({
           onLanguageChange={onLanguageChange}
           onToggleCollapsed={onToggleCollapsed}
         />
+        {!aiSummaryCollapsed && aiSummary && !aiSummaryLoading && !showGraphView && (
+          <p className="ai-summary-hint">Highlight text below to find out more.</p>
+        )}
         {!aiSummaryCollapsed && onDrilldownBack && (
           <div className="ai-drilldown-nav-row">
             {hasGraph && (
@@ -492,6 +523,9 @@ export const AiSummaryPanel = ({
               aiPrompt={aiPrompt}
               onToggleExpanded={onToggleExpanded}
               onOpenPrompt={onOpenPrompt}
+              isAuthenticated={isAuthenticated}
+              ratingScore={ratingScore}
+              onRequestRatingModal={onRequestRatingModal}
             />
           </>
         )}

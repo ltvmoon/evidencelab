@@ -35,6 +35,10 @@ import { HeatmapTabContent } from './components/app/HeatmapTabContent';
 import { TabContent } from './components/app/TabContent';
 import { CookieConsent, getGaConsent } from './components/CookieConsent';
 import { AuthContext, useAuthState } from './hooks/useAuth';
+import { useGroupDefaults } from './hooks/useGroupDefaults';
+import { useActivityLogging } from './hooks/useActivityLogging';
+import { serializeDrilldownTree } from './utils/drilldownUtils';
+import { generateUUID } from './utils/uuid';
 import AdminPanel from './components/admin/AdminPanel';
 import { DEFAULT_SECTION_TYPES, DEFAULT_FIELD_BOOST_FIELDS, buildSearchURL, getSearchStateFromURL } from './utils/searchUrl';
 import { streamAiSummary } from './utils/aiSummaryStream';
@@ -418,6 +422,9 @@ function App() {
   // Auth state (only active when USER_MODULE is enabled)
   const authState = useAuthState();
 
+  // Activity logging (fire-and-forget)
+  const { logSearch, updateSummary: updateActivitySummary } = useActivityLogging();
+
   // Initialize search state from URL parameters
   const initialSearchState = getSearchStateFromURL(
     CORE_FILTER_FIELDS,
@@ -662,7 +669,7 @@ function App() {
   // Initialize search state from URL parameters - MOVED TO TOP
   const [query, setQuery] = useState(initialSearchState.query);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searchId, setSearchId] = useState(0);
+  const [searchId, setSearchId] = useState(() => generateUUID());
   const [facets, setFacets] = useState<Facets | null>(null);
   const [allFacets, setAllFacets] = useState<Facets | null>(null);
   const [facetsDataSource, setFacetsDataSource] = useState<string | null>(null);
@@ -751,6 +758,23 @@ function App() {
   const [findOutMoreLoading, setFindOutMoreLoading] = useState(false);
   const [findOutMoreActiveFact, setFindOutMoreActiveFact] = useState<string | null>(null);
   const [findOutMoreDone, setFindOutMoreDone] = useState(false);
+
+  // Apply per-group search defaults (fetched when user is authenticated)
+  useGroupDefaults(USER_MODULE, authState, {
+    denseWeight: setSearchDenseWeight,
+    rerank: setRerankEnabled,
+    recencyBoost: setRecencyBoostEnabled,
+    recencyWeight: setRecencyWeight,
+    recencyScaleDays: setRecencyScaleDays,
+    sectionTypes: setSectionTypes,
+    keywordBoostShortQueries: setKeywordBoostShortQueries,
+    minChunkSize: setMinChunkSize,
+    semanticHighlighting: setSemanticHighlighting,
+    autoMinScore: setAutoMinScore,
+    deduplicate: setDeduplicateEnabled,
+    fieldBoost: setFieldBoostEnabled,
+    fieldBoostFields: setFieldBoostFields,
+  });
 
   // Debug: Log semantic threshold on startup
   useEffect(() => {
@@ -1489,6 +1513,7 @@ function App() {
     aiSummaryAbortRef.current = abortController;
 
     setAiSummaryLoading(true);
+    summaryStartMsRef.current = performance.now();
     setAiSummary('');
     setAiSummaryBuffer('');
     setAiPrompt('');
@@ -1519,7 +1544,9 @@ function App() {
       handlers: {
         onPrompt: setAiPrompt,
         onToken: setAiSummary,
-        onDone: () => setAiSummaryLoading(false),
+        onDone: () => {
+          setAiSummaryLoading(false);
+        },
         onError: (message: string) => {
           console.error('AI summary streaming error:', message);
           setAiSummary(AI_SUMMARY_ERROR);
@@ -1764,7 +1791,7 @@ function App() {
     setSearchError(null);
     processingHighlightsRef.current.clear(); // Clear highlight locks
     isSearchingRef.current = true;
-    setSearchId((prev) => prev + 1);
+    setSearchId(generateUUID());
 
     try {
       const params = buildSearchParams({
@@ -1799,9 +1826,18 @@ function App() {
       const searchEndTime = performance.now();
       console.log(`[Perf] Search API took ${(searchEndTime - searchStartTime).toFixed(2)}ms`);
       console.log(`[Perf] Results count: ${data.results.length}`);
+      searchDurationMsRef.current = Math.round(searchEndTime - searchStartTime);
       setResults(data.results);
       // Initialize all headings as collapsed by default
       setCollapsedHeadings(new Set(data.results.map((_, index) => index)));
+
+      // Log search activity (fire-and-forget, only when authenticated)
+      if (USER_MODULE && authState.user) {
+        logSearch(searchId, query, filters, data.results, {
+          timing: { search_duration_ms: searchDurationMsRef.current },
+        });
+        activitySearchIdRef.current = searchId;
+      }
 
       // Reload facets to reflect search result distribution (with query)
       loadFacets({ includeQuery: true, queryValue: query });
@@ -1838,6 +1874,9 @@ function App() {
     deduplicateEnabled,
     fieldBoostEnabled,
     fieldBoostFields,
+    logSearch,
+    searchId,
+    authState.user,
   ]);
 
   // Track if we've done initial search to avoid double-searching on load
@@ -1866,6 +1905,61 @@ function App() {
     query,
     searchModel,
   ]);
+
+  // Activity logging: update summary when AI summary stream finishes
+  // Track the searchId that was used for the activity POST, so the PATCH
+  // uses the same value (searchId state changes after setSearchId in performSearch).
+  const activitySearchIdRef = useRef<string>('');
+  const searchDurationMsRef = useRef<number>(0);
+  const summaryStartMsRef = useRef<number>(0);
+  const prevAiSummaryLoadingRef = useRef(false);
+  useEffect(() => {
+    // Detect transition from loading → done and log the completed summary
+    if (
+      prevAiSummaryLoadingRef.current &&
+      !aiSummaryLoading &&
+      USER_MODULE &&
+      authState.user &&
+      aiSummary &&
+      aiSummary !== AI_SUMMARY_ERROR &&
+      !isDrilldown &&
+      activitySearchIdRef.current
+    ) {
+      const summaryDurationMs = summaryStartMsRef.current
+        ? Math.round(performance.now() - summaryStartMsRef.current)
+        : undefined;
+      console.debug('[Activity] Summary PATCH: summaryDurationMs=' + summaryDurationMs);
+      updateActivitySummary(
+        activitySearchIdRef.current,
+        aiSummary,
+        summaryDurationMs,
+        drilldownTree ? serializeDrilldownTree(drilldownTree) : undefined,
+      );
+    }
+    prevAiSummaryLoadingRef.current = aiSummaryLoading;
+  }, [aiSummaryLoading, aiSummary, isDrilldown, authState.user, updateActivitySummary, drilldownTree]);
+
+  // Send drilldown tree updates to the activity record when the user
+  // navigates the AI Summary Tree (i.e. when children are added).
+  const prevDrilldownChildCountRef = useRef(0);
+  useEffect(() => {
+    const childCount = drilldownTree?.children?.length ?? 0;
+    if (
+      childCount > prevDrilldownChildCountRef.current &&
+      activitySearchIdRef.current &&
+      USER_MODULE &&
+      authState.user &&
+      drilldownTree
+    ) {
+      updateActivitySummary(
+        activitySearchIdRef.current,
+        undefined, // don't update ai_summary
+        undefined, // no timing update
+        serializeDrilldownTree(drilldownTree),
+      );
+    }
+    prevDrilldownChildCountRef.current = childCount;
+  }, [drilldownTree, authState.user, updateActivitySummary]);
 
   // Handler for toggling auto min score mode
   const handleAutoMinScoreToggle = useCallback((enabled: boolean) => {

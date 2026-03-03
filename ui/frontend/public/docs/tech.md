@@ -141,10 +141,27 @@ The authentication module is opt-in (`USER_MODULE=true`) and built on [fastapi-u
 * **Default group** — new users are automatically added to a configurable default group so they have baseline access without admin intervention.
 * **Admin panel** — superusers can manage users (activate, verify, promote), create and edit groups, and assign data-source access from the UI. The first admin is bootstrapped via the `FIRST_SUPERUSER_EMAIL` environment variable.
 
+### User Feedback & Activity
+
+* **Ratings** — authenticated users can rate search results, AI summaries, document summaries, and taxonomy tags on a 1–5 star scale with optional comments. Ratings are stored in the `user_ratings` table with upsert semantics (one rating per user per type per reference per item).
+* **Activity logging** — every search by an authenticated user is automatically logged to the `user_activity` table, including the query, filters, first-page results (lean payload), AI summary (appended after streaming completes), and the page URL. Activity records are linked by a UUID search ID.
+* **Admin views** — the admin panel includes Ratings and Activity tabs with search, sort, pagination, and XLSX export.
+* **API endpoints**:
+  * `POST /ratings/` — create or update a rating (upsert)
+  * `GET /ratings/mine` — retrieve the current user's ratings (optionally filtered by type/reference)
+  * `DELETE /ratings/{id}` — delete a specific rating
+  * `GET /ratings/all` — admin: paginated list of all ratings
+  * `GET /ratings/export` — admin: XLSX download
+  * `POST /activity/` — log a search activity event
+  * `PATCH /activity/{search_id}/summary` — append AI summary to an activity record
+  * `GET /activity/all` — admin: paginated list of all activity
+  * `GET /activity/export` — admin: XLSX download
+* **Data lifecycle** — both tables use `ON DELETE CASCADE` on the `user_id` foreign key, so all ratings and activity are automatically deleted when a user account is removed.
+
 ### User self-service
 
 * **Profile management** — users can update their display name from the Profile modal.
-* **Account deletion** — users can permanently delete their account, which removes group memberships, OAuth links, and anonymises audit log entries (user_id set to NULL while preserving the security record).
+* **Account deletion** — users can permanently delete their account, which removes group memberships, OAuth links, ratings, activity logs, and anonymises audit log entries (user_id set to NULL while preserving the security record).
 * **Privacy policy** — linked from the registration form; covers data collected, cookies, user rights, and retention periods.
 
 ## Technical Foundation

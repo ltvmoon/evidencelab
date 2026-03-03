@@ -6,6 +6,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from ui.backend.auth.db import get_async_session
 from ui.backend.auth.models import (
@@ -51,6 +52,7 @@ async def _group_to_read(session: AsyncSession, group: UserGroup) -> GroupRead:
         created_at=group.created_at,
         datasource_keys=datasource_keys,
         member_count=member_count,
+        search_settings=group.search_settings,
     )
 
 
@@ -132,6 +134,9 @@ async def update_group(
         group.name = body.name
     if body.description is not None:
         group.description = body.description
+    if body.search_settings is not None:
+        group.search_settings = body.search_settings if body.search_settings else None
+        flag_modified(group, "search_settings")
     await session.commit()
     await session.refresh(group)
     return await _group_to_read(session, group)

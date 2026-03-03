@@ -8,7 +8,15 @@ from fastapi_users.db import (
     SQLAlchemyBaseUserTableUUID,
 )
 from fastapi_users_db_sqlalchemy.generics import GUID
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -75,6 +83,7 @@ class UserGroup(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
+    search_settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     members: Mapped[list["UserGroupMember"]] = relationship(
         "UserGroupMember", back_populates="group", lazy="selectin"
@@ -144,3 +153,63 @@ class AuditLog(Base):
     user_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class UserRating(Base):
+    """User rating for search results, AI summaries, document summaries, or taxonomy tags."""
+
+    __tablename__ = "user_ratings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rating_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    reference_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    item_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    score: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class UserActivity(Base):
+    """Automatic log of user search activity."""
+
+    __tablename__ = "user_activity"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    search_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    filters: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    search_results: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    langsmith_trace_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    has_ratings: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )

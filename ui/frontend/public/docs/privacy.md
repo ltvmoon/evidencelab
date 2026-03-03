@@ -28,6 +28,8 @@ If you sign in via a third-party provider (Google or Microsoft), we receive your
 | OAuth provider link | Federated sign-in (Google/Microsoft) | Until you delete your account |
 | Audit log (login events, IP address) | Security monitoring and abuse prevention | 90 days, then automatically purged |
 | Failed login attempts and lockout timestamp | Brute-force protection | Reset on successful login or account deletion |
+| Search activity (queries, result summaries) | Platform improvement and usage analytics | Until you delete your account |
+| Ratings and comments on content | Quality feedback to help improve search and content | Until you delete your account |
 
 ## Cookies
 
@@ -48,6 +50,7 @@ You can change your analytics cookie preference at any time from the Privacy tab
 - **Email communications** — sending verification emails and password reset links. We do not send marketing emails.
 - **Security** — detecting and preventing unauthorised access, brute-force attacks, and abuse.
 - **Analytics** (optional) — understanding aggregate usage patterns to improve the platform.
+- **Feedback and activity logging** — when you are logged in, your search queries and any ratings you provide are recorded to help us improve search quality and content. This data is associated with your account and deleted when you delete your account.
 
 We do **not** sell, rent, or share your personal data with third parties for marketing purposes.
 
@@ -60,14 +63,6 @@ You have the right to:
 - **Delete** your account — to permanently delete your account, click your user icon in the top-right corner, open **Profile**, scroll to the **Danger zone** section, and follow the confirmation steps. Deletion removes your personal data, group memberships, and OAuth links. This action is irreversible.
 - **Export** your data — contact us to request a copy of your data.
 - **Withdraw consent** — decline or revoke analytics cookies at any time.
-
-## Data security
-
-- Passwords are hashed using a strong one-way algorithm (bcrypt).
-- Authentication cookies are httpOnly and secure, preventing JavaScript access.
-- CSRF tokens protect against cross-site request forgery.
-- Accounts are locked after repeated failed login attempts.
-- All data is transmitted over HTTPS in production.
 
 ## Contact
 
