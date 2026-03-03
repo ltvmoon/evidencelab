@@ -48,6 +48,20 @@ Evidence Lab document processing pipeline includes the following features:
 - PDF preview with in-document search
 - Administration views to track pipeline, documents, performance and errors
 
+### User Authentication & Permissions (opt-in)
+
+Evidence Lab includes an optional user module that adds authentication and data-source-level access control. When enabled (`USER_MODULE=true`), the system supports:
+
+- **Email/password registration** with email verification
+- **OAuth login** with Google and Microsoft
+- **User profiles** with display name and group membership
+- **Group-based permissions** — admins can create groups and control which data sources each group can access
+- **Admin panel** — manage users, groups, and data source assignments
+- **User feedback** — rate search results, AI summaries, document summaries, and taxonomy tags with 1–5 stars and optional comments
+- **Activity logging** — automatic logging of search queries and results for authenticated users, with admin views and XLSX export
+
+The module is built on [fastapi-users](https://fastapi-users.github.io/fastapi-users/) for industry-standard authentication patterns and is designed with future MFA support in mind.
+
 More features will be added soon, focused on document evidence analysis.
 
 For more detailed information on how the above features have been implemented, mosey on over to [Tech](/tech).

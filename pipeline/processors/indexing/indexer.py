@@ -111,19 +111,31 @@ class IndexProcessor(BaseProcessor):
         self.index_config = index_config or {}
         self.chunk_config = chunk_config or {}
 
-        # Strict Config Parsing
-        self.max_chunk_tokens = self.chunk_config.get("max_tokens", 512)
+        # Strict Config Parsing — fail fast on missing required settings
+        if "dense_model" not in self.chunk_config:
+            raise ValueError(
+                "Indexer: 'dense_model' is required in chunk config. "
+                "Add it to datasources.<name>.pipeline.chunk in config.json."
+            )
+        if "max_tokens" not in self.chunk_config:
+            raise ValueError(
+                "Indexer: 'max_tokens' is required in chunk config. "
+                "Add it to datasources.<name>.pipeline.chunk in config.json."
+            )
+        self.max_chunk_tokens = self.chunk_config["max_tokens"]
         self.min_sub_size = self.chunk_config.get("min_substantive_size", 100)
-        self.dense_model_id = self.chunk_config.get("dense_model")
-
-        if not self.dense_model_id:
-            # Fallback to defaults? User said strict valid.
-            # If chunk config is missing, default to 512/100 is safe.
-            # But dense_model_id is critical.
-            pass
+        self.dense_model_id = self.chunk_config["dense_model"]
 
         self.batch_size = self.index_config.get("batch_size", 10)
         self.embedding_workers = self.index_config.get("embedding_workers", 4)
+        # "stop" = raise on oversized chunks; "truncate" = trim to fit.
+        # Truncation mainly affects small-context models (e.g. e5_large 512
+        # tokens) where post-processing (heading prefix, footnotes) pushes
+        # chunks past the embedding limit.  Longer-context models are
+        # generally unaffected.
+        self.oversize_chunks_strategy = self.index_config.get(
+            "oversize_chunks_strategy", "truncate"
+        )
 
         self._dense_model = None
         self._sparse_model = None
@@ -145,6 +157,7 @@ class IndexProcessor(BaseProcessor):
         self._primary_dense_model = self._select_primary_dense_model()
         self._load_sparse_model()
         self._init_tokenizer_and_chunker()
+        self._max_embed_tokens = self._compute_max_embed_tokens(targets)
 
         logger.info("✓ %s Embedding models and chunker loaded", len(self._dense_models))
         super().setup()
@@ -229,6 +242,21 @@ class IndexProcessor(BaseProcessor):
         self._chunker_instance = Chunker(
             tokenizer=self._tokenizer, chunker=hybrid_chunker
         )
+
+    def _compute_max_embed_tokens(self, targets: List[str]) -> int:
+        """Derive max embed tokens from the smallest embedding model token limit."""
+        limits = []
+        for vec_name in targets:
+            vec_config = DB_VECTORS.get(vec_name, {})
+            mt = vec_config.get("max_tokens")
+            if mt:
+                limits.append(int(mt))
+            else:
+                raise ValueError(
+                    f"Embedding model '{vec_name}' has no 'max_tokens' in config. "
+                    "Add it to supported_embedding_models in config.json."
+                )
+        return min(limits)
 
     def _chunk_document(self, json_path: str) -> List[Dict[str, Any]]:
         """
@@ -315,6 +343,61 @@ class IndexProcessor(BaseProcessor):
         if len(valid_chunks) < len(chunks):
             logger.warning(
                 "Filtered out %s empty chunks.", len(chunks) - len(valid_chunks)
+            )
+        max_tokens = getattr(self, "_max_embed_tokens", None)
+        if max_tokens is None:
+            raise ValueError(
+                "Indexer: _max_embed_tokens not set. "
+                "Ensure all embedding models have 'max_tokens' in config.json."
+            )
+        tokenizer = getattr(self, "_tokenizer", None)
+        strategy = self.oversize_chunks_strategy
+        oversized = []
+        truncated_count = 0
+        for i, chunk in enumerate(valid_chunks):
+            text = chunk.get("text", "")
+            if tokenizer is not None:
+                token_ids = tokenizer.encode(text, add_special_tokens=False)
+                n_tokens = len(token_ids)
+            else:
+                n_tokens = len(text) // 4  # rough fallback
+                token_ids = None
+            if n_tokens > max_tokens:
+                if strategy == "truncate":
+                    if tokenizer is not None and token_ids is not None:
+                        chunk["text"] = tokenizer.decode(
+                            token_ids[:max_tokens], skip_special_tokens=True
+                        )
+                    else:
+                        chunk["text"] = text[: max_tokens * 4]
+                    truncated_count += 1
+                    logger.warning(
+                        "Chunk %d truncated from %d to %d tokens.",
+                        i,
+                        n_tokens,
+                        max_tokens,
+                    )
+                else:
+                    oversized.append(
+                        f"Chunk {i}: {n_tokens} tokens (limit {max_tokens})"
+                    )
+        if truncated_count:
+            logger.warning(
+                "oversize_chunks_strategy=truncate: truncated %d chunk(s) "
+                "to fit embedding model limit (%d tokens).",
+                truncated_count,
+                max_tokens,
+            )
+        if oversized:
+            details = "; ".join(oversized)
+            logger.error(
+                "oversize_chunks_strategy=stop: %d chunk(s) exceed "
+                "embedding model limit (%d tokens).",
+                len(oversized),
+                max_tokens,
+            )
+            raise ValueError(
+                f"{len(oversized)} chunk(s) exceed embedding model limit: {details}"
             )
         return valid_chunks
 

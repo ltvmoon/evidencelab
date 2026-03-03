@@ -31,11 +31,15 @@ interface DocumentsModalsProps {
   onCloseSummaryModal: () => void;
   selectedSummary: string;
   selectedSummaryTitle: string;
+  selectedSummaryDocId?: string;
   taxonomyModalOpen: boolean;
   onCloseTaxonomyModal: () => void;
   selectedTaxonomyValue: any;
   selectedTaxonomyDefinition: string;
   selectedTaxonomyName: string;
+  selectedTaxonomyDocId?: string;
+  selectedTaxonomyDocTitle?: string;
+  selectedTaxonomyDocSummary?: string;
   metadataModalOpen: boolean;
   onCloseMetadataModal: () => void;
   selectedMetadataDoc: any;
@@ -83,11 +87,15 @@ export const DocumentsModals: React.FC<DocumentsModalsProps> = ({
   onCloseSummaryModal,
   selectedSummary,
   selectedSummaryTitle,
+  selectedSummaryDocId,
   taxonomyModalOpen,
   onCloseTaxonomyModal,
   selectedTaxonomyValue,
   selectedTaxonomyDefinition,
   selectedTaxonomyName,
+  selectedTaxonomyDocId,
+  selectedTaxonomyDocTitle,
+  selectedTaxonomyDocSummary,
   metadataModalOpen,
   onCloseMetadataModal,
   selectedMetadataDoc,
@@ -140,6 +148,7 @@ export const DocumentsModals: React.FC<DocumentsModalsProps> = ({
       onClose={onCloseSummaryModal}
       summary={selectedSummary}
       title={selectedSummaryTitle}
+      docId={selectedSummaryDocId}
     />
     <TaxonomyModal
       isOpen={taxonomyModalOpen}
@@ -147,6 +156,9 @@ export const DocumentsModals: React.FC<DocumentsModalsProps> = ({
       taxonomyValue={selectedTaxonomyValue}
       definition={selectedTaxonomyDefinition}
       taxonomyName={selectedTaxonomyName}
+      docId={selectedTaxonomyDocId}
+      docTitle={selectedTaxonomyDocTitle}
+      docSummary={selectedTaxonomyDocSummary}
     />
     <MetadataModal
       isOpen={metadataModalOpen}

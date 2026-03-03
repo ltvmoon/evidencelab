@@ -42,7 +42,7 @@ def _wait_for_available_memory() -> Optional[str]:
         mem = psutil.virtual_memory()
         if mem.available > 2 * 1024 * 1024 * 1024:  # 2GB
             return None
-        if time.time() - start_wait > 600:  # 10 min timeout
+        if time.time() - start_wait > 3600:  # 1 hour timeout
             return "OOM Protection: Timeout waiting for memory"
         time.sleep(random.uniform(5, 15))
 
@@ -331,7 +331,7 @@ def init_worker(
     _worker_context["shared_model"] = shared_dense_model
 
     if not skip_parse:
-        _init_parser(data_source)
+        _init_parser(data_source, pipeline_config)
     if not skip_summarize:
         _init_summarizer(pipeline_config, shared_dense_model)
     if not skip_index:
@@ -376,11 +376,16 @@ def _init_shared_model(
         raise RuntimeError("Failed to load embedding model") from exc
 
 
-def _init_parser(data_source: str) -> None:
+def _init_parser(
+    data_source: str, pipeline_config: Dict[str, Any] | None = None
+) -> None:
     base_data_dir = os.getenv("DATA_MOUNT_PATH", "./data")
     data_dir = f"{base_data_dir}/{data_source}"
     parsed_dir = f"{data_dir}/parsed"
+    parse_config = (pipeline_config or {}).get("parse", {})
     parser = ParseProcessor(output_dir=parsed_dir)
+    if "subprocess_timeout" in parse_config:
+        parser.subprocess_timeout = parse_config["subprocess_timeout"]
     parser.setup()
     _worker_context["parser"] = parser
 

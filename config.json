@@ -21,61 +21,71 @@
       "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
       "size": 384,
       "source": "huggingface",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 512
     },
     "paraphrase_base": {
       "model_id": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
       "size": 768,
       "source": "huggingface",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 512
     },
     "azure_large": {
       "model_id": "text-embedding-3-large",
       "size": 3072,
       "source": "azure_foundry",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 8192
     },
     "azure_small": {
       "model_id": "text-embedding-3-small",
       "size": 1536,
       "source": "azure_foundry",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 8192
     },
     "google_gemini": {
       "model_id": "gemini-embedding-001",
       "size": 2048,
       "source": "google_vertex",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 2048
     },
     "google_multilingual": {
       "model_id": "text-multilingual-embedding-002",
       "size": 768,
       "source": "google_vertex",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 2048
     },
     "e5_large": {
       "model_id": "intfloat/multilingual-e5-large",
       "size": 1024,
       "source": "huggingface",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 512
     },
     "bge_base": {
       "model_id": "BAAI/bge-base-en-v1.5",
       "size": 768,
       "source": "huggingface",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 512
     },
     "bge_large": {
       "model_id": "BAAI/bge-large-en-v1.5",
       "size": 1024,
       "source": "huggingface",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 512
     },
     "all_minilm": {
       "model_id": "sentence-transformers/all-MiniLM-L6-v2",
       "size": 384,
       "source": "huggingface",
-      "type": "dense"
+      "type": "dense",
+      "max_tokens": 512
     },
     "bm25": {
       "model_id": "Qdrant/bm25",
@@ -381,6 +391,7 @@
         "index": {
           "batch_size": 10,
           "embedding_workers": 1,
+          "oversize_chunks_strategy": "truncate",
           "dense_models": [
             "azure_small",
             "e5_large"

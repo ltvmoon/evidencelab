@@ -11,7 +11,7 @@ interface DocumentsProps {
 }
 
 export const Documents: React.FC<DocumentsProps> = ({
-  dataSource = 'uneg',
+  dataSource = '',
   semanticHighlightModelConfig,
   dataSourceConfig,
 }) => {
@@ -88,11 +88,15 @@ export const Documents: React.FC<DocumentsProps> = ({
         onCloseSummaryModal={state.closeSummaryModal}
         selectedSummary={state.selectedSummary}
         selectedSummaryTitle={state.selectedSummaryTitle}
+        selectedSummaryDocId={state.selectedSummaryDocId}
         taxonomyModalOpen={state.taxonomyModalOpen}
         onCloseTaxonomyModal={state.closeTaxonomyModal}
         selectedTaxonomyValue={state.selectedTaxonomyValue}
         selectedTaxonomyDefinition={state.selectedTaxonomyDefinition}
         selectedTaxonomyName={state.selectedTaxonomyName}
+        selectedTaxonomyDocId={state.selectedTaxonomyDocId}
+        selectedTaxonomyDocTitle={state.selectedTaxonomyDocTitle}
+        selectedTaxonomyDocSummary={state.selectedTaxonomyDocSummary}
         metadataModalOpen={state.metadataModalOpen}
         onCloseMetadataModal={state.closeMetadataModal}
         selectedMetadataDoc={state.selectedMetadataDoc}

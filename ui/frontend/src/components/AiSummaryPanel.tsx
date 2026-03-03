@@ -1,9 +1,16 @@
-import React from 'react';
-import { SearchResult } from '../types/api';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import axios from 'axios';
+import { SearchResult, DrilldownNode, SummaryModelConfig } from '../types/api';
+import API_BASE_URL from '../config';
 import { LANGUAGES } from '../constants';
 import { RainbowText } from './RainbowText';
 import { AiSummaryWithCitations } from './AiSummaryWithCitations';
 import { AiSummaryReferences } from './AiSummaryReferences';
+import { DigDeeperPopover } from './DigDeeperPopover';
+import { DrilldownBreadcrumb } from './DrilldownBreadcrumb';
+import { DrilldownGraphView } from './DrilldownGraphView';
+import { exportResearchToPdf } from '../utils/exportResearch';
+import StarRating from './ratings/StarRating';
 
 interface AiSummaryPanelProps {
   enabled: boolean;
@@ -25,6 +32,27 @@ interface AiSummaryPanelProps {
   onResultClick: (result: SearchResult) => void;
   onOpenPrompt: () => void;
   onClosePrompt: () => void;
+  drilldownStackDepth?: number;
+  drilldownHighlight?: string;
+  onDrilldown?: (selectedText: string) => void;
+  onDrilldownBack?: () => void;
+  drilldownTree?: DrilldownNode | null;
+  drilldownCurrentNodeId?: string | null;
+  onDrilldownNavigate?: (nodeId: string) => void;
+  onFindOutMore?: (keyFacts: string[]) => void;
+  findOutMoreLoading?: boolean;
+  findOutMoreActiveFact?: string | null;
+  requestShowGraph?: boolean;
+  /** Whether user is authenticated */
+  isAuthenticated?: boolean;
+  /** Current AI summary rating score (0 = unrated) */
+  ratingScore?: number;
+  /** Callback when user clicks a star to open the rating modal */
+  onRequestRatingModal?: (selectedScore: number) => void;
+  /** Data source for the global summary API call */
+  dataSource?: string;
+  /** Summary model config for the global summary API call */
+  summaryModelConfig?: SummaryModelConfig | null;
 }
 
 const GeneratingText = () => (
@@ -52,18 +80,37 @@ const AiSummaryBody = ({
   summary,
   filteredResults,
   onResultClick,
+  contentRef,
+  onDrilldown,
+  loading,
+  onFindOutMore,
+  findOutMoreLoading,
+  findOutMoreActiveFact,
 }: {
   expanded: boolean;
   summary: string;
   filteredResults: SearchResult[];
   onResultClick: (result: SearchResult) => void;
+  contentRef?: React.RefObject<HTMLDivElement | null>;
+  onDrilldown?: (text: string) => void;
+  loading?: boolean;
+  onFindOutMore?: (keyFacts: string[]) => void;
+  findOutMoreLoading?: boolean;
+  findOutMoreActiveFact?: string | null;
 }) => (
-  <div className={`ai-summary-content ${expanded ? 'expanded' : ''}`}>
+  <div
+    className={`ai-summary-content ${expanded ? 'expanded' : ''}`}
+    ref={contentRef}
+    style={{ position: 'relative' }}
+  >
     <div className="ai-summary-markdown">
       <AiSummaryWithCitations
         summaryText={summary}
         searchResults={filteredResults}
         onResultClick={onResultClick}
+        onFindOutMore={onFindOutMore}
+        findOutMoreLoading={findOutMoreLoading}
+        findOutMoreActiveFact={findOutMoreActiveFact}
       />
     </div>
     <AiSummaryReferences
@@ -71,6 +118,12 @@ const AiSummaryBody = ({
       results={filteredResults}
       onResultClick={onResultClick}
     />
+    {onDrilldown && contentRef && !loading && (
+      <DigDeeperPopover
+        containerRef={contentRef}
+        onDrilldown={onDrilldown}
+      />
+    )}
   </div>
 );
 
@@ -81,6 +134,11 @@ const AiSummaryContent = ({
   summary,
   filteredResults,
   onResultClick,
+  contentRef,
+  onDrilldown,
+  onFindOutMore,
+  findOutMoreLoading,
+  findOutMoreActiveFact,
 }: {
   collapsed: boolean;
   expanded: boolean;
@@ -88,18 +146,15 @@ const AiSummaryContent = ({
   summary: string;
   filteredResults: SearchResult[];
   onResultClick: (result: SearchResult) => void;
+  contentRef?: React.RefObject<HTMLDivElement | null>;
+  onDrilldown?: (text: string) => void;
+  onFindOutMore?: (keyFacts: string[]) => void;
+  findOutMoreLoading?: boolean;
+  findOutMoreActiveFact?: string | null;
 }) => {
-  if (collapsed) {
-    return null;
-  }
-
-  if (loading) {
-    return <AiSummaryLoading expanded={expanded} summary={summary} />;
-  }
-
-  if (!summary) {
-    return null;
-  }
+  if (collapsed) return null;
+  if (loading) return <AiSummaryLoading expanded={expanded} summary={summary} />;
+  if (!summary) return null;
 
   return (
     <AiSummaryBody
@@ -107,6 +162,12 @@ const AiSummaryContent = ({
       summary={summary}
       filteredResults={filteredResults}
       onResultClick={onResultClick}
+      contentRef={contentRef}
+      onDrilldown={onDrilldown}
+      loading={loading}
+      onFindOutMore={onFindOutMore}
+      findOutMoreLoading={findOutMoreLoading}
+      findOutMoreActiveFact={findOutMoreActiveFact}
     />
   );
 };
@@ -119,6 +180,9 @@ const AiSummaryFooter = ({
   aiPrompt,
   onToggleExpanded,
   onOpenPrompt,
+  isAuthenticated,
+  ratingScore,
+  onRequestRatingModal,
 }: {
   collapsed: boolean;
   summary: string;
@@ -127,10 +191,11 @@ const AiSummaryFooter = ({
   aiPrompt: string;
   onToggleExpanded: () => void;
   onOpenPrompt: () => void;
+  isAuthenticated?: boolean;
+  ratingScore?: number;
+  onRequestRatingModal?: (selectedScore: number) => void;
 }) => {
-  if (collapsed || (!summary && !loading)) {
-    return null;
-  }
+  if (collapsed || (!summary && !loading)) return null;
 
   return (
     <div style={{ visibility: !summary ? 'hidden' : 'visible' }}>
@@ -139,11 +204,23 @@ const AiSummaryFooter = ({
       </button>
       <div className="ai-summary-footer">
         <span className="ai-disclaimer">AI can, and will, gleefully make mistakes</span>
-        {aiPrompt && (
-          <button className="view-prompt-link" onClick={onOpenPrompt}>
-            View Prompt
-          </button>
-        )}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+          {aiPrompt && (
+            <button className="view-prompt-link" onClick={onOpenPrompt}>
+              View Prompt
+            </button>
+          )}
+          {isAuthenticated && expanded && onRequestRatingModal && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--brand-text-tertiary)' }}>Rate</span>
+              <StarRating
+                score={ratingScore || 0}
+                onRequestModal={onRequestRatingModal}
+                size={13}
+              />
+            </span>
+          )}
+        </span>
       </div>
     </div>
   );
@@ -158,9 +235,7 @@ const PromptModal = ({
   aiPrompt: string;
   onClose: () => void;
 }) => {
-  if (!show) {
-    return null;
-  }
+  if (!show) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -178,6 +253,318 @@ const PromptModal = ({
     </div>
   );
 };
+
+const NetworkIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="5" r="3" />
+    <circle cx="5" cy="19" r="3" />
+    <circle cx="19" cy="19" r="3" />
+    <line x1="12" y1="8" x2="5" y2="16" />
+    <line x1="12" y1="8" x2="19" y2="16" />
+  </svg>
+);
+
+const DocumentIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="8" y1="13" x2="16" y2="13" />
+    <line x1="8" y1="17" x2="16" y2="17" />
+  </svg>
+);
+
+const GlobeIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+  </svg>
+);
+
+const DownloadIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+interface NodeSummary {
+  label: string;
+  summary: string;
+}
+
+const collectNodeSummaries = (node: DrilldownNode): NodeSummary[] => {
+  const entries: NodeSummary[] = [];
+  if (node.summary) {
+    entries.push({ label: node.label, summary: node.summary });
+  }
+  for (const child of node.children) {
+    entries.push(...collectNodeSummaries(child));
+  }
+  return entries;
+};
+
+/** Collect all unique search results from every node in the tree, deduped by chunk_id */
+const collectAllResults = (node: DrilldownNode): SearchResult[] => {
+  const seen = new Set<string>();
+  const all: SearchResult[] = [];
+  const walk = (n: DrilldownNode) => {
+    for (const r of n.results) {
+      if (!seen.has(r.chunk_id)) {
+        seen.add(r.chunk_id);
+        all.push(r);
+      }
+    }
+    for (const child of n.children) walk(child);
+  };
+  walk(node);
+  return all;
+};
+
+/** Return a deep copy of the tree with one node's summary/results patched in */
+const patchNodeInTree = (
+  node: DrilldownNode,
+  targetId: string,
+  summary: string,
+  nodeResults: SearchResult[]
+): DrilldownNode => {
+  if (node.id === targetId) {
+    return { ...node, summary, results: nodeResults, children: node.children.map((c) => ({ ...c })) };
+  }
+  return {
+    ...node,
+    children: node.children.map((c) => patchNodeInTree(c, targetId, summary, nodeResults)),
+  };
+};
+
+const DrilldownNavRow = ({
+  viewMode,
+  hasGraph,
+  globalSummaryLoading,
+  drilldownStackDepth,
+  drilldownHighlight,
+  onSetViewMode,
+  onGenerateGlobalSummary,
+  onExportResearch,
+  onDrilldownBack,
+}: {
+  viewMode: 'summary' | 'tree' | 'global';
+  hasGraph: boolean;
+  globalSummaryLoading: boolean;
+  drilldownStackDepth: number;
+  drilldownHighlight?: string;
+  onSetViewMode: (mode: 'summary' | 'tree' | 'global') => void;
+  onGenerateGlobalSummary: () => void;
+  onExportResearch: () => void;
+  onDrilldownBack: () => void;
+}) => (
+  <div className="ai-drilldown-nav-row">
+    {viewMode === 'summary' && hasGraph && (
+      <button
+        className="drilldown-graph-toggle"
+        onClick={() => onSetViewMode('tree')}
+        type="button"
+      >
+        <NetworkIcon />
+        Show tree
+      </button>
+    )}
+    {viewMode === 'tree' && (
+      <>
+        <button
+          className="drilldown-graph-toggle"
+          onClick={() => onSetViewMode('summary')}
+          type="button"
+        >
+          <DocumentIcon />
+          Show summary
+        </button>
+        {!globalSummaryLoading && (
+          <button
+            className="drilldown-graph-toggle"
+            onClick={onGenerateGlobalSummary}
+            type="button"
+          >
+            <GlobeIcon />
+            Generate Global Summary
+          </button>
+        )}
+        {globalSummaryLoading && (
+          <span className="global-summary-loading">
+            <RainbowText text="Generating global summary..." />
+          </span>
+        )}
+        <button
+          className="drilldown-graph-toggle"
+          onClick={onExportResearch}
+          type="button"
+          style={{ marginLeft: 'auto' }}
+        >
+          <DownloadIcon />
+          Export research
+        </button>
+      </>
+    )}
+    {viewMode === 'global' && (
+      <button
+        className="drilldown-graph-toggle"
+        onClick={() => onSetViewMode('tree')}
+        type="button"
+      >
+        <NetworkIcon />
+        Show tree
+      </button>
+    )}
+    {viewMode === 'summary' && (
+      <DrilldownBreadcrumb
+        stackDepth={drilldownStackDepth}
+        onBack={onDrilldownBack}
+        currentHighlight={drilldownHighlight}
+      />
+    )}
+  </div>
+);
+
+const LanguageSelector = ({
+  selectedLang,
+  isTranslating,
+  translatingLang,
+  onLanguageChange,
+}: {
+  selectedLang: string;
+  isTranslating: boolean;
+  translatingLang?: string | null;
+  onLanguageChange: (newLang: string) => void;
+}) => (
+  <div
+    className="result-language-selector"
+    onClick={(e) => e.stopPropagation()}
+    style={{ position: 'relative', display: 'inline-block', marginLeft: 'auto' }}
+  >
+    {isTranslating && (
+      <div
+        className="rainbow-overlay translating-dropdown"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'white',
+          pointerEvents: 'none',
+          fontSize: '0.8rem',
+          borderRadius: '4px',
+          zIndex: 1
+        }}
+      >
+        <RainbowText text={LANGUAGES[translatingLang || 'en'] || '...'} />
+      </div>
+    )}
+    <select
+      value={selectedLang}
+      onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+        onLanguageChange(e.target.value)
+      }
+      style={{
+        fontSize: '0.8rem',
+        padding: '2px 4px',
+        border: 'none',
+        borderRadius: '4px',
+        backgroundColor: 'transparent',
+        color: '#6b7280',
+        cursor: 'pointer',
+        visibility: isTranslating ? 'hidden' : 'visible'
+      }}
+    >
+      {Object.entries(LANGUAGES).map(([code, name]) => (
+        <option key={code} value={code}>
+          {name}
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+const AiSummaryHeader = ({
+  isDrilldown,
+  collapsed,
+  showGraph,
+  aiSummary,
+  loading,
+  selectedLang,
+  isTranslating,
+  translatingLang,
+  onLanguageChange,
+  onToggleCollapsed,
+}: {
+  isDrilldown: boolean;
+  collapsed: boolean;
+  showGraph: boolean;
+  aiSummary: string;
+  loading: boolean;
+  selectedLang: string;
+  isTranslating: boolean;
+  translatingLang?: string | null;
+  onLanguageChange?: (newLang: string) => void;
+  onToggleCollapsed: () => void;
+}) => (
+  <div className="ai-summary-header">
+    <h3 className="ai-summary-title">
+      {isDrilldown ? 'AI Summary Tree' : 'AI Summary'}
+    </h3>
+    {aiSummary && !loading && !showGraph && onLanguageChange && (
+      <LanguageSelector
+        selectedLang={selectedLang}
+        isTranslating={isTranslating}
+        translatingLang={translatingLang}
+        onLanguageChange={onLanguageChange}
+      />
+    )}
+    <button className="ai-summary-toggle" type="button" onClick={onToggleCollapsed}>
+      {collapsed ? 'Expand' : 'Collapse'}
+    </button>
+  </div>
+);
 
 export const AiSummaryPanel = ({
   enabled,
@@ -199,93 +586,189 @@ export const AiSummaryPanel = ({
   onResultClick,
   onOpenPrompt,
   onClosePrompt,
+  drilldownStackDepth,
+  drilldownHighlight,
+  onDrilldown,
+  onDrilldownBack,
+  drilldownTree,
+  drilldownCurrentNodeId,
+  onDrilldownNavigate,
+  onFindOutMore,
+  findOutMoreLoading,
+  findOutMoreActiveFact,
+  requestShowGraph,
+  isAuthenticated,
+  ratingScore = 0,
+  onRequestRatingModal,
+  dataSource,
+  summaryModelConfig,
 }: AiSummaryPanelProps) => {
-  if (!enabled) {
-    return null;
-  }
+  const summaryContentRef = useRef<HTMLDivElement>(null);
+  // viewMode: 'summary' = node summary, 'tree' = graph, 'global' = global summary
+  const [viewMode, setViewMode] = useState<'summary' | 'tree' | 'global'>('summary');
+  const [globalSummary, setGlobalSummary] = useState('');
+  const [globalSummaryResults, setGlobalSummaryResults] = useState<SearchResult[]>([]);
+  const [globalSummaryLoading, setGlobalSummaryLoading] = useState(false);
+
+  useEffect(() => {
+    if (requestShowGraph) setViewMode('tree');
+  }, [requestShowGraph]);
+
+  // Reset global summary when tree changes
+  useEffect(() => {
+    setGlobalSummary('');
+    setGlobalSummaryResults([]);
+  }, [drilldownTree]);
+
+  const handleGenerateGlobalSummary = useCallback(async () => {
+    if (!drilldownTree || globalSummaryLoading) return;
+    const summaries = collectNodeSummaries(drilldownTree);
+    if (summaries.length === 0) return;
+
+    const allResults = collectAllResults(drilldownTree);
+    if (allResults.length === 0) return;
+
+    setGlobalSummaryLoading(true);
+    try {
+      const rootLabel = drilldownTree.label || 'research';
+      const summaryContext = summaries
+        .map((s) => `- ${s.label}: ${s.summary}`)
+        .join('\n');
+      const q = `Synthesise a comprehensive global summary from the following research topics, in the context of: "${rootLabel}". Use the search results below to cite sources.\n\nResearch summaries so far:\n${summaryContext}`;
+      const resp = await axios.post<{ summary: string }>(
+        `${API_BASE_URL}/ai-summary?data_source=${dataSource || 'default'}`,
+        {
+          query: q,
+          results: allResults.map((r) => ({
+            chunk_id: r.chunk_id,
+            doc_id: r.doc_id,
+            text: r.text,
+            title: r.title,
+            page_num: r.page_num,
+            headings: r.headings || [],
+            score: r.score,
+            organization: r.organization,
+            year: r.year,
+          })),
+          max_results: allResults.length,
+          ...(summaryModelConfig ? { summary_model_config: summaryModelConfig } : {}),
+        }
+      );
+      setGlobalSummary(resp.data.summary);
+      setGlobalSummaryResults(allResults);
+      setViewMode('global');
+    } catch (err) {
+      console.error('Failed to generate global summary:', err);
+    } finally {
+      setGlobalSummaryLoading(false);
+    }
+  }, [drilldownTree, globalSummaryLoading, dataSource, summaryModelConfig]);
+
+  if (!enabled) return null;
 
   const filteredResults = results.filter((result) => result.score >= minScore);
   const displaySummary = translatedSummary || aiSummary;
   const selectedLang = translatedLang || 'en';
+  const isDrilldown = (drilldownStackDepth || 0) > 0;
+  const hasGraph = drilldownTree && drilldownTree.children.length > 0;
+  const showGraphView = viewMode === 'tree' && hasGraph && onDrilldownNavigate;
+  const showGlobalView = viewMode === 'global' && globalSummary;
 
   return (
     <>
       <div className={`ai-summary-box ${aiSummaryCollapsed ? 'collapsed' : ''}`}>
-        <div className="ai-summary-header" onClick={onToggleCollapsed}>
-          <h3 className="ai-summary-title">AI Summary</h3>
-          {aiSummary && !aiSummaryLoading && onLanguageChange && (
-            <div
-              className="result-language-selector"
-              onClick={(e) => e.stopPropagation()}
-              style={{ position: 'relative', display: 'inline-block', marginLeft: 'auto' }}
-            >
-              {isTranslating && (
-                <div
-                  className="rainbow-overlay translating-dropdown"
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'white',
-                    pointerEvents: 'none',
-                    fontSize: '0.8rem',
-                    borderRadius: '4px',
-                    zIndex: 1
-                  }}
-                >
-                  <RainbowText text={LANGUAGES[translatingLang || 'en'] || '...'} />
-                </div>
-              )}
-              <select
-                value={selectedLang}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                  onLanguageChange(e.target.value)
-                }
-                style={{
-                  fontSize: '0.8rem',
-                  padding: '2px 4px',
-                  border: 'none',
-                  borderRadius: '4px',
-                  backgroundColor: 'transparent',
-                  color: '#6b7280',
-                  cursor: 'pointer',
-                  visibility: isTranslating ? 'hidden' : 'visible'
-                }}
-              >
-                {Object.entries(LANGUAGES).map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+        <AiSummaryHeader
+          isDrilldown={isDrilldown}
+          collapsed={aiSummaryCollapsed}
+          showGraph={viewMode !== 'summary'}
+          aiSummary={aiSummary}
+          loading={aiSummaryLoading}
+          selectedLang={selectedLang}
+          isTranslating={!!isTranslating}
+          translatingLang={translatingLang}
+          onLanguageChange={onLanguageChange}
+          onToggleCollapsed={onToggleCollapsed}
+        />
+        {!aiSummaryCollapsed && aiSummary && !aiSummaryLoading && viewMode === 'summary' && (
+          <p className="ai-summary-hint">Highlight text below to find out more.</p>
+        )}
+        {!aiSummaryCollapsed && onDrilldownBack && (
+          <DrilldownNavRow
+            viewMode={viewMode}
+            hasGraph={!!hasGraph}
+            globalSummaryLoading={globalSummaryLoading}
+            drilldownStackDepth={drilldownStackDepth || 0}
+            drilldownHighlight={drilldownHighlight}
+            onSetViewMode={setViewMode}
+            onGenerateGlobalSummary={handleGenerateGlobalSummary}
+            onExportResearch={() => {
+              if (drilldownTree) {
+                // Patch the currently-viewed node's live state into the tree before exporting
+                const currentId = drilldownCurrentNodeId || drilldownTree.id;
+                const patchedTree = patchNodeInTree(drilldownTree, currentId, aiSummary, results);
+                exportResearchToPdf(
+                  patchedTree,
+                  globalSummary || undefined,
+                  globalSummaryResults
+                );
+              }
+            }}
+            onDrilldownBack={onDrilldownBack}
+          />
+        )}
+        {showGraphView ? (
+          <DrilldownGraphView
+            tree={drilldownTree!}
+            activeNodeId={drilldownCurrentNodeId || 'root'}
+            onNodeClick={(nodeId) => {
+              onDrilldownNavigate!(nodeId);
+              setViewMode('summary');
+            }}
+          />
+        ) : showGlobalView ? (
+          <div className="ai-summary-content expanded global-summary-content">
+            <div className="ai-summary-markdown">
+              <AiSummaryWithCitations
+                summaryText={globalSummary}
+                searchResults={globalSummaryResults}
+                onResultClick={onResultClick}
+              />
             </div>
-          )}
-          <button className="ai-summary-toggle" type="button">
-            {aiSummaryCollapsed ? 'Expand' : 'Collapse'}
-          </button>
-        </div>
-        <AiSummaryContent
-          collapsed={aiSummaryCollapsed}
-          expanded={aiSummaryExpanded}
-          loading={aiSummaryLoading}
-          summary={displaySummary}
-          filteredResults={filteredResults}
-          onResultClick={onResultClick}
-        />
-        <AiSummaryFooter
-          collapsed={aiSummaryCollapsed}
-          summary={displaySummary}
-          loading={aiSummaryLoading}
-          expanded={aiSummaryExpanded}
-          aiPrompt={aiPrompt}
-          onToggleExpanded={onToggleExpanded}
-          onOpenPrompt={onOpenPrompt}
-        />
+            <AiSummaryReferences
+              summaryText={globalSummary}
+              results={globalSummaryResults}
+              onResultClick={onResultClick}
+            />
+          </div>
+        ) : (
+          <>
+            <AiSummaryContent
+              collapsed={aiSummaryCollapsed}
+              expanded={aiSummaryExpanded}
+              loading={aiSummaryLoading}
+              summary={displaySummary}
+              filteredResults={filteredResults}
+              onResultClick={onResultClick}
+              contentRef={summaryContentRef}
+              onDrilldown={onDrilldown}
+              onFindOutMore={onFindOutMore}
+              findOutMoreLoading={findOutMoreLoading}
+              findOutMoreActiveFact={findOutMoreActiveFact}
+            />
+            <AiSummaryFooter
+              collapsed={aiSummaryCollapsed}
+              summary={displaySummary}
+              loading={aiSummaryLoading}
+              expanded={aiSummaryExpanded}
+              aiPrompt={aiPrompt}
+              onToggleExpanded={onToggleExpanded}
+              onOpenPrompt={onOpenPrompt}
+              isAuthenticated={isAuthenticated}
+              ratingScore={ratingScore}
+              onRequestRatingModal={onRequestRatingModal}
+            />
+          </>
+        )}
       </div>
 
       <PromptModal show={showPromptModal} aiPrompt={aiPrompt} onClose={onClosePrompt} />

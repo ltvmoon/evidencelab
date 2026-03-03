@@ -7,7 +7,8 @@ import API_BASE_URL, {
   SEMANTIC_HIGHLIGHT_THRESHOLD,
   SEARCH_RESULTS_PAGE_SIZE,
   APP_BASE_PATH,
-  GA_MEASUREMENT_ID
+  GA_MEASUREMENT_ID,
+  USER_MODULE
 } from './config';
 
 import {
@@ -17,8 +18,9 @@ import {
   SearchFilters,
   SearchResult,
   ModelComboConfig,
-  SummaryModelConfig
+  SummaryModelConfig,
 } from './types/api';
+import { useDrilldownTree, AiSummarySnapshot } from './hooks/useDrilldownTree';
 import { Documents } from './components/Documents';
 import { Stats } from './components/Stats';
 import { Pipeline, Processing } from './components/Pipeline';
@@ -32,6 +34,13 @@ import { SearchTabContent } from './components/app/SearchTabContent';
 import { HeatmapTabContent } from './components/app/HeatmapTabContent';
 import { TabContent } from './components/app/TabContent';
 import { CookieConsent, getGaConsent } from './components/CookieConsent';
+import { AuthContext, useAuthState } from './hooks/useAuth';
+import { useGroupDefaults } from './hooks/useGroupDefaults';
+import { useActivityLogging } from './hooks/useActivityLogging';
+import { serializeDrilldownTree } from './utils/drilldownUtils';
+import { generateUUID } from './utils/uuid';
+import AdminPanel from './components/admin/AdminPanel';
+import { AuthGate } from './components/auth/AuthGate';
 import { DEFAULT_SECTION_TYPES, DEFAULT_FIELD_BOOST_FIELDS, buildSearchURL, getSearchStateFromURL } from './utils/searchUrl';
 import { streamAiSummary } from './utils/aiSummaryStream';
 import {
@@ -41,6 +50,13 @@ import {
 } from './utils/textHighlighting';
 // datasource config is now fetched dynamically
 // import datasourcesConfig from './datasources.config.json';
+
+const AI_SUMMARY_ERROR = 'Uh oh. Something went wrong asking the AI.';
+
+const getCsrfToken = (): string | null => {
+  const match = document.cookie.match(/(?:^|;\s*)evidencelab_csrf=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
 
 // Configure API key header for all axios requests
 const API_KEY = process.env.REACT_APP_API_KEY;
@@ -88,7 +104,7 @@ type DataSourcesConfig = DataSourceConfig;
 type DatasetTotals = Record<string, number | undefined>;
 
 // Valid tab names for URL routing
-const VALID_TABS = ['search', 'heatmap', 'documents', 'pipeline', 'processing', 'info', 'tech', 'data', 'privacy', 'stats'] as const;
+const VALID_TABS = ['search', 'heatmap', 'documents', 'pipeline', 'processing', 'info', 'tech', 'data', 'privacy', 'stats', 'admin'] as const;
 type TabName = typeof VALID_TABS[number];
 
 const isGatewayError = (error: any): boolean => {
@@ -129,9 +145,10 @@ const buildSearchErrorMessage = (error: any): string => {
 
 const translateViaApi = async (text: string, targetLanguage: string, sourceLanguage?: string): Promise<string | null> => {
   try {
+    const csrfToken = getCsrfToken();
     const resp = await fetch(`${API_BASE_URL}/translate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(API_KEY ? { 'X-API-Key': API_KEY } : {}) },
+      headers: { 'Content-Type': 'application/json', ...(API_KEY ? { 'X-API-Key': API_KEY } : {}), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) },
       body: JSON.stringify({ text, target_language: targetLanguage, source_language: sourceLanguage })
     });
     if (resp.ok) {
@@ -403,6 +420,12 @@ const DEFAULT_FILTER_FIELDS = ['organization', 'title', 'published_year', 'docum
 const DEFAULT_PUBLISHED_YEARS = ['2020', '2021', '2022', '2023', '2024', '2025'];
 
 function App() {
+  // Auth state (only active when USER_MODULE is enabled)
+  const authState = useAuthState();
+
+  // Activity logging (fire-and-forget)
+  const { logSearch, updateSummary: updateActivitySummary } = useActivityLogging();
+
   // Initialize search state from URL parameters
   const initialSearchState = getSearchStateFromURL(
     DEFAULT_FILTER_FIELDS,
@@ -487,7 +510,7 @@ function App() {
     if (initialSearchState.dataset) {
       return initialSearchState.dataset;
     }
-    return 'UN Humanitarian Evaluation';  // Fallback default
+    return '';  // Will be set to first available domain when config loads
   });
 
   // Update selected domain when config loads if needed, or ensure it's valid
@@ -633,11 +656,10 @@ function App() {
   const dataSource = React.useMemo(() => {
     // If we have a selectedDomain and config is loaded, get the data_subdir
     if (!loadingConfig && selectedDomain && datasourcesConfig[selectedDomain]) {
-      return datasourcesConfig[selectedDomain].data_subdir || 'uneg';
+      return datasourcesConfig[selectedDomain].data_subdir || '';
     }
-    // If config is still loading but we have a dataset in URL, we need to wait
-    // Return 'uneg' as fallback, but it will update when config loads
-    return currentDataSourceConfig?.data_subdir || 'uneg';
+    // Config still loading — return empty to prevent premature API calls
+    return currentDataSourceConfig?.data_subdir || '';
   }, [loadingConfig, selectedDomain, datasourcesConfig, currentDataSourceConfig]);
 
   const fieldMapping = currentDataSourceConfig?.field_mapping || {};
@@ -647,7 +669,7 @@ function App() {
   // Initialize search state from URL parameters - MOVED TO TOP
   const [query, setQuery] = useState(initialSearchState.query);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searchId, setSearchId] = useState(0);
+  const [searchId, setSearchId] = useState(() => generateUUID());
   const [facets, setFacets] = useState<Facets | null>(null);
   const [allFacets, setAllFacets] = useState<Facets | null>(null);
   const [facetsDataSource, setFacetsDataSource] = useState<string | null>(null);
@@ -722,6 +744,37 @@ function App() {
   const [aiSummaryTranslatedText, setAiSummaryTranslatedText] = useState<string | null>(null);
   const [aiSummaryTranslatingLang, setAiSummaryTranslatingLang] = useState<string | null>(null);
   const [aiSummaryTranslatedLang, setAiSummaryTranslatedLang] = useState<string | null>(null);
+
+  // AI Summary Drilldown state (tree-based)
+  const {
+    drilldownTree, currentNodeId, isDrilldown, currentHighlight: drilldownHighlight,
+    resetTree: resetDrilldownTree,
+    startDrilldown: startDrilldownInTree,
+    addChildNode: addChildNodeInTree,
+    updateNodeData: updateNodeDataInTree,
+    navigateBack: navigateBackInTree,
+    navigateToNode: navigateToNodeInTree,
+  } = useDrilldownTree();
+  const [findOutMoreLoading, setFindOutMoreLoading] = useState(false);
+  const [findOutMoreActiveFact, setFindOutMoreActiveFact] = useState<string | null>(null);
+  const [findOutMoreDone, setFindOutMoreDone] = useState(false);
+
+  // Apply per-group search defaults (fetched when user is authenticated)
+  useGroupDefaults(USER_MODULE, authState, {
+    denseWeight: setSearchDenseWeight,
+    rerank: setRerankEnabled,
+    recencyBoost: setRecencyBoostEnabled,
+    recencyWeight: setRecencyWeight,
+    recencyScaleDays: setRecencyScaleDays,
+    sectionTypes: setSectionTypes,
+    keywordBoostShortQueries: setKeywordBoostShortQueries,
+    minChunkSize: setMinChunkSize,
+    semanticHighlighting: setSemanticHighlighting,
+    autoMinScore: setAutoMinScore,
+    deduplicate: setDeduplicateEnabled,
+    fieldBoost: setFieldBoostEnabled,
+    fieldBoostFields: setFieldBoostFields,
+  });
 
   // Debug: Log semantic threshold on startup
   useEffect(() => {
@@ -1213,7 +1266,7 @@ function App() {
 
   const loadFacets = useCallback(async (options?: { includeQuery?: boolean; filtersOverride?: SearchFilters; queryValue?: string }) => {
     try {
-      if (loadingConfig && initialSearchState.dataset) {
+      if (!dataSource || (loadingConfig && initialSearchState.dataset)) {
         return;
       }
       const includeQuery = options?.includeQuery ?? false;
@@ -1248,7 +1301,7 @@ function App() {
 
   const loadAllFacets = useCallback(async () => {
     try {
-      if (loadingConfig && initialSearchState.dataset) {
+      if (!dataSource || (loadingConfig && initialSearchState.dataset)) {
         return;
       }
       const params = new URLSearchParams();
@@ -1501,29 +1554,16 @@ function App() {
     }
   }, [query, semanticHighlightModelConfig]);
 
-  const startAiSummaryStream = useCallback((summaryResults: SearchResult[]) => {
-    if (!AI_SUMMARY_ON || summaryResults.length === 0) {
-      setAiSummary('');
-      setAiPrompt('');
-      return;
-    }
-    if (!summaryModelConfig) {
-      console.error('AI summary model config is missing.');
-      setAiSummary('AI summary unavailable: no summary model configured.');
-      setAiSummaryLoading(false);
-      return;
-    }
-
-    // Abort any in-flight stream
+  /** Shared helper: strip results to lean payload and stream a summary */
+  const launchSummaryStream = useCallback((streamQuery: string, streamResults: SearchResult[]) => {
     if (aiSummaryAbortRef.current) {
       aiSummaryAbortRef.current.abort();
     }
     const abortController = new AbortController();
     aiSummaryAbortRef.current = abortController;
 
-    const sliced = summaryResults.slice(0, 20);
-    setAiSummaryResults(sliced);
     setAiSummaryLoading(true);
+    summaryStartMsRef.current = performance.now();
     setAiSummary('');
     setAiSummaryBuffer('');
     setAiPrompt('');
@@ -1531,9 +1571,7 @@ function App() {
     setAiSummaryTranslatingLang(null);
     setAiSummaryTranslatedLang(null);
 
-    // Strip results to only the fields the backend prompt template needs,
-    // avoiding huge payloads from chunk_elements, images, tables, etc.
-    const leanResults = sliced.map((r) => ({
+    const leanResults = streamResults.map((r) => ({
       chunk_id: r.chunk_id,
       doc_id: r.doc_id,
       text: r.text,
@@ -1549,31 +1587,215 @@ function App() {
       apiBaseUrl: API_BASE_URL,
       apiKey: API_KEY || undefined,
       dataSource,
-      query,
+      query: streamQuery,
       results: leanResults,
       summaryModelConfig,
       signal: abortController.signal,
       handlers: {
         onPrompt: setAiPrompt,
         onToken: setAiSummary,
-        onDone: () => setAiSummaryLoading(false),
+        onDone: () => {
+          setAiSummaryLoading(false);
+        },
         onError: (message: string) => {
           console.error('AI summary streaming error:', message);
-          setAiSummary('Uh oh. Something went wrong asking the AI.');
+          setAiSummary(AI_SUMMARY_ERROR);
           setAiSummaryLoading(false);
         },
       },
     }).catch((error) => {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('AI summary streaming failed:', error);
-      setAiSummary('Uh oh. Something went wrong asking the AI.');
+      setAiSummary(AI_SUMMARY_ERROR);
       setAiSummaryLoading(false);
     });
-  }, [dataSource, query, summaryModelConfig]);
+  }, [dataSource, summaryModelConfig]);
+
+  const startAiSummaryStream = useCallback((summaryResults: SearchResult[]) => {
+    if (!AI_SUMMARY_ON || summaryResults.length === 0) {
+      setAiSummary('');
+      setAiPrompt('');
+      return;
+    }
+    if (!summaryModelConfig) {
+      console.error('AI summary model config is missing.');
+      setAiSummary('AI summary unavailable: no summary model configured.');
+      setAiSummaryLoading(false);
+      return;
+    }
+
+    resetDrilldownTree();
+
+    const sliced = summaryResults.slice(0, 20);
+    setAiSummaryResults(sliced);
+    setAiSummaryExpanded(false);
+    launchSummaryStream(query, sliced);
+  }, [query, summaryModelConfig, resetDrilldownTree, launchSummaryStream]);
 
   const handleAiSummaryForResults = useCallback((data: SearchResponse) => {
     startAiSummaryStream(data.results);
   }, [startAiSummaryStream]);
+
+  // Helper: build current AI summary snapshot for drilldown save/restore
+  const getSnapshot = useCallback((): AiSummarySnapshot => ({
+    summary: aiSummary,
+    prompt: aiPrompt,
+    results: aiSummaryResults,
+    expanded: aiSummaryExpanded,
+    translatedText: aiSummaryTranslatedText,
+    translatedLang: aiSummaryTranslatedLang,
+  }), [aiSummary, aiPrompt, aiSummaryResults, aiSummaryExpanded,
+      aiSummaryTranslatedText, aiSummaryTranslatedLang]);
+
+  // Helper: restore UI state from a drilldown node
+  const restoreFromNode = useCallback((node: { summary: string; prompt: string; results: SearchResult[]; expanded: boolean; translatedText: string | null; translatedLang: string | null }) => {
+    setAiSummary(node.summary);
+    setAiPrompt(node.prompt);
+    setResults(node.results);
+    setAiSummaryResults(node.results);
+    setAiSummaryExpanded(node.expanded);
+    setAiSummaryTranslatedText(node.translatedText);
+    setAiSummaryTranslatedLang(node.translatedLang);
+    setAiSummaryTranslatingLang(null);
+    setAiSummaryLoading(false);
+  }, []);
+
+  // Drilldown: save current state, search for fresh results, stream focused summary
+  const startDrilldown = useCallback(async (highlightedText: string) => {
+    const snapshot = getSnapshot();
+    startDrilldownInTree(highlightedText, snapshot, query);
+
+    setAiSummaryExpanded(true);
+    setAiSummaryLoading(true);
+    setAiSummary('');
+    setAiPrompt('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // Perform a fresh search using the highlighted text as the query
+    const params = buildSearchParams({
+      query: highlightedText,
+      filters,
+      searchDenseWeight,
+      rerankEnabled,
+      recencyBoostEnabled,
+      recencyWeight,
+      recencyScaleDays,
+      sectionTypes,
+      keywordBoostShortQueries,
+      minChunkSize,
+      rerankModel,
+      rerankModelPageSize,
+      searchModel,
+      dataSource,
+      autoMinScore,
+      deduplicateEnabled,
+      fieldBoostEnabled,
+      fieldBoostFields,
+    });
+
+    try {
+      const response = await axios.get<SearchResponse>(`${API_BASE_URL}/search?${params}`);
+      const freshResults = response.data.results.slice(0, 20);
+      setResults(freshResults);
+      setAiSummaryResults(freshResults);
+
+      const drilldownQuery = `Regarding the following excerpt from a previous summary:\n\n"${highlightedText}"\n\nProvide more detail about this, in the context of the original question: "${query}"`;
+      launchSummaryStream(drilldownQuery, freshResults);
+    } catch (error) {
+      console.error('Drilldown search failed:', error);
+      setAiSummary(AI_SUMMARY_ERROR);
+      setAiSummaryLoading(false);
+    }
+  }, [getSnapshot, startDrilldownInTree, query, launchSummaryStream,
+      filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
+      recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
+      minChunkSize, rerankModel, rerankModelPageSize, searchModel, dataSource,
+      autoMinScore, deduplicateEnabled, fieldBoostEnabled, fieldBoostFields]);
+
+  // Navigate back to parent node in the drilldown tree
+  const navigateBackDrilldown = useCallback(() => {
+    if (aiSummaryAbortRef.current) {
+      aiSummaryAbortRef.current.abort();
+      aiSummaryAbortRef.current = null;
+    }
+    const parent = navigateBackInTree(getSnapshot());
+    if (parent) restoreFromNode(parent);
+  }, [getSnapshot, navigateBackInTree, restoreFromNode]);
+
+  // Navigate to any node in the drilldown tree by ID
+  const navigateDrilldownToNode = useCallback((nodeId: string) => {
+    if (aiSummaryAbortRef.current) {
+      aiSummaryAbortRef.current.abort();
+      aiSummaryAbortRef.current = null;
+    }
+    const target = navigateToNodeInTree(nodeId, getSnapshot());
+    if (target) {
+      restoreFromNode(target);
+      setAiSummaryExpanded(true);
+    }
+  }, [getSnapshot, navigateToNodeInTree, restoreFromNode]);
+
+  // Batch-research all Key Facts: create child nodes and populate them
+  const handleFindOutMore = useCallback(async (keyFacts: string[]) => {
+    if (keyFacts.length === 0) return;
+    setFindOutMoreLoading(true);
+    setFindOutMoreDone(false);
+
+    const snapshot = getSnapshot();
+
+    // Create stub child nodes for all facts
+    const nodeIds = keyFacts.map((fact) =>
+      addChildNodeInTree(fact, snapshot, query)
+    );
+
+    // Sequentially search and summarize each fact
+    for (let i = 0; i < keyFacts.length; i++) {
+      const fact = keyFacts[i];
+      const nodeId = nodeIds[i];
+      setFindOutMoreActiveFact(fact);
+      try {
+        const params = buildSearchParams({
+          query: fact, filters, searchDenseWeight, rerankEnabled,
+          recencyBoostEnabled, recencyWeight, recencyScaleDays, sectionTypes,
+          keywordBoostShortQueries, minChunkSize, rerankModel, rerankModelPageSize,
+          searchModel, dataSource, autoMinScore, deduplicateEnabled,
+          fieldBoostEnabled, fieldBoostFields,
+        });
+        const searchResp = await axios.get<SearchResponse>(`${API_BASE_URL}/search?${params}`);
+        const freshResults = searchResp.data.results.slice(0, 20);
+
+        const summaryQuery = `Regarding: "${fact}"\n\nProvide detail about this, in the context of: "${query}"`;
+        const leanResults = freshResults.map((r) => ({
+          chunk_id: r.chunk_id, doc_id: r.doc_id, text: r.text,
+          title: r.title, organization: r.organization, year: r.year,
+          page_num: r.page_num, headings: r.headings, score: r.score,
+        }));
+        const summaryResp = await axios.post<{ summary: string; prompt: string }>(`${API_BASE_URL}/ai-summary?data_source=${dataSource}`, {
+          query: summaryQuery,
+          results: leanResults,
+          max_results: 20,
+          ...(summaryModelConfig ? { summary_model_config: summaryModelConfig } : {}),
+        });
+
+        updateNodeDataInTree(nodeId, {
+          summary: summaryResp.data.summary,
+          prompt: summaryResp.data.prompt,
+          results: freshResults,
+        });
+      } catch (error) {
+        console.error(`Find out more failed for: ${fact}`, error);
+        updateNodeDataInTree(nodeId, { summary: 'Failed to generate summary.' });
+      }
+    }
+    setFindOutMoreLoading(false);
+    setFindOutMoreActiveFact(null);
+    setFindOutMoreDone(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [getSnapshot, addChildNodeInTree, updateNodeDataInTree, query, summaryModelConfig,
+      filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
+      recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
+      minChunkSize, rerankModel, rerankModelPageSize, searchModel, dataSource,
+      autoMinScore, deduplicateEnabled, fieldBoostEnabled, fieldBoostFields]);
 
   const handlePostSearchResults = useCallback((data: SearchResponse) => {
     if (data.results.length > 0) {
@@ -1608,7 +1830,7 @@ function App() {
   }, []);
 
   const performSearch = useCallback(async () => {
-    if (!query.trim() || isSearchingRef.current) {
+    if (!dataSource || !query.trim() || isSearchingRef.current) {
       if (isSearchingRef.current) {
         console.warn("Search already in progress, skipping double call.");
       }
@@ -1619,7 +1841,7 @@ function App() {
     setSearchError(null);
     processingHighlightsRef.current.clear(); // Clear highlight locks
     isSearchingRef.current = true;
-    setSearchId((prev) => prev + 1);
+    setSearchId(generateUUID());
 
     try {
       const params = buildSearchParams({
@@ -1654,9 +1876,18 @@ function App() {
       const searchEndTime = performance.now();
       console.log(`[Perf] Search API took ${(searchEndTime - searchStartTime).toFixed(2)}ms`);
       console.log(`[Perf] Results count: ${data.results.length}`);
+      searchDurationMsRef.current = Math.round(searchEndTime - searchStartTime);
       setResults(data.results);
       // Initialize all headings as collapsed by default
       setCollapsedHeadings(new Set(data.results.map((_, index) => index)));
+
+      // Log search activity (fire-and-forget, only when authenticated)
+      if (USER_MODULE && authState.user) {
+        logSearch(searchId, query, filters, data.results, {
+          timing: { search_duration_ms: searchDurationMsRef.current },
+        });
+        activitySearchIdRef.current = searchId;
+      }
 
       // Reload facets to reflect search result distribution (with query)
       loadFacets({ includeQuery: true, queryValue: query });
@@ -1693,6 +1924,9 @@ function App() {
     deduplicateEnabled,
     fieldBoostEnabled,
     fieldBoostFields,
+    logSearch,
+    searchId,
+    authState.user,
   ]);
 
   // Track if we've done initial search to avoid double-searching on load
@@ -1721,6 +1955,61 @@ function App() {
     query,
     searchModel,
   ]);
+
+  // Activity logging: update summary when AI summary stream finishes
+  // Track the searchId that was used for the activity POST, so the PATCH
+  // uses the same value (searchId state changes after setSearchId in performSearch).
+  const activitySearchIdRef = useRef<string>('');
+  const searchDurationMsRef = useRef<number>(0);
+  const summaryStartMsRef = useRef<number>(0);
+  const prevAiSummaryLoadingRef = useRef(false);
+  useEffect(() => {
+    // Detect transition from loading → done and log the completed summary
+    if (
+      prevAiSummaryLoadingRef.current &&
+      !aiSummaryLoading &&
+      USER_MODULE &&
+      authState.user &&
+      aiSummary &&
+      aiSummary !== AI_SUMMARY_ERROR &&
+      !isDrilldown &&
+      activitySearchIdRef.current
+    ) {
+      const summaryDurationMs = summaryStartMsRef.current
+        ? Math.round(performance.now() - summaryStartMsRef.current)
+        : undefined;
+      console.debug('[Activity] Summary PATCH: summaryDurationMs=' + summaryDurationMs);
+      updateActivitySummary(
+        activitySearchIdRef.current,
+        aiSummary,
+        summaryDurationMs,
+        drilldownTree ? serializeDrilldownTree(drilldownTree) : undefined,
+      );
+    }
+    prevAiSummaryLoadingRef.current = aiSummaryLoading;
+  }, [aiSummaryLoading, aiSummary, isDrilldown, authState.user, updateActivitySummary, drilldownTree]);
+
+  // Send drilldown tree updates to the activity record when the user
+  // navigates the AI Summary Tree (i.e. when children are added).
+  const prevDrilldownChildCountRef = useRef(0);
+  useEffect(() => {
+    const childCount = drilldownTree?.children?.length ?? 0;
+    if (
+      childCount > prevDrilldownChildCountRef.current &&
+      activitySearchIdRef.current &&
+      USER_MODULE &&
+      authState.user &&
+      drilldownTree
+    ) {
+      updateActivitySummary(
+        activitySearchIdRef.current,
+        undefined, // don't update ai_summary
+        undefined, // no timing update
+        serializeDrilldownTree(drilldownTree),
+      );
+    }
+    prevDrilldownChildCountRef.current = childCount;
+  }, [drilldownTree, authState.user, updateActivitySummary]);
 
   // Handler for toggling auto min score mode
   const handleAutoMinScoreToggle = useCallback((enabled: boolean) => {
@@ -2131,6 +2420,19 @@ function App() {
       aiSummaryTranslatingLang={aiSummaryTranslatingLang}
       aiSummaryTranslatedLang={aiSummaryTranslatedLang}
       onAiSummaryLanguageChange={handleAiSummaryLanguageChange}
+      aiDrilldownStackDepth={isDrilldown ? 1 : 0}
+      aiDrilldownHighlight={drilldownHighlight}
+      onAiDrilldown={startDrilldown}
+      onAiDrilldownBack={navigateBackDrilldown}
+      aiDrilldownTree={drilldownTree}
+      aiDrilldownCurrentNodeId={currentNodeId}
+      onAiDrilldownNavigate={navigateDrilldownToNode}
+      onFindOutMore={handleFindOutMore}
+      findOutMoreLoading={findOutMoreLoading}
+      findOutMoreActiveFact={findOutMoreActiveFact}
+      requestShowGraph={findOutMoreDone}
+      dataSource={dataSource}
+      summaryModelConfig={summaryModelConfig}
     />
   );
 
@@ -2199,7 +2501,7 @@ function App() {
     />
   );
 
-  return (
+  const appContent = (
     <div className="app">
       <TopBar
         selectedDomain={selectedDomain}
@@ -2225,6 +2527,7 @@ function App() {
         onAboutClick={handleAboutClick}
         onTechClick={handleTechClick}
         onDataClick={handleDataClick}
+        onAdminClick={() => handleTabChange('admin')}
         navTabs={<NavTabs activeTab={activeTab} onTabChange={handleTabChange} />}
       />
 
@@ -2253,6 +2556,8 @@ function App() {
         privacyContent={privacyContent}
         onTabChange={handleTabChange}
       />
+
+      <AdminPanel isActive={activeTab === 'admin'} />
 
       <footer className="app-footer">
         <button
@@ -2348,6 +2653,12 @@ function App() {
 
       <CookieConsent />
     </div >
+  );
+
+  return (
+    <AuthContext.Provider value={authState}>
+      <AuthGate>{appContent}</AuthGate>
+    </AuthContext.Provider>
   );
 }
 

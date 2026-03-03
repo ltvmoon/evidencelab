@@ -1,9 +1,13 @@
 import { SearchResult, SummaryModelConfig } from '../types/api';
 
+interface AiSummaryDoneData {
+  langsmith_trace_url?: string;
+}
+
 interface AiSummaryStreamHandlers {
   onPrompt: (prompt: string) => void;
   onToken: (fullText: string) => void;
-  onDone: () => void;
+  onDone: (data?: AiSummaryDoneData) => void;
   onError: (message: string) => void;
 }
 
@@ -18,12 +22,21 @@ interface AiSummaryStreamOptions {
   signal?: AbortSignal;
 }
 
+const getCsrfToken = (): string | null => {
+  const match = document.cookie.match(/(?:^|;\s*)evidencelab_csrf=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
 const buildHeaders = (apiKey?: string): Record<string, string> => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   if (apiKey) {
     headers['X-API-Key'] = apiKey;
+  }
+  const csrfToken = getCsrfToken();
+  if (csrfToken) {
+    headers['X-CSRF-Token'] = csrfToken;
   }
   return headers;
 };
@@ -66,7 +79,9 @@ const handleStreamedData = (
     return nextText;
   }
   if (streamedData.type === 'done') {
-    handlers.onDone();
+    handlers.onDone({
+      langsmith_trace_url: streamedData.langsmith_trace_url,
+    });
     return fullText;
   }
   if (streamedData.type === 'error') {
