@@ -11,7 +11,7 @@ interface DocumentsProps {
 }
 
 export const Documents: React.FC<DocumentsProps> = ({
-  dataSource = 'uneg',
+  dataSource = '',
   semanticHighlightModelConfig,
   dataSourceConfig,
 }) => {

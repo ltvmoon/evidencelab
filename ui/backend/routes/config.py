@@ -219,17 +219,13 @@ async def get_datasources_config(
         except Exception:
             pass
 
-    # Filter datasources by user permissions when user module is active.
-    # Security: deny-by-default — if the permission check fails, return empty
-    # rather than leaking all datasources to an unauthenticated request.
-    if _USER_MODULE:
+    # Filter datasources by user group permissions when user module is active.
+    # Unauthenticated users see all datasources (auth is opt-in, not a gate).
+    # Authenticated non-superusers see only their group's allowed datasources.
+    if _USER_MODULE and current_user is not None and not current_user.is_superuser:
         try:
-            if current_user is None:
-                # Not authenticated — return empty datasources
-                datasources = {}
-            elif not current_user.is_superuser:
-                allowed = await get_user_datasource_keys(session, current_user.id)
-                datasources = filter_datasources(datasources, allowed)
+            allowed = await get_user_datasource_keys(session, current_user.id)
+            datasources = filter_datasources(datasources, allowed)
         except Exception:
             logger.exception("Permission check failed — denying datasource access")
             datasources = {}  # Deny by default on error
