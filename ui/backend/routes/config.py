@@ -18,7 +18,16 @@ from ui.backend.utils.app_state import get_pg_for_source
 
 logger = logging.getLogger(__name__)
 
-_USER_MODULE = os.environ.get("USER_MODULE", "false").lower() in ("1", "true", "yes")
+# Parse USER_MODULE mode: off | on_passive | on_active
+# Backwards compatible: true/1/yes → on_active, false/0/no → off
+_UM_RAW = os.environ.get("USER_MODULE", "off").lower()
+if _UM_RAW in ("1", "true", "yes", "on_active"):
+    _USER_MODULE_MODE = "on_active"
+elif _UM_RAW in ("on_passive",):
+    _USER_MODULE_MODE = "on_passive"
+else:
+    _USER_MODULE_MODE = "off"
+_USER_MODULE = _USER_MODULE_MODE != "off"
 
 # Conditional imports for user module — resolved at module load time so
 # FastAPI can wire up Depends() correctly.
@@ -219,13 +228,19 @@ async def get_datasources_config(
         except Exception:
             pass
 
-    # Filter datasources by user group permissions when user module is active.
-    # Unauthenticated users see all datasources (auth is opt-in, not a gate).
-    # Authenticated non-superusers see only their group's allowed datasources.
-    if _USER_MODULE and current_user is not None and not current_user.is_superuser:
+    # Filter datasources by user permissions when user module is active.
+    # on_active: deny-by-default — unauthenticated users see nothing.
+    # on_passive: unauthenticated users see all datasources; authenticated
+    #   non-superusers are filtered by group permissions.
+    if _USER_MODULE:
         try:
-            allowed = await get_user_datasource_keys(session, current_user.id)
-            datasources = filter_datasources(datasources, allowed)
+            if current_user is None:
+                if _USER_MODULE_MODE == "on_active":
+                    datasources = {}
+                # on_passive: unauthenticated users see all datasources
+            elif not current_user.is_superuser:
+                allowed = await get_user_datasource_keys(session, current_user.id)
+                datasources = filter_datasources(datasources, allowed)
         except Exception:
             logger.exception("Permission check failed — denying datasource access")
             datasources = {}  # Deny by default on error
@@ -235,8 +250,11 @@ async def get_datasources_config(
 
 @router.get("/config/auth-status")
 def get_auth_status():
-    """Return whether the user module is enabled (for frontend feature flag)."""
-    return {"user_module_enabled": _USER_MODULE}
+    """Return the user module mode (for frontend feature flag)."""
+    return {
+        "user_module_enabled": _USER_MODULE,
+        "user_module_mode": _USER_MODULE_MODE,
+    }
 
 
 @router.get("/health")

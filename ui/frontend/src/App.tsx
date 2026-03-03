@@ -40,6 +40,7 @@ import { useActivityLogging } from './hooks/useActivityLogging';
 import { serializeDrilldownTree } from './utils/drilldownUtils';
 import { generateUUID } from './utils/uuid';
 import AdminPanel from './components/admin/AdminPanel';
+import { AuthGate } from './components/auth/AuthGate';
 import { DEFAULT_SECTION_TYPES, DEFAULT_FIELD_BOOST_FIELDS, buildSearchURL, getSearchStateFromURL } from './utils/searchUrl';
 import { streamAiSummary } from './utils/aiSummaryStream';
 import {
@@ -2604,7 +2605,7 @@ function App() {
 
   return (
     <AuthContext.Provider value={authState}>
-      {appContent}
+      <AuthGate>{appContent}</AuthGate>
     </AuthContext.Provider>
   );
 }

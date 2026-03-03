@@ -92,11 +92,17 @@ USE_EMBEDDING_SERVER = os.environ.get("USE_EMBEDDING_SERVER", "false").lower() i
     "true",
     "yes",
 )
-USER_MODULE = os.environ.get("USER_MODULE", "false").lower() in (
-    "1",
-    "true",
-    "yes",
-)
+# Parse USER_MODULE mode: off | on_passive | on_active
+# Backwards compatible: true/1/yes → on_active, false/0/no → off
+_USER_MODULE_RAW = os.environ.get("USER_MODULE", "off").lower()
+if _USER_MODULE_RAW in ("1", "true", "yes", "on_active"):
+    USER_MODULE_MODE = "on_active"
+elif _USER_MODULE_RAW in ("on_passive",):
+    USER_MODULE_MODE = "on_passive"
+else:
+    USER_MODULE_MODE = "off"
+# Auth module is loaded (True for both on_passive and on_active)
+USER_MODULE = USER_MODULE_MODE != "off"
 
 # API Key Authentication
 API_KEY = os.environ.get("API_SECRET_KEY")
@@ -574,6 +580,13 @@ if USER_MODULE:
 
     app.add_middleware(CSRFMiddleware)
 
+# on_active: deny unauthenticated requests to all data endpoints
+if USER_MODULE_MODE == "on_active":
+    from ui.backend.auth.active_auth import ActiveAuthMiddleware  # noqa: E402
+    from ui.backend.auth.users import AUTH_SECRET  # noqa: E402
+
+    app.add_middleware(ActiveAuthMiddleware, auth_secret=AUTH_SECRET, api_key=API_KEY)
+
 
 # Models
 class SearchResult(BaseModel):
@@ -733,7 +746,7 @@ if USER_MODULE:
 
     app.include_router(ratings_routes.router, prefix="/ratings", tags=["ratings"])
     app.include_router(activity_routes.router, prefix="/activity", tags=["activity"])
-    logger.info("User module enabled (USER_MODULE=true)")
+    logger.info("User module enabled (USER_MODULE=%s)", USER_MODULE_MODE)
 
     # Auto-promote first superuser on startup (if configured)
     _FIRST_SUPERUSER_EMAIL = os.environ.get("FIRST_SUPERUSER_EMAIL", "").strip()
@@ -778,10 +791,12 @@ if USER_MODULE:
                 _FIRST_SUPERUSER_EMAIL,
             )
 
-    # Expose USER_MODULE flag so config route can read it
+    # Expose USER_MODULE mode so config route can read it
     app.state.user_module_enabled = True
+    app.state.user_module_mode = USER_MODULE_MODE
 else:
     app.state.user_module_enabled = False
+    app.state.user_module_mode = "off"
 
 if __name__ == "__main__":
     # Host configurable for security - 0.0.0.0 for Docker, 127.0.0.1 for local dev

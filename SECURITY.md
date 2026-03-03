@@ -171,7 +171,7 @@ Trivy scans Docker images for:
 
 ### User Authentication Module
 
-When `USER_MODULE=true`, fastapi-users provides full user lifecycle management:
+When `USER_MODULE` is set to `on_passive` or `on_active`, fastapi-users provides full user lifecycle management. In `on_passive` mode, authentication is optional and anonymous users can browse freely. In `on_active` mode, all access requires login:
 
 | Control | Implementation |
 |---------|---------------|
@@ -191,6 +191,57 @@ When `USER_MODULE=true`, fastapi-users provides full user lifecycle management:
 | **Audit logging** | All auth events (login, failure, lockout, register, password reset) logged to `audit_log` table |
 | **OAuth** | Google and Microsoft SSO with explicit minimal scopes (`openid, email, profile`) |
 | **Email verification** | Required after registration; token sent via SMTP |
+
+### Active Authentication Enforcement (`on_active` mode)
+
+When `USER_MODULE_MODE=on_active`, the `ActiveAuthMiddleware` enforces authentication on **all data endpoints** at the middleware layer. This ensures that no data endpoint can be accessed without valid credentials, even if an individual route handler lacks its own auth dependency.
+
+#### How It Works
+
+The middleware intercepts every incoming request and validates credentials before the request reaches any route handler. It checks (in order):
+
+1. **API key** — `X-API-Key` header compared against `API_SECRET_KEY` using `secrets.compare_digest()` (timing-safe)
+2. **Bearer token** — `Authorization: Bearer <jwt>` header decoded with HS256 and audience `["fastapi-users:auth"]`
+3. **Session cookie** — `evidencelab_auth` httpOnly cookie decoded with the same JWT secret and audience
+
+If none of the above yield a valid credential, the middleware returns `401 {"detail": "Authentication required"}` without forwarding the request.
+
+#### Exempt Paths
+
+The following paths are exempt from middleware authentication because they either have their own auth mechanisms or must be publicly accessible:
+
+| Path prefix | Reason |
+|-------------|--------|
+| `/health` | Health check endpoint (monitoring/load balancer probes) |
+| `/auth/` | Login, register, verify, password reset — has own auth flow |
+| `/config/auth-status` | Frontend feature flag (must be accessible before login) |
+| `/users/` | Protected by fastapi-users `current_active_user` dependency |
+| `/groups/` | Protected by fastapi-users `current_active_user` dependency |
+| `/ratings/` | Protected by fastapi-users `current_active_user` dependency |
+| `/activity/` | Protected by fastapi-users `current_active_user` dependency |
+| `/docs`, `/redoc`, `/openapi.json` | OpenAPI docs (disabled in production) |
+| `OPTIONS` | CORS preflight requests |
+
+#### Security Properties
+
+| Property | Detail |
+|----------|--------|
+| **Scope** | Only active when `USER_MODULE_MODE == "on_active"` |
+| **Layer** | Starlette middleware — runs before all route handlers |
+| **JWT validation** | Verifies signature, expiry, and audience claim |
+| **API key comparison** | Timing-safe via `secrets.compare_digest()` |
+| **Fail-closed** | Denies by default; only permits explicitly validated credentials |
+| **Logging** | Denied requests logged with method, path, and client IP |
+| **Test coverage** | 23 dedicated unit tests covering all auth paths and edge cases |
+
+#### Relationship to Other Auth Controls
+
+The middleware provides **defense in depth** alongside existing controls:
+
+- **`/config/datasources`** — already denies unauthenticated users (returns empty list); the middleware adds a hard 401 for all other data endpoints
+- **fastapi-users routes** (`/users/`, `/groups/`, etc.) — have their own `Depends(current_active_user)` checks; the middleware exempts these to avoid double-validation
+- **API key auth** — the middleware accepts the same `API_SECRET_KEY` used elsewhere, so programmatic API access continues to work
+- **Frontend login wall** — `AuthGate` component blocks UI access; the middleware ensures the same protection at the API layer
 
 ### Authorization
 
@@ -264,6 +315,13 @@ Before submitting a PR, ensure:
 
 ## Changelog
 
+- **2026-03-03**: Active authentication enforcement middleware
+  - Added `ActiveAuthMiddleware` for `on_active` mode — denies unauthenticated requests to all data endpoints
+  - Middleware validates JWT cookies, Bearer tokens, and API keys at the Starlette layer (before route handlers)
+  - Fail-closed design: denies by default, only permits explicitly validated credentials
+  - Exempt paths for health checks, auth flows, and routes with their own fastapi-users dependencies
+  - Frontend `AuthGate` component enforces login wall in the UI for `on_active` mode
+  - 23 dedicated unit tests covering all auth paths, exempt routes, and edge cases
 - **2026-03-01**: Security hardening for enterprise pen testing
   - Added Content-Security-Policy header (env-configurable via `CSP_POLICY`)
   - Changed CORS `allow_headers` from `*` to env-configurable whitelist (`CORS_ALLOWED_HEADERS`)
