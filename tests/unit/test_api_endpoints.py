@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from ui.backend import main as main_module
-from ui.backend.routes import search as search_module
 from ui.backend.utils import facet_helpers as facet_module
+from ui.backend.utils import filter_helpers as filter_helpers_module
 from ui.backend.utils.language_codes import LANGUAGE_CODES, LANGUAGE_NAMES
 
 
@@ -877,7 +877,7 @@ def test_build_facets_from_db_routes_sys_fields_to_pg():
     pg = _FakePg([("en", 100), ("fr", 20)])
 
     filter_fields = {"organization": "Organization", "language": "Language"}
-    result = facet_module.build_facets_from_db(
+    result, range_fields = facet_module.build_facets_from_db(
         db, filter_fields, None, _fake_resolve_storage_field, pg=pg
     )
 
@@ -906,7 +906,7 @@ def test_build_facets_from_db_falls_back_to_qdrant_without_pg():
     db.facet_documents = facet_documents
 
     filter_fields = {"language": "Language"}
-    result = facet_module.build_facets_from_db(
+    result, range_fields = facet_module.build_facets_from_db(
         db, filter_fields, None, _fake_resolve_storage_field, pg=None
     )
 
@@ -922,19 +922,19 @@ def test_language_codes_roundtrip():
 
 
 def test_normalize_language_filter_maps_names_to_codes():
-    assert search_module._normalize_language_filter("English") == "en"
-    assert search_module._normalize_language_filter("French,Spanish") == "fr,es"
+    assert filter_helpers_module.normalize_language_filter("English") == "en"
+    assert filter_helpers_module.normalize_language_filter("French,Spanish") == "fr,es"
 
 
 def test_normalize_language_filter_passes_through_codes():
     """Unknown values (including raw codes) pass through unchanged."""
-    assert search_module._normalize_language_filter("en") == "en"
-    assert search_module._normalize_language_filter("Unknown") == "Unknown"
+    assert filter_helpers_module.normalize_language_filter("en") == "en"
+    assert filter_helpers_module.normalize_language_filter("Unknown") == "Unknown"
 
 
 def test_normalize_language_filter_none():
-    assert search_module._normalize_language_filter(None) is None
-    assert search_module._normalize_language_filter("") is None
+    assert filter_helpers_module.normalize_language_filter(None) is None
+    assert filter_helpers_module.normalize_language_filter("") is None
 
 
 def test_language_facets_map_codes_to_full_names():
@@ -945,7 +945,7 @@ def test_language_facets_map_codes_to_full_names():
     pg = _FakePg([("en", 50), ("fr", 10), ("Unknown", 3)])
 
     filter_fields = {"language": "Language"}
-    result = facet_module.build_facets_from_db(
+    result, range_fields = facet_module.build_facets_from_db(
         db, filter_fields, None, _fake_resolve_storage_field, pg=pg
     )
 

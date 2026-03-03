@@ -24,6 +24,10 @@ from pipeline.db import (  # noqa: E402
 )
 from pipeline.utilities.embedding_client import RemoteEmbeddingClient  # noqa: E402
 from ui.backend.services import search_models  # noqa: E402
+from ui.backend.utils.filter_helpers import (  # noqa: E402
+    build_doc_id_filter,
+    collect_range_conditions,
+)
 from ui.backend.utils.language_codes import LANGUAGE_NAMES  # noqa: E402
 
 # Add parent directory to path
@@ -78,7 +82,16 @@ def map_filters_to_storage(
 ) -> dict | None:
     if not filters:
         return filters
-    return {_resolve_storage_field(k, data_source): v for k, v in filters.items()}
+    result = {}
+    for k, v in filters.items():
+        # Range params: strip _min/_max suffix before field mapping, re-add after
+        if k.endswith("_min"):
+            result[_resolve_storage_field(k[:-4], data_source) + "_min"] = v
+        elif k.endswith("_max"):
+            result[_resolve_storage_field(k[:-4], data_source) + "_max"] = v
+        else:
+            result[_resolve_storage_field(k, data_source)] = v
+    return result
 
 
 # Load search configuration
@@ -382,6 +395,10 @@ def _build_filter_condition(
     )
 
 
+_DOC_ONLY_FIELDS = {"map_language", "sys_language"}
+_TEXT_MATCH_FIELDS = {"map_title"}
+
+
 def _build_query_filter(
     filters: Optional[dict],
     section_types: Optional[List[str]],
@@ -401,49 +418,19 @@ def _build_query_filter(
 
     filters = map_filters_to_storage(filters, data_source=data_source)
     if filters:
-        text_match_fields = {"map_title"}
-        # Language is doc-level only (sys_language/map_language), not on chunks
-        doc_only_fields = {"map_language", "sys_language"}
         for field, value in filters.items():
-            if field in doc_only_fields:
+            if field in _DOC_ONLY_FIELDS:
+                continue
+            if field.endswith("_min") or field.endswith("_max"):
                 continue
             if field == "doc_id":
-                # doc_id filter must be required, but we need to check both doc_id and sys_doc_id
-                # Create a nested filter: MUST(doc_id=X OR sys_doc_id=X)
-                doc_id_should_conditions = []
-                multi_values = _as_multi_values(value)
-                if multi_values:
-                    doc_id_should_conditions.append(
-                        models.FieldCondition(
-                            key="doc_id",
-                            match=models.MatchAny(any=multi_values),
-                        )
-                    )
-                    doc_id_should_conditions.append(
-                        models.FieldCondition(
-                            key="sys_doc_id",
-                            match=models.MatchAny(any=multi_values),
-                        )
-                    )
-                else:
-                    doc_id_should_conditions.append(
-                        models.FieldCondition(
-                            key="doc_id",
-                            match=models.MatchValue(value=value),
-                        )
-                    )
-                    doc_id_should_conditions.append(
-                        models.FieldCondition(
-                            key="sys_doc_id",
-                            match=models.MatchValue(value=value),
-                        )
-                    )
-                # Wrap the should conditions in a nested filter and add to must
-                must_conditions.append(models.Filter(should=doc_id_should_conditions))
+                must_conditions.append(build_doc_id_filter(value, _as_multi_values))
                 continue
-            condition = _build_filter_condition(field, value, text_match_fields)
+            condition = _build_filter_condition(field, value, _TEXT_MATCH_FIELDS)
             if condition:
                 must_conditions.append(condition)
+
+        must_conditions.extend(collect_range_conditions(filters))
 
     return models.Filter(
         must=must_conditions if must_conditions else None,
@@ -938,12 +925,6 @@ def get_search_facets(
     source = data_source or "uneg"
     db = _get_search_db(None, source)
     filter_fields_config = get_filter_fields(source)
-    from pipeline.db import get_taxonomy_filter_fields  # noqa: PLC0415
-
-    filter_fields_config = {
-        **filter_fields_config,
-        **get_taxonomy_filter_fields(source),
-    }
 
     # 1. Determine which fields we need to fetch
     needed_fields = ["doc_id", "sys_doc_id"]  # Include sys_doc_id for deduplication

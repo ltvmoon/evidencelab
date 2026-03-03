@@ -5,6 +5,7 @@ export interface SearchStateFromURL {
   query: string;
   filters: SearchFilters;
   selectedFilters: Record<string, string[]>;
+  rangeFilters: Record<string, { min: string; max: string }>;
   denseWeight: number;
   rerank: boolean;
   recencyBoost: boolean;
@@ -118,15 +119,47 @@ const parseSectionTypes = (
     : defaultSectionTypes;
 };
 
+const isDynamicFilterKey = (key: string): boolean =>
+  key.startsWith('src_') || key.startsWith('tag_');
+
+const isRangeParam = (key: string): boolean =>
+  isDynamicFilterKey(key) && (key.endsWith('_min') || key.endsWith('_max'));
+
+const parseDynamicParams = (
+  params: URLSearchParams,
+  filters: SearchFilters,
+  selectedFilters: Record<string, string[]>,
+  rangeFilters: Record<string, { min: string; max: string }>
+): void => {
+  for (const [key, value] of params.entries()) {
+    if (!value || !isDynamicFilterKey(key)) continue;
+
+    if (isRangeParam(key)) {
+      const base = key.slice(0, -4);
+      const bound = key.endsWith('_min') ? 'min' : 'max';
+      if (!rangeFilters[base]) {
+        rangeFilters[base] = { min: '', max: '' };
+      }
+      rangeFilters[base][bound] = value;
+      filters[key] = value;
+    } else if (!filters[key]) {
+      filters[key] = value;
+      selectedFilters[key] = parseFilterParam(params, key);
+    }
+  }
+};
+
 const parseFilters = (
   params: URLSearchParams,
   coreFields: string[]
 ): {
   filters: SearchFilters;
   selectedFilters: Record<string, string[]>;
+  rangeFilters: Record<string, { min: string; max: string }>;
 } => {
   const filters: SearchFilters = {};
   const selectedFilters: Record<string, string[]> = {};
+  const rangeFilters: Record<string, { min: string; max: string }> = {};
 
   for (const field of coreFields) {
     const value = params.get(field);
@@ -138,7 +171,9 @@ const parseFilters = (
     }
   }
 
-  return { filters, selectedFilters };
+  parseDynamicParams(params, filters, selectedFilters, rangeFilters);
+
+  return { filters, selectedFilters, rangeFilters };
 };
 
 const parseFieldBoostFields = (params: URLSearchParams): Record<string, number> => {
@@ -166,7 +201,7 @@ export const getSearchStateFromURL = (
   groupDefaults?: SearchSettings
 ): SearchStateFromURL => {
   const params = new URLSearchParams(window.location.search);
-  const { filters, selectedFilters } = parseFilters(params, coreFields);
+  const { filters, selectedFilters, rangeFilters } = parseFilters(params, coreFields);
 
   // For each setting: URL param wins, then group default, then system default.
   const d = { ...SYSTEM_DEFAULTS, ...groupDefaults };
@@ -175,6 +210,7 @@ export const getSearchStateFromURL = (
     query: params.get('q') || '',
     filters,
     selectedFilters,
+    rangeFilters,
     denseWeight: parseFloatParam(params, 'weight', d.denseWeight ?? SYSTEM_DEFAULTS.denseWeight),
     rerank: parseBooleanParam(params, 'rerank', d.rerank ?? SYSTEM_DEFAULTS.rerank),
     recencyBoost: parseBooleanParam(params, 'recency', d.recencyBoost ?? SYSTEM_DEFAULTS.recencyBoost),

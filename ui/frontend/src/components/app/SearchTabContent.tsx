@@ -18,6 +18,7 @@ interface SearchTabContentProps {
   onClearFilters: () => void;
   facets: Facets | null;
   selectedFilters: Record<string, string[]>;
+  rangeFilters: Record<string, { min: string; max: string }>;
   collapsedFilters: Set<string>;
   expandedFilterLists: Set<string>;
   filterSearchTerms: Record<string, string>;
@@ -28,6 +29,7 @@ interface SearchTabContentProps {
   onFilterSearchTermChange: (coreField: string, value: string) => void;
   onToggleFilterListExpansion: (coreField: string) => void;
   onFilterValuesChange: (coreField: string, nextValues: string[]) => void;
+  onRangeChange: (coreField: string, min: string, max: string) => void;
   searchDenseWeight: number;
   onSearchDenseWeightChange: (value: number) => void;
   keywordBoostShortQueries: boolean;
@@ -354,6 +356,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   onClearFilters,
   facets,
   selectedFilters,
+  rangeFilters,
   collapsedFilters,
   expandedFilterLists,
   filterSearchTerms,
@@ -364,6 +367,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   onFilterSearchTermChange,
   onToggleFilterListExpansion,
   onFilterValuesChange,
+  onRangeChange,
   searchDenseWeight,
   onSearchDenseWeightChange,
   keywordBoostShortQueries,
@@ -677,6 +681,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
               onClearFilters={onClearFilters}
               facets={facets}
               selectedFilters={selectedFilters}
+              rangeFilters={rangeFilters}
               collapsedFilters={collapsedFilters}
               expandedFilterLists={expandedFilterLists}
               filterSearchTerms={filterSearchTerms}
@@ -687,6 +692,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
               onFilterSearchTermChange={onFilterSearchTermChange}
               onToggleFilterListExpansion={onToggleFilterListExpansion}
               onFilterValuesChange={onFilterValuesChange}
+              onRangeChange={onRangeChange}
               searchDenseWeight={searchDenseWeight}
               onSearchDenseWeightChange={onSearchDenseWeightChange}
               keywordBoostShortQueries={keywordBoostShortQueries}

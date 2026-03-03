@@ -2798,6 +2798,8 @@ export const HeatmapTabContent: React.FC<HeatmapTabContentProps> = ({
     onFieldBoostToggle,
     fieldBoostFields,
     onFieldBoostFieldsChange,
+    rangeFilters: {},
+    onRangeChange: () => {},
   };
 
   const isQueryRow = rowDimension === 'queries';
@@ -2974,6 +2976,7 @@ export const HeatmapTabContent: React.FC<HeatmapTabContentProps> = ({
                 <FilterSections
                   facets={heatmapModalFacets}
                   selectedFilters={heatmapSelectedFilters}
+                  rangeFilters={{}}
                   collapsedFilters={heatmapCollapsedFilters}
                   expandedFilterLists={heatmapExpandedFilterLists}
                   filterSearchTerms={heatmapFilterSearchTerms}
@@ -2983,6 +2986,7 @@ export const HeatmapTabContent: React.FC<HeatmapTabContentProps> = ({
                   onSearchTermChange={handleHeatmapFilterSearchTermChange}
                   onToggleFilterListExpansion={toggleHeatmapFilterListExpansion}
                   onFilterValuesChange={handleHeatmapFilterValuesChange}
+                  onRangeChange={() => {}}
                   renderContentTop={() => (
                     <label className="heatmap-filter-select-all filter-checkbox-item">
                       <div className="filter-checkbox-row">

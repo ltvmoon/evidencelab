@@ -142,11 +142,9 @@ class Database:
         if create_indexes:
             self.create_payload_indexes()  # Automatically create indexes for faceting
 
-    def _load_pipeline_config(self) -> Dict[str, Any]:
-        """Load pipeline configuration for the current data source from JSON."""
-        # Using the global load_datasources_config logic but targeting specific datasource path
+    def _load_datasource_config(self) -> Dict[str, Any]:
+        """Load the full datasource config for the current data source."""
         config_data = load_datasources_config()
-        # Handle new root structure if present
         datasources = config_data.get("datasources", config_data)
 
         datasource_key = next(
@@ -158,8 +156,12 @@ class Database:
             None,
         )
         if datasource_key:
-            return datasources[datasource_key].get("pipeline", {})
+            return datasources[datasource_key]
         return {}
+
+    def _load_pipeline_config(self) -> Dict[str, Any]:
+        """Load pipeline configuration for the current data source from JSON."""
+        return self._load_datasource_config().get("pipeline", {})
 
     def _get_vector_config(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
@@ -461,8 +463,14 @@ class Database:
         for tax_key in taxonomies:
             field_name = f"tag_{tax_key}"
             facet_fields.append((field_name, models.PayloadSchemaType.KEYWORD))
-            # Also add to chunks? Yes, usually.
-            # facet_fields is used for both.
+
+        # Add src_* filter fields from config (e.g. src_geographic_scope)
+        ds_cfg = self._load_datasource_config()
+        filter_fields = ds_cfg.get("filter_fields", {})
+        indexed = {f for f, _ in facet_fields}
+        for field_name in filter_fields:
+            if field_name.startswith("src_") and field_name not in indexed:
+                facet_fields.append((field_name, models.PayloadSchemaType.KEYWORD))
 
         # Create indexes on documents collection
         for field_name, field_type in facet_fields:
