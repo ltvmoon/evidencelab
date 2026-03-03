@@ -27,6 +27,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useRatings } from '../../hooks/useRatings';
 import StarRating from '../ratings/StarRating';
 import RatingModal from '../ratings/RatingModal';
+import { generateUUID } from '../../utils/uuid';
 
 const API_KEY = process.env.REACT_APP_API_KEY;
 
@@ -2333,7 +2334,7 @@ export const HeatmapTabContent: React.FC<HeatmapTabContentProps> = ({
     }
     const heatmapStartTime = performance.now();
     // Generate a new heatmap ID for this grid search run
-    heatmapIdRef.current = crypto.randomUUID();
+    heatmapIdRef.current = generateUUID();
     updateHeatmapURL({ run: true });
     setGridLoading(true);
     setGridError(null);

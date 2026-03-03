@@ -38,6 +38,7 @@ import { AuthContext, useAuthState } from './hooks/useAuth';
 import { useGroupDefaults } from './hooks/useGroupDefaults';
 import { useActivityLogging } from './hooks/useActivityLogging';
 import { serializeDrilldownTree } from './utils/drilldownUtils';
+import { generateUUID } from './utils/uuid';
 import AdminPanel from './components/admin/AdminPanel';
 import { DEFAULT_SECTION_TYPES, DEFAULT_FIELD_BOOST_FIELDS, buildSearchURL, getSearchStateFromURL } from './utils/searchUrl';
 import { streamAiSummary } from './utils/aiSummaryStream';
@@ -668,7 +669,7 @@ function App() {
   // Initialize search state from URL parameters - MOVED TO TOP
   const [query, setQuery] = useState(initialSearchState.query);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searchId, setSearchId] = useState(() => crypto.randomUUID());
+  const [searchId, setSearchId] = useState(() => generateUUID());
   const [facets, setFacets] = useState<Facets | null>(null);
   const [allFacets, setAllFacets] = useState<Facets | null>(null);
   const [facetsDataSource, setFacetsDataSource] = useState<string | null>(null);
@@ -1790,7 +1791,7 @@ function App() {
     setSearchError(null);
     processingHighlightsRef.current.clear(); // Clear highlight locks
     isSearchingRef.current = true;
-    setSearchId(crypto.randomUUID());
+    setSearchId(generateUUID());
 
     try {
       const params = buildSearchParams({
