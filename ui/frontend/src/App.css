@@ -3009,10 +3009,8 @@ h6,
 
 /* Recency boost controls */
 .recency-slider-group {
-  margin-top: var(--spacing-md);
+  margin-top: var(--spacing-xs);
   padding: var(--spacing-sm);
-  background: var(--gray-50);
-  border-radius: var(--border-radius-sm);
 }
 
 .recency-slider-label {
@@ -3028,12 +3026,11 @@ h6,
   width: 100%;
 }
 
-/* Grouped setting with sub-settings — no top border so the faint box
-   never extends above the grey checkbox bar. */
+/* Grouped setting with sub-settings — faint border wraps the group,
+   top border aligns with the top of the grey checkbox bar. */
 .settings-subsettings-group {
   border: 1px solid var(--gray-200);
-  border-top: none;
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  border-radius: var(--radius-md);
   padding: 0 0 var(--spacing-xs) 0;
   margin-top: var(--spacing-md);
   margin-bottom: var(--spacing-xs);
