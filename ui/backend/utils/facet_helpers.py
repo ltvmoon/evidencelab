@@ -1,10 +1,13 @@
 """Helpers for building facet results from Qdrant and PostgreSQL."""
 
+import logging
 from collections import Counter
 from typing import Any, Dict, List, Tuple
 
 from ui.backend.schemas import FacetValue, RangeInfo
 from ui.backend.utils.language_codes import LANGUAGE_NAMES
+
+logger = logging.getLogger(__name__)
 
 # Maximum unique values allowed for a dynamic (src_*/tag_*) filter field.
 # Fields exceeding this limit must be purely numerical (rendered as range
@@ -145,6 +148,42 @@ def _validate_and_route_field(
     facets_result[core_field] = build_generic_facets(raw_counts)
 
 
+def _facet_tag_field(db, core_field: str) -> Dict[Any, int]:
+    """Query facet counts for a tag_* field from the chunks collection."""
+    if not hasattr(db, "facet"):
+        return {}
+    return db.facet(
+        collection_name=db.chunks_collection,
+        key=core_field,
+        filter_conditions=None,
+        limit=2000,
+        exact=False,
+    )
+
+
+def _facet_storage_field(
+    db, pg, core_field: str, storage_field: str, facet_filter
+) -> Dict[Any, int]:
+    """Query facet counts for a storage field from Qdrant or PostgreSQL."""
+    if storage_field.startswith("sys_") and pg:
+        return build_facets_from_pg(pg, storage_field)
+    return db.facet_documents(
+        key=storage_field,
+        filter_conditions=facet_filter,
+        limit=2000,
+        exact=False,
+    )
+
+
+def _safe_facet_query(query_fn, core_field: str) -> Dict[Any, int]:
+    """Run a facet query, returning empty dict on failure."""
+    try:
+        return query_fn()
+    except Exception as exc:
+        logger.warning("Facet query failed for %s: %s", core_field, exc)
+        return None
+
+
 def build_facets_from_db(
     db,
     filter_fields_config: Dict[str, str],
@@ -173,39 +212,13 @@ def build_facets_from_db(
             facets_result[core_field] = []
             continue
 
-        # Taxonomy tag fields live on chunks, not documents
-        if core_field.startswith("tag_"):
-            if not hasattr(db, "facet"):
-                facets_result[core_field] = []
-                continue
-            raw_counts = db.facet(
-                collection_name=db.chunks_collection,
-                key=core_field,
-                filter_conditions=None,
-                limit=2000,
-                exact=False,
-            )
-            _validate_and_route_field(
-                core_field, raw_counts, facets_result, range_fields
-            )
+        raw_counts = _get_raw_counts(
+            db, pg, core_field, facet_filter, resolve_storage_field
+        )
+        if raw_counts is None:
+            facets_result[core_field] = []
             continue
 
-        storage_field = resolve_storage_field(
-            core_field, db.data_source if db else None
-        )
-
-        # sys_* fields live in PostgreSQL, not Qdrant
-        if storage_field.startswith("sys_") and pg:
-            raw_counts = build_facets_from_pg(pg, storage_field)
-        else:
-            raw_counts = db.facet_documents(
-                key=storage_field,
-                filter_conditions=facet_filter,
-                limit=2000,
-                exact=False,
-            )
-
-        # Map language codes to full names
         if core_field == "language":
             raw_counts = {LANGUAGE_NAMES.get(k, k): v for k, v in raw_counts.items()}
 
@@ -216,3 +229,15 @@ def build_facets_from_db(
         _validate_and_route_field(core_field, raw_counts, facets_result, range_fields)
 
     return facets_result, range_fields
+
+
+def _get_raw_counts(db, pg, core_field, facet_filter, resolve_storage_field):
+    """Fetch raw facet counts for a field, returning None on failure."""
+    if core_field.startswith("tag_"):
+        return _safe_facet_query(lambda: _facet_tag_field(db, core_field), core_field)
+
+    storage_field = resolve_storage_field(core_field, db.data_source if db else None)
+    return _safe_facet_query(
+        lambda: _facet_storage_field(db, pg, core_field, storage_field, facet_filter),
+        core_field,
+    )
