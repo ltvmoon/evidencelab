@@ -580,6 +580,13 @@ if USER_MODULE:
 
     app.add_middleware(CSRFMiddleware)
 
+# on_active: deny unauthenticated requests to all data endpoints
+if USER_MODULE_MODE == "on_active":
+    from ui.backend.auth.active_auth import ActiveAuthMiddleware  # noqa: E402
+    from ui.backend.auth.users import AUTH_SECRET  # noqa: E402
+
+    app.add_middleware(ActiveAuthMiddleware, auth_secret=AUTH_SECRET, api_key=API_KEY)
+
 
 # Models
 class SearchResult(BaseModel):
