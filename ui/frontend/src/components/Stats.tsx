@@ -8,7 +8,7 @@ interface StatsProps {
 }
 
 export const Stats: React.FC<StatsProps> = ({
-    dataSource = 'uneg',
+    dataSource = '',
     onNavigateToDocuments,
 }) => {
     const state = useDocumentsState(dataSource);

@@ -85,7 +85,7 @@ export const DocumentsTableRow: React.FC<{
   onOpenPdfPreview,
   reprocessingDocId,
   dataSourceConfig,
-  dataSource = 'uneg',
+  dataSource = '',
 }) => {
     const lastUpdated = formatTimestamp(getLastUpdatedTimestamp(doc.stages || {}));
 

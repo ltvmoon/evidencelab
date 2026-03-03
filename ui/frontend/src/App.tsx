@@ -510,7 +510,7 @@ function App() {
     if (initialSearchState.dataset) {
       return initialSearchState.dataset;
     }
-    return 'UN Humanitarian Evaluation';  // Fallback default
+    return '';  // Will be set to first available domain when config loads
   });
 
   // Update selected domain when config loads if needed, or ensure it's valid
@@ -656,11 +656,10 @@ function App() {
   const dataSource = React.useMemo(() => {
     // If we have a selectedDomain and config is loaded, get the data_subdir
     if (!loadingConfig && selectedDomain && datasourcesConfig[selectedDomain]) {
-      return datasourcesConfig[selectedDomain].data_subdir || 'uneg';
+      return datasourcesConfig[selectedDomain].data_subdir || '';
     }
-    // If config is still loading but we have a dataset in URL, we need to wait
-    // Return 'uneg' as fallback, but it will update when config loads
-    return currentDataSourceConfig?.data_subdir || 'uneg';
+    // Config still loading — return empty to prevent premature API calls
+    return currentDataSourceConfig?.data_subdir || '';
   }, [loadingConfig, selectedDomain, datasourcesConfig, currentDataSourceConfig]);
 
   const fieldMapping = currentDataSourceConfig?.field_mapping || {};
@@ -1217,7 +1216,7 @@ function App() {
 
   const loadFacets = useCallback(async (options?: { includeQuery?: boolean; filtersOverride?: SearchFilters; queryValue?: string }) => {
     try {
-      if (loadingConfig && initialSearchState.dataset) {
+      if (!dataSource || (loadingConfig && initialSearchState.dataset)) {
         return;
       }
       const includeQuery = options?.includeQuery ?? false;
@@ -1252,7 +1251,7 @@ function App() {
 
   const loadAllFacets = useCallback(async () => {
     try {
-      if (loadingConfig && initialSearchState.dataset) {
+      if (!dataSource || (loadingConfig && initialSearchState.dataset)) {
         return;
       }
       const params = new URLSearchParams();
@@ -1781,7 +1780,7 @@ function App() {
   }, []);
 
   const performSearch = useCallback(async () => {
-    if (!query.trim() || isSearchingRef.current) {
+    if (!dataSource || !query.trim() || isSearchingRef.current) {
       if (isSearchingRef.current) {
         console.warn("Search already in progress, skipping double call.");
       }
@@ -2380,6 +2379,8 @@ function App() {
       findOutMoreLoading={findOutMoreLoading}
       findOutMoreActiveFact={findOutMoreActiveFact}
       requestShowGraph={findOutMoreDone}
+      dataSource={dataSource}
+      summaryModelConfig={summaryModelConfig}
     />
   );
 
