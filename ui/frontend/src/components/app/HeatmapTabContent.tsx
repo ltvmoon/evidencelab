@@ -426,7 +426,7 @@ const resolveResultUrl = (result: SearchResult) => {
 
   // Fallback: construct path from available data
   if (!parsedFolder && result.organization && result.year && result.doc_id) {
-    const dataSource = result.data_source || result.metadata?.data_source || 'uneg';
+    const dataSource = result.data_source || result.metadata?.data_source || '';
     parsedFolder = `data/${dataSource}/parsed/${result.organization}/${result.year}/${result.doc_id}`;
   }
 
