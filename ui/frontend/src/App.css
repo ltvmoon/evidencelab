@@ -7980,9 +7980,34 @@ li.ai-fact-active::before {
 }
 
 /* Login / Register Modal */
+.login-overlay {
+  background: rgba(0, 0, 0, 0.35);
+}
+
 .login-modal {
   max-width: 420px;
   width: 90vw;
+}
+
+.login-branding {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.25rem 1rem 0.75rem;
+}
+
+.login-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.login-brand-name {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-family: 'Poppins', sans-serif;
+  color: var(--brand-primary-dark);
 }
 
 .login-tabs {

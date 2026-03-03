@@ -8,6 +8,8 @@ interface LoginModalProps {
   onClose: () => void;
   /** When set, open straight into reset-password mode with this token. */
   resetToken?: string | null;
+  /** When true, the modal cannot be dismissed (no close button, no overlay click). */
+  required?: boolean;
 }
 
 type TabMode = 'login' | 'register' | 'forgot' | 'reset';
@@ -217,7 +219,7 @@ const MainAuthForm: React.FC<MainAuthFormProps> = ({
 /*  Main modal                                                        */
 /* ------------------------------------------------------------------ */
 
-const LoginModal: React.FC<LoginModalProps> = ({ onClose, resetToken }) => {
+const LoginModal: React.FC<LoginModalProps> = ({ onClose, resetToken, required }) => {
   const { login, register, verificationMessage, clearVerificationMessage } = useAuth();
   const [mode, setMode] = useState<TabMode>(resetToken ? 'reset' : 'login');
   const [email, setEmail] = useState('');
@@ -315,8 +317,12 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, resetToken }) => {
   const isMainTab = mode === 'login' || mode === 'register';
 
   return (
-    <div className="modal-overlay" onClick={handleClose}>
+    <div className="modal-overlay login-overlay" onClick={required ? undefined : handleClose}>
       <div className="modal-content login-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="login-branding">
+          <img src="/logo.png" alt="Evidence Lab" className="login-logo" />
+          <span className="login-brand-name">Evidence Lab</span>
+        </div>
         <div className="modal-header">
           <div className="login-tabs">
             <button
@@ -332,7 +338,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, resetToken }) => {
               Register
             </button>
           </div>
-          <button className="modal-close" onClick={handleClose}>&times;</button>
+          {!required && <button className="modal-close" onClick={handleClose}>&times;</button>}
         </div>
 
         <div className="modal-body">
