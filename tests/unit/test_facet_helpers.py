@@ -1,13 +1,21 @@
 """Tests for ui.backend.utils.facet_helpers."""
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import pytest
 
 from ui.backend.utils.facet_helpers import (
     FILTER_FIELD_MAX_UNIQUE_VALS,
     _all_values_numerical,
     _build_range_info,
+    _facet_storage_field,
+    _facet_tag_field,
+    _get_raw_counts,
     _is_dynamic_field,
+    _safe_facet_query,
     _validate_and_route_field,
+    build_facets_from_db,
     build_generic_facets,
     build_year_facets,
 )
@@ -205,3 +213,228 @@ class TestBuildGenericFacets:
         result_dict = {fv.value: fv.count for fv in result}
         assert result_dict["X"] == 5
         assert result_dict["Y"] == 3
+
+
+# ---------------------------------------------------------------------------
+# _safe_facet_query
+# ---------------------------------------------------------------------------
+class TestSafeFacetQuery:
+    def test_returns_result_on_success(self):
+        result = _safe_facet_query(lambda: {"Global": 10}, "test_field")
+        assert result == {"Global": 10}
+
+    def test_returns_none_on_exception(self):
+        def failing():
+            raise RuntimeError("No index")
+
+        result = _safe_facet_query(failing, "test_field")
+        assert result is None
+
+    def test_returns_empty_dict_from_fn(self):
+        result = _safe_facet_query(lambda: {}, "test_field")
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# _facet_tag_field
+# ---------------------------------------------------------------------------
+class TestFacetTagField:
+    def test_queries_chunks_collection(self):
+        db = MagicMock()
+        db.chunks_collection = "chunks_uneg"
+        db.facet.return_value = {"sdg1": 10, "sdg2": 5}
+
+        result = _facet_tag_field(db, "tag_sdg")
+
+        assert result == {"sdg1": 10, "sdg2": 5}
+        db.facet.assert_called_once_with(
+            collection_name="chunks_uneg",
+            key="tag_sdg",
+            filter_conditions=None,
+            limit=2000,
+            exact=False,
+        )
+
+    def test_returns_empty_when_no_facet_method(self):
+        db = SimpleNamespace()  # no facet attribute
+        result = _facet_tag_field(db, "tag_sdg")
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# _facet_storage_field
+# ---------------------------------------------------------------------------
+class TestFacetStorageField:
+    def test_routes_sys_field_to_postgres(self):
+        db = MagicMock()
+        pg = MagicMock()
+        pg._get_conn.return_value.__enter__ = MagicMock()
+        pg._get_conn.return_value.__exit__ = MagicMock()
+
+        _facet_storage_field(db, pg, "language", "sys_language", None)
+        # Should NOT call db.facet_documents
+        db.facet_documents.assert_not_called()
+
+    def test_routes_non_sys_field_to_qdrant(self):
+        db = MagicMock()
+        db.facet_documents.return_value = {"Global": 10}
+
+        result = _facet_storage_field(
+            db, None, "src_geographic_scope", "src_geographic_scope", None
+        )
+
+        assert result == {"Global": 10}
+        db.facet_documents.assert_called_once_with(
+            key="src_geographic_scope",
+            filter_conditions=None,
+            limit=2000,
+            exact=False,
+        )
+
+    def test_sys_field_falls_to_qdrant_when_no_pg(self):
+        db = MagicMock()
+        db.facet_documents.return_value = {"en": 100}
+
+        result = _facet_storage_field(db, None, "language", "sys_language", None)
+
+        assert result == {"en": 100}
+        db.facet_documents.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _get_raw_counts
+# ---------------------------------------------------------------------------
+class TestGetRawCounts:
+    def test_tag_field_routes_to_chunks(self):
+        db = MagicMock()
+        db.chunks_collection = "chunks_uneg"
+        db.facet.return_value = {"sdg1": 10}
+
+        result = _get_raw_counts(db, None, "tag_sdg", None, lambda f, s: f)
+
+        assert result == {"sdg1": 10}
+        db.facet.assert_called_once()
+        db.facet_documents.assert_not_called()
+
+    def test_src_field_routes_to_documents(self):
+        db = MagicMock()
+        db.data_source = "uneg"
+        db.facet_documents.return_value = {"Global": 10, "Country": 50}
+
+        result = _get_raw_counts(db, None, "src_geographic_scope", None, lambda f, s: f)
+
+        assert result == {"Global": 10, "Country": 50}
+        db.facet_documents.assert_called_once()
+
+    def test_core_field_routes_to_documents(self):
+        db = MagicMock()
+        db.data_source = "uneg"
+        db.facet_documents.return_value = {"UNDP": 100}
+
+        result = _get_raw_counts(
+            db, None, "organization", None, lambda f, s: "map_organization"
+        )
+
+        assert result == {"UNDP": 100}
+
+    def test_returns_none_on_qdrant_error(self):
+        db = MagicMock()
+        db.data_source = "uneg"
+        db.facet_documents.side_effect = RuntimeError("No index")
+
+        result = _get_raw_counts(db, None, "src_geographic_scope", None, lambda f, s: f)
+
+        assert result is None
+
+    def test_returns_none_on_tag_error(self):
+        db = MagicMock()
+        db.chunks_collection = "chunks_uneg"
+        db.facet.side_effect = RuntimeError("No index")
+
+        result = _get_raw_counts(db, None, "tag_sdg", None, lambda f, s: f)
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# build_facets_from_db
+# ---------------------------------------------------------------------------
+class TestBuildFacetsFromDb:
+    @staticmethod
+    def _mock_db(facet_docs=None, facet_chunks=None):
+        db = MagicMock()
+        db.data_source = "uneg"
+        db.documents_collection = "documents_uneg"
+        db.chunks_collection = "chunks_uneg"
+        db.facet_documents.return_value = facet_docs or {}
+        db.facet.return_value = facet_chunks or {}
+        return db
+
+    def test_title_field_always_empty(self):
+        db = self._mock_db()
+        config = {"title": "Document Title", "organization": "Organization"}
+        facets, ranges = build_facets_from_db(db, config, None, lambda f, s: f)
+        assert facets["title"] == []
+        assert "title" not in ranges
+
+    def test_src_field_returns_facets(self):
+        db = self._mock_db(facet_docs={"Global": 10, "Country": 50})
+        config = {"src_geographic_scope": "Geographic Scope"}
+        facets, ranges = build_facets_from_db(db, config, None, lambda f, s: f)
+        assert "src_geographic_scope" in facets
+        values = {fv.value: fv.count for fv in facets["src_geographic_scope"]}
+        assert values["Country"] == 50
+        assert values["Global"] == 10
+
+    def test_tag_field_returns_facets(self):
+        db = self._mock_db(facet_chunks={"sdg1": 20, "sdg2": 10})
+        config = {"tag_sdg": "SDG"}
+        facets, ranges = build_facets_from_db(db, config, None, lambda f, s: f)
+        assert "tag_sdg" in facets
+        assert len(facets["tag_sdg"]) == 2
+
+    def test_failed_field_returns_empty_list(self):
+        db = self._mock_db()
+        db.facet_documents.side_effect = RuntimeError("No index")
+        config = {"src_missing": "Missing Field"}
+        facets, ranges = build_facets_from_db(db, config, None, lambda f, s: f)
+        assert facets["src_missing"] == []
+
+    def test_failed_tag_field_returns_empty_list(self):
+        db = self._mock_db()
+        db.facet.side_effect = RuntimeError("No index")
+        config = {"tag_missing": "Missing Tag"}
+        facets, ranges = build_facets_from_db(db, config, None, lambda f, s: f)
+        assert facets["tag_missing"] == []
+
+    def test_published_year_uses_year_facets(self):
+        db = self._mock_db(facet_docs={"2023": 10, "2020": 5, "2022": 8})
+        config = {"published_year": "Year Published"}
+        facets, ranges = build_facets_from_db(db, config, None, lambda f, s: f)
+        years = [fv.value for fv in facets["published_year"]]
+        assert years == ["2023", "2022", "2020"]  # descending
+
+    def test_numerical_src_goes_to_range_fields(self):
+        db = self._mock_db(facet_docs={"100": 5, "200": 3, "500": 1})
+        config = {"src_budget": "Budget"}
+        facets, ranges = build_facets_from_db(db, config, None, lambda f, s: f)
+        assert "src_budget" not in facets
+        assert "src_budget" in ranges
+        assert ranges["src_budget"].min == 100.0
+        assert ranges["src_budget"].max == 500.0
+
+    def test_mixed_fields_all_processed(self):
+        db = self._mock_db(
+            facet_docs={"UNDP": 100, "FAO": 50},
+            facet_chunks={"sdg1": 20},
+        )
+        config = {
+            "title": "Title",
+            "organization": "Organization",
+            "tag_sdg": "SDG",
+        }
+        facets, ranges = build_facets_from_db(db, config, None, lambda f, s: f)
+        assert "title" in facets
+        assert "organization" in facets
+        assert "tag_sdg" in facets
+        assert len(facets) == 3
