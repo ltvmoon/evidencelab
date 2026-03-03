@@ -3028,13 +3028,20 @@ h6,
   width: 100%;
 }
 
-/* Grouped setting with sub-settings — no side/top padding so the main
-   checkbox stays the same width as other settings. */
+/* Grouped setting with sub-settings — no top border so the faint box
+   never extends above the grey checkbox bar. */
 .settings-subsettings-group {
   border: 1px solid var(--gray-200);
-  border-radius: var(--radius-md);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
   padding: 0 0 var(--spacing-xs) 0;
+  margin-top: var(--spacing-md);
   margin-bottom: var(--spacing-xs);
+}
+
+/* Remove inner margin so the grey box starts exactly where the container starts */
+.settings-subsettings-group > .rerank-checkbox-label:first-child {
+  margin-top: 0;
 }
 
 /* Field boost controls */
