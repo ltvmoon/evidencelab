@@ -8,11 +8,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ui.backend.auth.db import get_async_session
-from ui.backend.auth.models import User, UserRating
+from ui.backend.auth.models import User, UserActivity, UserRating
 from ui.backend.auth.schemas import VALID_RATING_TYPES, RatingCreate, RatingRead
 from ui.backend.auth.users import current_active_user, current_superuser
 
@@ -100,15 +100,17 @@ async def upsert_rating(
     # If this is a search-related rating, mark the activity record
     if body.rating_type in ("search_result", "ai_summary"):
         try:
+            ref_uuid = uuid.UUID(body.reference_id)
             await session.execute(
-                text(
-                    "UPDATE user_activity SET has_ratings = true "
-                    "WHERE user_id = :uid AND search_id = CAST(:sid AS UUID)"
-                ),
-                {"uid": str(user.id), "sid": body.reference_id},
+                update(UserActivity)
+                .where(
+                    UserActivity.user_id == user.id,
+                    UserActivity.search_id == ref_uuid,
+                )
+                .values(has_ratings=True)
             )
             await session.commit()
-        except Exception:
+        except (ValueError, Exception):
             logger.debug("Could not mark activity has_ratings (non-critical)")
 
     return _rating_to_read(rating, user)

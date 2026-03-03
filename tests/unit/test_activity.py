@@ -59,6 +59,54 @@ class TestActivityCreate:
         with pytest.raises(ValidationError, match="search_id"):
             ActivityCreate(query="test")
 
+    def test_search_id_max_length(self):
+        """search_id exceeding 100 chars should be rejected."""
+        with pytest.raises(ValidationError, match="search_id"):
+            ActivityCreate(search_id="x" * 101, query="test")
+
+    def test_query_max_length(self):
+        """query exceeding 5000 chars should be rejected."""
+        with pytest.raises(ValidationError, match="query"):
+            ActivityCreate(search_id=str(uuid.uuid4()), query="x" * 5001)
+
+    def test_url_max_length(self):
+        """url exceeding 2000 chars should be rejected."""
+        with pytest.raises(ValidationError, match="url"):
+            ActivityCreate(
+                search_id=str(uuid.uuid4()),
+                query="test",
+                url="https://example.com/" + "x" * 2000,
+            )
+
+    def test_filters_jsonb_depth_limit(self):
+        """Deeply nested filters dict should be rejected."""
+        # Build a dict nested 15 levels deep (exceeds limit of 10)
+        deep = {"a": "leaf"}
+        for _ in range(14):
+            deep = {"nested": deep}
+        with pytest.raises(ValidationError, match="depth"):
+            ActivityCreate(
+                search_id=str(uuid.uuid4()),
+                query="test",
+                filters=deep,
+            )
+
+    def test_filters_jsonb_size_limit(self):
+        """Extremely large filters payload should be rejected."""
+        huge = {"data": "x" * 250_000}
+        with pytest.raises(ValidationError, match="size"):
+            ActivityCreate(
+                search_id=str(uuid.uuid4()),
+                query="test",
+                filters=huge,
+            )
+
+    def test_filters_jsonb_normal_depth_ok(self):
+        """A reasonably nested filters dict should be accepted."""
+        normal = {"timing": {"search_duration_ms": 450}, "country": ["Kenya"]}
+        a = ActivityCreate(search_id=str(uuid.uuid4()), query="test", filters=normal)
+        assert a.filters == normal
+
 
 class TestActivitySummaryUpdate:
     """Tests for the ActivitySummaryUpdate schema."""
@@ -81,6 +129,46 @@ class TestActivitySummaryUpdate:
         u = ActivitySummaryUpdate(drilldown_tree=tree)
         assert u.ai_summary is None
         assert u.drilldown_tree == tree
+
+    def test_summary_duration_bounds(self):
+        """summary_duration_ms must be between 0 and 600_000."""
+        u = ActivitySummaryUpdate(summary_duration_ms=5000.0)
+        assert u.summary_duration_ms == 5000.0
+
+    def test_summary_duration_negative_rejected(self):
+        """Negative summary_duration_ms should be rejected."""
+        with pytest.raises(ValidationError, match="summary_duration_ms"):
+            ActivitySummaryUpdate(summary_duration_ms=-1.0)
+
+    def test_summary_duration_too_large_rejected(self):
+        """summary_duration_ms over 600_000 should be rejected."""
+        with pytest.raises(ValidationError, match="summary_duration_ms"):
+            ActivitySummaryUpdate(summary_duration_ms=700_000.0)
+
+    def test_drilldown_tree_depth_limit(self):
+        """Deeply nested drilldown_tree should be rejected."""
+        deep = {"id": "leaf", "label": "L", "children": []}
+        for _ in range(14):
+            deep = {"id": "n", "label": "N", "children": [deep]}
+        with pytest.raises(ValidationError, match="depth"):
+            ActivitySummaryUpdate(drilldown_tree=deep)
+
+    def test_drilldown_tree_normal_ok(self):
+        """A reasonably nested tree should be accepted."""
+        tree = {
+            "id": "root",
+            "label": "Summary",
+            "children": [
+                {"id": "c1", "label": "Topic 1", "children": []},
+                {
+                    "id": "c2",
+                    "label": "Topic 2",
+                    "children": [{"id": "c2a", "label": "Subtopic 2a", "children": []}],
+                },
+            ],
+        }
+        u = ActivitySummaryUpdate(drilldown_tree=tree)
+        assert u.drilldown_tree["id"] == "root"
 
 
 class TestActivityRead:

@@ -2,10 +2,44 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi_users import schemas
 from pydantic import BaseModel, Field, field_validator
+
+# ---------------------------------------------------------------------------
+# JSONB safety helpers
+# ---------------------------------------------------------------------------
+
+_MAX_JSONB_DEPTH = 10
+_MAX_JSONB_SIZE = 200_000  # chars when serialised (≈200 KB)
+
+
+def _check_jsonb_depth(obj: Any, depth: int = 0) -> None:
+    """Raise ValueError when *obj* exceeds the allowed nesting depth."""
+    if depth > _MAX_JSONB_DEPTH:
+        raise ValueError(f"JSONB nesting exceeds maximum depth of {_MAX_JSONB_DEPTH}")
+    if isinstance(obj, dict):
+        for v in obj.values():
+            _check_jsonb_depth(v, depth + 1)
+    elif isinstance(obj, list):
+        for item in obj:
+            _check_jsonb_depth(item, depth + 1)
+
+
+def _validate_jsonb(v: Any) -> Any:
+    """Validate a JSONB-bound value for depth and approximate size."""
+    if v is None:
+        return v
+    _check_jsonb_depth(v)
+    import json
+
+    if len(json.dumps(v, default=str)) > _MAX_JSONB_SIZE:
+        raise ValueError(
+            f"JSONB payload exceeds maximum size of {_MAX_JSONB_SIZE} characters"
+        )
+    return v
+
 
 # ---------------------------------------------------------------------------
 # fastapi-users schemas (registration, login, profile)
@@ -135,12 +169,12 @@ class RatingCreate(BaseModel):
     """Payload for creating or updating a rating."""
 
     rating_type: str
-    reference_id: str
-    item_id: Optional[str] = None
+    reference_id: str = Field(..., max_length=255)
+    item_id: Optional[str] = Field(None, max_length=255)
     score: int = Field(..., ge=1, le=5)
     comment: Optional[str] = Field(None, max_length=2000)
     context: Optional[dict] = None
-    url: Optional[str] = None
+    url: Optional[str] = Field(None, max_length=2000)
 
     @field_validator("rating_type")
     @classmethod
@@ -150,6 +184,11 @@ class RatingCreate(BaseModel):
                 f"rating_type must be one of: {', '.join(sorted(VALID_RATING_TYPES))}"
             )
         return v
+
+    @field_validator("context")
+    @classmethod
+    def validate_context(cls, v: Optional[dict]) -> Optional[dict]:
+        return _validate_jsonb(v)
 
 
 class RatingRead(BaseModel):
@@ -175,12 +214,22 @@ class RatingRead(BaseModel):
 class ActivityCreate(BaseModel):
     """Payload for logging a search activity."""
 
-    search_id: str
-    query: str
+    search_id: str = Field(..., max_length=100)
+    query: str = Field(..., max_length=5000)
     filters: Optional[dict] = None
     search_results: Optional[list] = None
-    ai_summary: Optional[str] = None
-    url: Optional[str] = None
+    ai_summary: Optional[str] = Field(None, max_length=100_000)
+    url: Optional[str] = Field(None, max_length=2000)
+
+    @field_validator("filters")
+    @classmethod
+    def validate_filters(cls, v: Optional[dict]) -> Optional[dict]:
+        return _validate_jsonb(v)
+
+    @field_validator("search_results")
+    @classmethod
+    def validate_search_results(cls, v: Optional[list]) -> Optional[list]:
+        return _validate_jsonb(v)
 
 
 class ActivitySummaryUpdate(BaseModel):
@@ -191,9 +240,14 @@ class ActivitySummaryUpdate(BaseModel):
     drilldown_tree to capture the AI Summary Tree structure.
     """
 
-    ai_summary: Optional[str] = None
-    summary_duration_ms: Optional[float] = None
+    ai_summary: Optional[str] = Field(None, max_length=100_000)
+    summary_duration_ms: Optional[float] = Field(None, ge=0, le=600_000)
     drilldown_tree: Optional[dict] = None
+
+    @field_validator("drilldown_tree")
+    @classmethod
+    def validate_drilldown_tree(cls, v: Optional[dict]) -> Optional[dict]:
+        return _validate_jsonb(v)
 
 
 class ActivityRead(BaseModel):

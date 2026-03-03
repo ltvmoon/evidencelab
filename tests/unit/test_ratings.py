@@ -89,6 +89,70 @@ class TestRatingCreate:
         )
         assert len(r.comment) == 2000
 
+    def test_reference_id_max_length(self):
+        """reference_id exceeding 255 chars should be rejected."""
+        with pytest.raises(ValidationError, match="reference_id"):
+            RatingCreate(
+                rating_type="search_result",
+                reference_id="x" * 256,
+                score=3,
+            )
+
+    def test_item_id_max_length(self):
+        """item_id exceeding 255 chars should be rejected."""
+        with pytest.raises(ValidationError, match="item_id"):
+            RatingCreate(
+                rating_type="search_result",
+                reference_id="ref",
+                item_id="x" * 256,
+                score=3,
+            )
+
+    def test_url_max_length(self):
+        """url exceeding 2000 chars should be rejected."""
+        with pytest.raises(ValidationError, match="url"):
+            RatingCreate(
+                rating_type="search_result",
+                reference_id="ref",
+                score=3,
+                url="https://example.com/" + "x" * 2000,
+            )
+
+    def test_context_jsonb_depth_limit(self):
+        """Deeply nested context dict should be rejected."""
+        deep = {"a": "leaf"}
+        for _ in range(14):
+            deep = {"nested": deep}
+        with pytest.raises(ValidationError, match="depth"):
+            RatingCreate(
+                rating_type="search_result",
+                reference_id="ref",
+                score=3,
+                context=deep,
+            )
+
+    def test_context_jsonb_size_limit(self):
+        """Extremely large context payload should be rejected."""
+        huge = {"data": "x" * 250_000}
+        with pytest.raises(ValidationError, match="size"):
+            RatingCreate(
+                rating_type="search_result",
+                reference_id="ref",
+                score=3,
+                context=huge,
+            )
+
+    def test_context_normal_ok(self):
+        """A reasonably sized context dict should be accepted."""
+        ctx = {"query": "test", "results_snapshot": [{"id": i} for i in range(50)]}
+        r = RatingCreate(
+            rating_type="search_result",
+            reference_id="ref",
+            score=3,
+            context=ctx,
+        )
+        assert r.context["query"] == "test"
+
 
 class TestRatingRead:
     """Tests for the RatingRead schema."""
