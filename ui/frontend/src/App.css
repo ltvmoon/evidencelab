@@ -2895,6 +2895,48 @@ h6,
   font-style: italic;
 }
 
+/* Range filter inputs (numerical fields) */
+.filter-range-inputs {
+  padding: var(--spacing-sm) 0;
+}
+
+.filter-range-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.filter-range-label {
+  font-size: 0.8rem;
+  color: var(--gray-600);
+  min-width: 28px;
+  flex-shrink: 0;
+}
+
+.filter-range-input {
+  flex: 1;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--gray-300);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.8rem;
+  color: var(--gray-700);
+  background: var(--white, #fff);
+  max-width: 120px;
+}
+
+.filter-range-input:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.filter-range-hint {
+  font-size: 0.7rem;
+  color: var(--gray-400);
+  margin-top: var(--spacing-xs);
+}
+
 /* Rerank checkbox styling */
 .rerank-checkbox-label {
   display: flex;

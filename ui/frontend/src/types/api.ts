@@ -148,9 +148,15 @@ export interface FacetValue {
   published_year?: string;  // For title facets - associated year
 }
 
+export interface RangeInfo {
+  min: number;
+  max: number;
+}
+
 export interface Facets {
   facets: Record<string, FacetValue[]>;  // core_field_name -> facet values
   filter_fields: Record<string, string>;  // core_field_name -> display label
+  range_fields?: Record<string, RangeInfo>;  // numerical fields with min/max
 }
 
 export interface HighlightBox {

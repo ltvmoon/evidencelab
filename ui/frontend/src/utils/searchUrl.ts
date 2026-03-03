@@ -4,6 +4,7 @@ export interface SearchStateFromURL {
   query: string;
   filters: SearchFilters;
   selectedFilters: Record<string, string[]>;
+  rangeFilters: Record<string, { min: string; max: string }>;
   denseWeight: number;
   rerank: boolean;
   recencyBoost: boolean;
@@ -80,15 +81,47 @@ const parseSectionTypes = (
     : defaultSectionTypes;
 };
 
+const isDynamicFilterKey = (key: string): boolean =>
+  key.startsWith('src_') || key.startsWith('tag_');
+
+const isRangeParam = (key: string): boolean =>
+  isDynamicFilterKey(key) && (key.endsWith('_min') || key.endsWith('_max'));
+
+const parseDynamicParams = (
+  params: URLSearchParams,
+  filters: SearchFilters,
+  selectedFilters: Record<string, string[]>,
+  rangeFilters: Record<string, { min: string; max: string }>
+): void => {
+  for (const [key, value] of params.entries()) {
+    if (!value || !isDynamicFilterKey(key)) continue;
+
+    if (isRangeParam(key)) {
+      const base = key.slice(0, -4);
+      const bound = key.endsWith('_min') ? 'min' : 'max';
+      if (!rangeFilters[base]) {
+        rangeFilters[base] = { min: '', max: '' };
+      }
+      rangeFilters[base][bound] = value;
+      filters[key] = value;
+    } else if (!filters[key]) {
+      filters[key] = value;
+      selectedFilters[key] = parseFilterParam(params, key);
+    }
+  }
+};
+
 const parseFilters = (
   params: URLSearchParams,
   coreFields: string[]
 ): {
   filters: SearchFilters;
   selectedFilters: Record<string, string[]>;
+  rangeFilters: Record<string, { min: string; max: string }>;
 } => {
   const filters: SearchFilters = {};
   const selectedFilters: Record<string, string[]> = {};
+  const rangeFilters: Record<string, { min: string; max: string }> = {};
 
   for (const field of coreFields) {
     const value = params.get(field);
@@ -100,15 +133,9 @@ const parseFilters = (
     }
   }
 
-  // Pick up config-driven filter params (src_*, tag_*) from URL
-  for (const [key, value] of params.entries()) {
-    if ((key.startsWith('src_') || key.startsWith('tag_')) && value && !filters[key]) {
-      filters[key] = value;
-      selectedFilters[key] = parseFilterParam(params, key);
-    }
-  }
+  parseDynamicParams(params, filters, selectedFilters, rangeFilters);
 
-  return { filters, selectedFilters };
+  return { filters, selectedFilters, rangeFilters };
 };
 
 const parseFieldBoostFields = (params: URLSearchParams): Record<string, number> => {
@@ -135,12 +162,13 @@ export const getSearchStateFromURL = (
   defaultSectionTypes: string[]
 ): SearchStateFromURL => {
   const params = new URLSearchParams(window.location.search);
-  const { filters, selectedFilters } = parseFilters(params, coreFields);
+  const { filters, selectedFilters, rangeFilters } = parseFilters(params, coreFields);
 
   return {
     query: params.get('q') || '',
     filters,
     selectedFilters,
+    rangeFilters,
     denseWeight: parseFloatParam(params, 'weight', 0.8),
     rerank: parseBooleanParam(params, 'rerank', true),
     recencyBoost: parseBooleanParam(params, 'recency', false),

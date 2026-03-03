@@ -1,10 +1,35 @@
 """Helpers for building facet results from Qdrant and PostgreSQL."""
 
 from collections import Counter
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
-from ui.backend.schemas import FacetValue
+from ui.backend.schemas import FacetValue, RangeInfo
 from ui.backend.utils.language_codes import LANGUAGE_NAMES
+
+# Maximum unique values allowed for a dynamic (src_*/tag_*) filter field.
+# Fields exceeding this limit must be purely numerical (rendered as range
+# inputs) or removed from filter_fields in config.json.
+FILTER_FIELD_MAX_UNIQUE_VALS = 1000
+
+
+def _all_values_numerical(raw_counts: Dict[Any, int]) -> bool:
+    """Return True if every non-empty key can be parsed as a number."""
+    has_values = False
+    for key in raw_counts:
+        if key is None or key == "":
+            continue
+        has_values = True
+        try:
+            float(str(key))
+        except (ValueError, TypeError):
+            return False
+    return has_values
+
+
+def _build_range_info(raw_counts: Dict[Any, int]) -> RangeInfo:
+    """Compute min/max from numerical facet keys."""
+    nums = [float(str(k)) for k in raw_counts if k is not None and k != ""]
+    return RangeInfo(min=min(nums), max=max(nums))
 
 
 def build_year_facets(raw_counts: Dict[Any, int]) -> List[FacetValue]:
@@ -79,19 +104,70 @@ def build_facets_from_pg(pg, storage_field: str) -> Dict[str, int]:
             return {str(row[0]): int(row[1]) for row in cur.fetchall()}
 
 
+def _is_dynamic_field(core_field: str) -> bool:
+    """Return True for config-driven fields that need cardinality validation."""
+    return core_field.startswith("src_") or core_field.startswith("tag_")
+
+
+def _validate_and_route_field(
+    core_field: str,
+    raw_counts: Dict[Any, int],
+    facets_result: Dict[str, List[FacetValue]],
+    range_fields: Dict[str, RangeInfo],
+) -> None:
+    """Validate cardinality for dynamic fields and route to facets or range_fields.
+
+    For ``src_*`` / ``tag_*`` fields:
+    - If all values are numerical → store min/max in ``range_fields``.
+    - If non-numerical and unique count > ``FILTER_FIELD_MAX_UNIQUE_VALS`` → raise.
+    - Otherwise → build normal facet list.
+
+    Core fields (without ``src_`` / ``tag_`` prefix) are always treated as normal
+    facets with no cardinality limit.
+    """
+    if _is_dynamic_field(core_field):
+        # Filter out empty keys for counting
+        non_empty = {k: v for k, v in raw_counts.items() if k not in (None, "")}
+        if _all_values_numerical(non_empty):
+            if non_empty:
+                range_fields[core_field] = _build_range_info(non_empty)
+            else:
+                facets_result[core_field] = []
+            return
+
+        if len(non_empty) > FILTER_FIELD_MAX_UNIQUE_VALS:
+            raise ValueError(
+                f"Filter field '{core_field}' has {len(non_empty)} unique values "
+                f"(max {FILTER_FIELD_MAX_UNIQUE_VALS}). Remove it from filter_fields "
+                f"in config.json or reduce the field's cardinality."
+            )
+
+    facets_result[core_field] = build_generic_facets(raw_counts)
+
+
 def build_facets_from_db(
     db,
     filter_fields_config: Dict[str, str],
     facet_filter,
     resolve_storage_field,
     pg=None,
-) -> Dict[str, List[FacetValue]]:
+) -> Tuple[Dict[str, List[FacetValue]], Dict[str, RangeInfo]]:
     """Build facet results for all filter fields.
 
     Routes sys_* fields to PostgreSQL and all others to Qdrant.
     Maps language codes to full display names.
+    Detects numerical dynamic fields and returns them as range_fields.
+
+    Returns:
+        Tuple of (facets dict, range_fields dict).
+
+    Raises:
+        ValueError: If a non-numerical src_*/tag_* field exceeds
+            FILTER_FIELD_MAX_UNIQUE_VALS unique values.
     """
     facets_result: Dict[str, List[FacetValue]] = {}
+    range_fields: Dict[str, RangeInfo] = {}
+
     for core_field in filter_fields_config.keys():
         if core_field == "title":
             facets_result[core_field] = []
@@ -109,11 +185,9 @@ def build_facets_from_db(
                 limit=2000,
                 exact=False,
             )
-            facets_result[core_field] = [
-                FacetValue(value=str(v), count=c)
-                for v, c in sorted(raw_counts.items(), key=lambda x: -x[1])
-                if v not in (None, "")
-            ]
+            _validate_and_route_field(
+                core_field, raw_counts, facets_result, range_fields
+            )
             continue
 
         storage_field = resolve_storage_field(
@@ -139,6 +213,6 @@ def build_facets_from_db(
             facets_result[core_field] = build_year_facets(raw_counts)
             continue
 
-        facets_result[core_field] = build_generic_facets(raw_counts)
+        _validate_and_route_field(core_field, raw_counts, facets_result, range_fields)
 
-    return facets_result
+    return facets_result, range_fields

@@ -1,8 +1,8 @@
-"""Tests for _add_dynamic_filters in ui.backend.routes.search."""
+"""Tests for add_dynamic_filters in ui.backend.utils.filter_helpers."""
 
 from unittest.mock import patch
 
-from ui.backend.routes.search import _add_dynamic_filters
+from ui.backend.utils.filter_helpers import add_dynamic_filters
 
 MOCK_FILTER_FIELDS = {
     "organization": "Organization",
@@ -23,12 +23,12 @@ def _make_query_params(params: dict):
 
 
 @patch(
-    "ui.backend.routes.search.get_filter_fields",
+    "ui.backend.utils.filter_helpers.get_filter_fields",
     return_value=MOCK_FILTER_FIELDS,
 )
 def test_picks_up_src_fields(mock_get):
     core = {}
-    _add_dynamic_filters(
+    add_dynamic_filters(
         core,
         _make_query_params({"src_geographic_scope": "Global"}),
         "uneg",
@@ -37,12 +37,12 @@ def test_picks_up_src_fields(mock_get):
 
 
 @patch(
-    "ui.backend.routes.search.get_filter_fields",
+    "ui.backend.utils.filter_helpers.get_filter_fields",
     return_value=MOCK_FILTER_FIELDS,
 )
 def test_picks_up_tag_fields(mock_get):
     core = {}
-    _add_dynamic_filters(
+    add_dynamic_filters(
         core,
         _make_query_params({"tag_sdg": "sdg1,sdg3"}),
         "uneg",
@@ -51,12 +51,12 @@ def test_picks_up_tag_fields(mock_get):
 
 
 @patch(
-    "ui.backend.routes.search.get_filter_fields",
+    "ui.backend.utils.filter_helpers.get_filter_fields",
     return_value=MOCK_FILTER_FIELDS,
 )
 def test_picks_up_multiple_dynamic_fields(mock_get):
     core = {}
-    _add_dynamic_filters(
+    add_dynamic_filters(
         core,
         _make_query_params(
             {
@@ -73,12 +73,12 @@ def test_picks_up_multiple_dynamic_fields(mock_get):
 
 
 @patch(
-    "ui.backend.routes.search.get_filter_fields",
+    "ui.backend.utils.filter_helpers.get_filter_fields",
     return_value=MOCK_FILTER_FIELDS,
 )
 def test_ignores_params_not_in_config(mock_get):
     core = {}
-    _add_dynamic_filters(
+    add_dynamic_filters(
         core,
         _make_query_params({"unknown_field": "value"}),
         "uneg",
@@ -87,12 +87,12 @@ def test_ignores_params_not_in_config(mock_get):
 
 
 @patch(
-    "ui.backend.routes.search.get_filter_fields",
+    "ui.backend.utils.filter_helpers.get_filter_fields",
     return_value=MOCK_FILTER_FIELDS,
 )
 def test_does_not_duplicate_hardcoded_core_fields(mock_get):
     core = {"organization": "UNDP"}
-    _add_dynamic_filters(
+    add_dynamic_filters(
         core,
         _make_query_params(
             {
@@ -108,12 +108,12 @@ def test_does_not_duplicate_hardcoded_core_fields(mock_get):
 
 
 @patch(
-    "ui.backend.routes.search.get_filter_fields",
+    "ui.backend.utils.filter_helpers.get_filter_fields",
     return_value=MOCK_FILTER_FIELDS,
 )
 def test_ignores_empty_values(mock_get):
     core = {}
-    _add_dynamic_filters(
+    add_dynamic_filters(
         core,
         _make_query_params({"src_geographic_scope": "", "tag_sdg": "sdg1"}),
         "uneg",
@@ -122,12 +122,12 @@ def test_ignores_empty_values(mock_get):
 
 
 @patch(
-    "ui.backend.routes.search.get_filter_fields",
+    "ui.backend.utils.filter_helpers.get_filter_fields",
     return_value=MOCK_FILTER_FIELDS,
 )
 def test_defaults_to_uneg_when_no_data_source(mock_get):
     core = {}
-    _add_dynamic_filters(
+    add_dynamic_filters(
         core,
         _make_query_params({"tag_sdg": "sdg2"}),
     )
@@ -136,12 +136,12 @@ def test_defaults_to_uneg_when_no_data_source(mock_get):
 
 
 @patch(
-    "ui.backend.routes.search.get_filter_fields",
+    "ui.backend.utils.filter_helpers.get_filter_fields",
     return_value=MOCK_FILTER_FIELDS,
 )
 def test_preserves_existing_core_filters(mock_get):
     core = {"organization": "UNICEF", "title": "Report"}
-    _add_dynamic_filters(
+    add_dynamic_filters(
         core,
         _make_query_params({"src_geographic_scope": "National"}),
         "uneg",
@@ -151,3 +151,104 @@ def test_preserves_existing_core_filters(mock_get):
         "title": "Report",
         "src_geographic_scope": "National",
     }
+
+
+# ---------------------------------------------------------------------------
+# Range (_min / _max) parameter tests
+# ---------------------------------------------------------------------------
+MOCK_FILTER_FIELDS_WITH_NUMERIC = {
+    **MOCK_FILTER_FIELDS,
+    "src_budget": "Budget (USD)",
+}
+
+
+@patch(
+    "ui.backend.utils.filter_helpers.get_filter_fields",
+    return_value=MOCK_FILTER_FIELDS_WITH_NUMERIC,
+)
+def test_picks_up_range_min_param(mock_get):
+    core = {}
+    add_dynamic_filters(
+        core,
+        _make_query_params({"src_budget_min": "100"}),
+        "uneg",
+    )
+    assert core == {"src_budget_min": "100"}
+
+
+@patch(
+    "ui.backend.utils.filter_helpers.get_filter_fields",
+    return_value=MOCK_FILTER_FIELDS_WITH_NUMERIC,
+)
+def test_picks_up_range_max_param(mock_get):
+    core = {}
+    add_dynamic_filters(
+        core,
+        _make_query_params({"src_budget_max": "5000"}),
+        "uneg",
+    )
+    assert core == {"src_budget_max": "5000"}
+
+
+@patch(
+    "ui.backend.utils.filter_helpers.get_filter_fields",
+    return_value=MOCK_FILTER_FIELDS_WITH_NUMERIC,
+)
+def test_picks_up_both_min_and_max(mock_get):
+    core = {}
+    add_dynamic_filters(
+        core,
+        _make_query_params({"src_budget_min": "100", "src_budget_max": "5000"}),
+        "uneg",
+    )
+    assert core == {"src_budget_min": "100", "src_budget_max": "5000"}
+
+
+@patch(
+    "ui.backend.utils.filter_helpers.get_filter_fields",
+    return_value=MOCK_FILTER_FIELDS_WITH_NUMERIC,
+)
+def test_range_and_checkbox_together(mock_get):
+    core = {}
+    add_dynamic_filters(
+        core,
+        _make_query_params(
+            {
+                "src_budget_min": "100",
+                "src_geographic_scope": "Global",
+            }
+        ),
+        "uneg",
+    )
+    assert core == {
+        "src_budget_min": "100",
+        "src_geographic_scope": "Global",
+    }
+
+
+@patch(
+    "ui.backend.utils.filter_helpers.get_filter_fields",
+    return_value=MOCK_FILTER_FIELDS_WITH_NUMERIC,
+)
+def test_range_ignores_empty_min_max(mock_get):
+    core = {}
+    add_dynamic_filters(
+        core,
+        _make_query_params({"src_budget_min": "", "src_budget_max": "5000"}),
+        "uneg",
+    )
+    assert core == {"src_budget_max": "5000"}
+
+
+@patch(
+    "ui.backend.utils.filter_helpers.get_filter_fields",
+    return_value=MOCK_FILTER_FIELDS_WITH_NUMERIC,
+)
+def test_range_ignores_unknown_field_min_max(mock_get):
+    core = {}
+    add_dynamic_filters(
+        core,
+        _make_query_params({"src_unknown_min": "10"}),
+        "uneg",
+    )
+    assert core == {}

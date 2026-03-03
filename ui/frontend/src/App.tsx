@@ -798,6 +798,8 @@ function App() {
       setFilters(searchState.filters);
       // Restore selected filter arrays (dynamic)
       setSelectedFilters(searchState.selectedFilters);
+      // Restore range filter values
+      setRangeFilters(searchState.rangeFilters);
       // Restore search mode settings
       setSearchDenseWeight(searchState.denseWeight);
       setRerankEnabled(searchState.rerank);
@@ -867,6 +869,9 @@ function App() {
 
   // Multi-select filters (dynamic by core field name) - initialize from URL
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>(initialSearchState.selectedFilters);
+
+  // Range filters for numerical fields (min/max inputs)
+  const [rangeFilters, setRangeFilters] = useState<Record<string, { min: string; max: string }>>(initialSearchState.rangeFilters);
 
   // Sync selectedFilters when facets load with new config-driven fields
   useEffect(() => {
@@ -948,6 +953,30 @@ function App() {
       handleFilterChange(coreField, buildFilterValue(nextValues));
     },
     [buildFilterValue, handleFilterChange]
+  );
+
+  const handleRangeChange = useCallback(
+    (coreField: string, min: string, max: string) => {
+      setRangeFilters((prev) => ({
+        ...prev,
+        [coreField]: { min, max },
+      }));
+      setFilters((prev) => {
+        const next = { ...prev };
+        if (min) {
+          next[`${coreField}_min`] = min;
+        } else {
+          delete next[`${coreField}_min`];
+        }
+        if (max) {
+          next[`${coreField}_max`] = max;
+        } else {
+          delete next[`${coreField}_max`];
+        }
+        return next;
+      });
+    },
+    []
   );
 
   const handleHeatmapRemoveFilter = useCallback(
@@ -2034,6 +2063,7 @@ function App() {
       onClearFilters={handleClearFilters}
       facets={displayFacets}
       selectedFilters={selectedFilters}
+      rangeFilters={rangeFilters}
       collapsedFilters={collapsedFilters}
       expandedFilterLists={expandedFilterLists}
       filterSearchTerms={filterSearchTerms}
@@ -2044,6 +2074,7 @@ function App() {
       onFilterSearchTermChange={handleFilterSearchTermChange}
       onToggleFilterListExpansion={toggleFilterListExpansion}
       onFilterValuesChange={handleFilterValuesChange}
+      onRangeChange={handleRangeChange}
       searchDenseWeight={searchDenseWeight}
       onSearchDenseWeightChange={setSearchDenseWeight}
       keywordBoostShortQueries={keywordBoostShortQueries}
