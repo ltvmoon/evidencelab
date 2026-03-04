@@ -463,8 +463,12 @@ function App() {
   const [rerankModel, setRerankModel] = useState<string | null>(null);
   const [rerankModelPageSize, setRerankModelPageSize] = useState<number | null>(null);
 
-  // Fetch datasources config on mount (includes total_documents per datasource)
+  // Fetch datasources config.
+  // In on_active mode, wait until the user is authenticated so the request
+  // isn't rejected with 401 by ActiveAuthMiddleware.  When USER_MODULE is
+  // off (or on_passive), fetch immediately on mount.
   useEffect(() => {
+    if (USER_MODULE && !authState.isAuthenticated) return;
     const fetchConfig = async () => {
       try {
         const response = await axios.get<DataSourcesConfig>(`${API_BASE_URL}/config/datasources`);
@@ -487,12 +491,13 @@ function App() {
       }
     };
     fetchConfig();
-  }, []);
+  }, [authState.isAuthenticated]);
 
-  // Fetch model combos config on mount
+  // Fetch model combos config (same auth-aware guard as datasources above)
   useEffect(() => {
+    if (USER_MODULE && !authState.isAuthenticated) return;
     fetchModelCombos(API_BASE_URL, setModelCombos, setModelCombosLoading);
-  }, []);
+  }, [authState.isAuthenticated]);
 
   // Get available domains from config
   const availableDomains = Object.keys(datasourcesConfig);
