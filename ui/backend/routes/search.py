@@ -345,7 +345,9 @@ def _build_search_results(
                 ),
                 language=normalized_doc.get("language"),
                 metadata={
-                    k: v for k, v in doc.items() if k not in ("abstractive_summary",)
+                    k: v
+                    for k, v in normalized_doc.items()
+                    if k not in ("abstractive_summary",)
                 },
             )
         )
