@@ -197,6 +197,9 @@ echo "Restarting docker containers..."
 # Reset QDRANT_HOST so containers get the default (http://qdrant:6333)
 # instead of the host-resolved localhost URL from resolve_host_qdrant().
 unset QDRANT_HOST
+# Use passive user module so the UI does not block Playwright with auth popups.
+export USER_MODULE=on_passive
+export REACT_APP_USER_MODULE=on_passive
 docker compose up -d --build
 docker compose up -d embedding-server
 
@@ -231,4 +234,6 @@ docker compose exec -T \
   -e UI_BASE_URL="${UI_BASE_URL}" \
   -e SKIP_PIPELINE=1 \
   -e SKIP_PURGE=1 \
+  -e USER_MODULE=on_passive \
+  -e REACT_APP_USER_MODULE=on_passive \
   pipeline pytest tests/integration -vv
