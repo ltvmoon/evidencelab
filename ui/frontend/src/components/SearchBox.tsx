@@ -34,6 +34,9 @@ export const SearchBox = ({
   }
 
   const isLanding = !hasSearched;
+  const placeholder = datasetName && documentCount
+    ? `Search ${documentCount.toLocaleString()} ${datasetName}`
+    : 'Search documents';
 
   return (
     <div
@@ -50,13 +53,16 @@ export const SearchBox = ({
                   type="text"
                   value={query}
                   onChange={(event) => onQueryChange(event.target.value)}
-                  placeholder="Search documents"
+                  placeholder={placeholder}
                   className="search-input"
                 />
-                {!query && (
-                  <span className="search-enter-hint">
-                    Press Enter <kbd>↵</kbd>
-                  </span>
+                {onShowFilters && (
+                  <button type="button" className="search-input-filters" onClick={onShowFilters}>
+                    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 3h14M4 8h8M6 13h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                    Filters
+                  </button>
                 )}
               </div>
               {exampleQueries && exampleQueries.length > 0 && (
@@ -75,14 +81,6 @@ export const SearchBox = ({
                 </div>
               )}
             </div>
-            {onShowFilters && (
-              <button type="button" className="search-filters-btn" onClick={onShowFilters}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M1 3h14M4 8h8M6 13h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                Filters
-              </button>
-            )}
             <button type="submit" disabled={loading} className="search-button">
               {loading ? (
                 <>
@@ -108,7 +106,7 @@ export const SearchBox = ({
             type="text"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search documents"
+            placeholder={placeholder}
             className="search-input"
           />
           <button type="submit" disabled={loading} className="search-button">
