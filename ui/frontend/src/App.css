@@ -585,13 +585,14 @@ h6,
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Landing page: vertically centre the search box in available space */
+/* Landing page: position search box roughly 3/4 up the available space */
 .search-container.search-container-landing {
   border-bottom: none;
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-bottom: 25vh;
   padding-left: var(--spacing-xl);
   padding-right: var(--spacing-xl);
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -645,7 +646,7 @@ h6,
   gap: 6px;
   background: var(--gray-100);
   border: 1px solid var(--gray-300);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--gray-600);
   font-size: 0.9375rem;
   font-weight: 500;
@@ -4072,6 +4073,7 @@ li.ai-fact-active::before {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
+  background: var(--white);
   color: var(--gray-500);
   font-size: 0.8125rem;
 }
