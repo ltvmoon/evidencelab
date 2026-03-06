@@ -63,7 +63,7 @@ const GroupSettingsManager: React.FC = () => {
 
   // Collapsible sections — both open by default
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
-    new Set(['search_settings', 'content_settings'])
+    new Set(['search_settings', 'content_settings', 'ai_summary'])
   );
 
   const toggleSection = (key: string) => {
@@ -77,6 +77,10 @@ const GroupSettingsManager: React.FC = () => {
       return next;
     });
   };
+
+  // Summary prompt override (top-level group field, not part of search_settings)
+  const [summaryPromptEnabled, setSummaryPromptEnabled] = useState(false);
+  const [summaryPromptValue, setSummaryPromptValue] = useState('');
 
   const fetchGroups = useCallback(async () => {
     try {
@@ -108,6 +112,8 @@ const GroupSettingsManager: React.FC = () => {
     if (!selectedGroupId) {
       setOverrides(new Set());
       setValues({ ...SYSTEM_DEFAULTS });
+      setSummaryPromptEnabled(false);
+      setSummaryPromptValue('');
       return;
     }
     const group = groups.find((g) => g.id === selectedGroupId);
@@ -126,6 +132,10 @@ const GroupSettingsManager: React.FC = () => {
 
     setOverrides(newOverrides);
     setValues(newValues);
+
+    // Load summary prompt override
+    setSummaryPromptEnabled(!!group.summary_prompt);
+    setSummaryPromptValue(group.summary_prompt || '');
   }, [selectedGroupId, groups]);
 
   /** Update a value and mark it as overridden. */
@@ -146,9 +156,16 @@ const GroupSettingsManager: React.FC = () => {
           payload[key] = values[key];
         }
       }
-      await axios.patch(`${API_BASE_URL}/groups/${selectedGroupId}`, {
+      const patchBody: Record<string, unknown> = {
         search_settings: Object.keys(payload).length > 0 ? payload : {},
-      });
+      };
+      // Include summary prompt: empty string clears the override on the server
+      if (summaryPromptEnabled && summaryPromptValue.trim()) {
+        patchBody.summary_prompt = summaryPromptValue.trim();
+      } else {
+        patchBody.summary_prompt = '';
+      }
+      await axios.patch(`${API_BASE_URL}/groups/${selectedGroupId}`, patchBody);
       setSuccess('Settings saved.');
       window.dispatchEvent(new Event(GROUP_SETTINGS_UPDATED_EVENT));
       await fetchGroups();
@@ -167,9 +184,12 @@ const GroupSettingsManager: React.FC = () => {
     try {
       await axios.patch(`${API_BASE_URL}/groups/${selectedGroupId}`, {
         search_settings: {},
+        summary_prompt: '',
       });
       setOverrides(new Set());
       setValues({ ...SYSTEM_DEFAULTS });
+      setSummaryPromptEnabled(false);
+      setSummaryPromptValue('');
       setSuccess('Settings reset to system defaults.');
       await fetchGroups();
     } catch (err: any) {
@@ -570,6 +590,63 @@ const GroupSettingsManager: React.FC = () => {
                     </label>
                   ))}
                 </div>
+                  </div>
+                )}
+              </div>
+
+              {/* AI Summary Settings */}
+              <div className="filter-section">
+                <div className="filter-section-header" onClick={() => toggleSection('ai_summary')}>
+                  <span className="filter-section-toggle">
+                    {collapsedSections.has('ai_summary') ? '▼' : '▶'}
+                  </span>
+                  <span className="filter-section-title">AI Summary</span>
+                </div>
+                {collapsedSections.has('ai_summary') && (
+                  <div className="filter-section-content">
+                    <label className="rerank-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={summaryPromptEnabled}
+                        onChange={(e) => {
+                          setSummaryPromptEnabled(e.target.checked);
+                          if (!e.target.checked) {
+                            setSummaryPromptValue('');
+                          }
+                        }}
+                        className="rerank-checkbox"
+                      />
+                      <span>Override System Prompt</span>
+                      <span
+                        className="rerank-tooltip"
+                        title="Replace the default AI summary system prompt with a custom prompt for this group."
+                      >
+                        ⓘ
+                      </span>
+                    </label>
+                    {summaryPromptEnabled && (
+                      <div style={{ marginTop: '8px' }}>
+                        <textarea
+                          value={summaryPromptValue}
+                          onChange={(e) => setSummaryPromptValue(e.target.value)}
+                          placeholder="Enter a custom system prompt for AI summaries..."
+                          rows={8}
+                          style={{
+                            width: '100%',
+                            fontFamily: 'monospace',
+                            fontSize: '12px',
+                            padding: '8px',
+                            borderRadius: '4px',
+                            border: '1px solid #d1d5db',
+                            resize: 'vertical',
+                          }}
+                        />
+                        <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                          This prompt replaces the default system prompt used when generating AI summaries
+                          for members of this group.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

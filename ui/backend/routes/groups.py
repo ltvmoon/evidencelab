@@ -137,6 +137,9 @@ async def update_group(
     if body.search_settings is not None:
         group.search_settings = body.search_settings if body.search_settings else None
         flag_modified(group, "search_settings")
+    if body.summary_prompt is not None:
+        # Empty string clears the override; non-empty sets it
+        group.summary_prompt = body.summary_prompt or None
     await session.commit()
     await session.refresh(group)
     return await _group_to_read(session, group)
