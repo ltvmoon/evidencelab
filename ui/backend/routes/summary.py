@@ -63,7 +63,7 @@ async def _resolve_summary_prompt(user, session) -> str | None:
             UserGroup.summary_prompt.isnot(None),
             UserGroup.summary_prompt != "",
         )
-        .order_by(UserGroup.name)
+        .order_by(UserGroup.is_default, UserGroup.name)
         .limit(1)
     )
     result = await session.execute(stmt)
