@@ -100,6 +100,8 @@ interface ProfileModalProps {
 
 type ProfileTab = 'profile' | 'groups' | 'research';
 
+const ACTIVE_TAB_CLASS = 'login-tab-active';
+
 const ProfileModal: React.FC<ProfileModalProps> = ({ onClose, onLoadResearch }) => {
   const { user, refreshUser, logout } = useAuth();
   const [tab, setTab] = useState<ProfileTab>('profile');
@@ -162,20 +164,20 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ onClose, onLoadResearch }) 
         <div className="modal-header">
           <div className="login-tabs">
             <button
-              className={`login-tab ${tab === 'profile' ? 'login-tab-active' : ''}`}
+              className={`login-tab ${tab === 'profile' ? ACTIVE_TAB_CLASS : ''}`}
               onClick={() => setTab('profile')}
             >
               Profile
             </button>
             <button
-              className={`login-tab ${tab === 'groups' ? 'login-tab-active' : ''}`}
+              className={`login-tab ${tab === 'groups' ? ACTIVE_TAB_CLASS : ''}`}
               onClick={() => setTab('groups')}
             >
               Groups
             </button>
             {onLoadResearch && (
               <button
-                className={`login-tab ${tab === 'research' ? 'login-tab-active' : ''}`}
+                className={`login-tab ${tab === 'research' ? ACTIVE_TAB_CLASS : ''}`}
                 onClick={() => setTab('research')}
               >
                 Saved Research
