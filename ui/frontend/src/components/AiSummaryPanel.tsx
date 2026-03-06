@@ -717,14 +717,17 @@ export const AiSummaryPanel = ({
           />
         )}
         {showGraphView ? (
-          <DrilldownGraphView
-            tree={drilldownTree!}
-            activeNodeId={drilldownCurrentNodeId || 'root'}
-            onNodeClick={(nodeId) => {
-              onDrilldownNavigate!(nodeId);
-              setViewMode('summary');
-            }}
-          />
+          <>
+            <p className="ai-summary-hint" style={{ fontStyle: 'italic' }}>Click on nodes below to see their results and summaries.</p>
+            <DrilldownGraphView
+              tree={drilldownTree!}
+              activeNodeId={drilldownCurrentNodeId || 'root'}
+              onNodeClick={(nodeId) => {
+                onDrilldownNavigate!(nodeId);
+                setViewMode('summary');
+              }}
+            />
+          </>
         ) : showGlobalView ? (
           <div className="ai-summary-content expanded global-summary-content">
             <div className="ai-summary-markdown">
