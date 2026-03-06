@@ -2595,7 +2595,6 @@ function App() {
         onQueryChange={setQuery}
         onSubmit={handleSearch}
         onShowFilters={handleShowFilters}
-        activeFiltersCount={activeFiltersCount}
         datasetName={selectedDomain}
         documentCount={datasetTotals[selectedDomain]}
         exampleQueries={currentDataSourceConfig?.example_queries}
