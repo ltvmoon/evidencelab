@@ -91,7 +91,6 @@ const GroupSettingsManager: React.FC = () => {
   };
 
   // Summary prompt override (top-level group field, not part of search_settings)
-  const [summaryPromptEnabled, setSummaryPromptEnabled] = useState(false);
   const [summaryPromptValue, setSummaryPromptValue] = useState('');
   const [showPromptModal, setShowPromptModal] = useState(false);
 
@@ -125,7 +124,6 @@ const GroupSettingsManager: React.FC = () => {
     if (!selectedGroupId) {
       setOverrides(new Set());
       setValues({ ...SYSTEM_DEFAULTS });
-      setSummaryPromptEnabled(false);
       setSummaryPromptValue('');
       return;
     }
@@ -147,7 +145,6 @@ const GroupSettingsManager: React.FC = () => {
     setValues(newValues);
 
     // Load summary prompt override
-    setSummaryPromptEnabled(!!group.summary_prompt);
     setSummaryPromptValue(group.summary_prompt || '');
   }, [selectedGroupId, groups]);
 
@@ -173,11 +170,7 @@ const GroupSettingsManager: React.FC = () => {
         search_settings: Object.keys(payload).length > 0 ? payload : {},
       };
       // Include summary prompt: empty string clears the override on the server
-      if (summaryPromptEnabled && summaryPromptValue.trim()) {
-        patchBody.summary_prompt = summaryPromptValue.trim();
-      } else {
-        patchBody.summary_prompt = '';
-      }
+      patchBody.summary_prompt = summaryPromptValue.trim() || '';
       await axios.patch(`${API_BASE_URL}/groups/${selectedGroupId}`, patchBody);
       setSuccess('Settings saved.');
       window.dispatchEvent(new Event(GROUP_SETTINGS_UPDATED_EVENT));
@@ -201,7 +194,6 @@ const GroupSettingsManager: React.FC = () => {
       });
       setOverrides(new Set());
       setValues({ ...SYSTEM_DEFAULTS });
-      setSummaryPromptEnabled(false);
       setSummaryPromptValue('');
       setSuccess('Settings reset to system defaults.');
       await fetchGroups();
@@ -617,44 +609,25 @@ const GroupSettingsManager: React.FC = () => {
                 </div>
                 {collapsedSections.has('ai_summary') && (
                   <div className="filter-section-content">
-                    <label className="rerank-checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={summaryPromptEnabled}
-                        onChange={(e) => {
-                          const enabling = e.target.checked;
-                          setSummaryPromptEnabled(enabling);
-                          if (enabling) {
-                            // Pre-fill with default prompt if not already set
-                            if (!summaryPromptValue.trim()) {
-                              setSummaryPromptValue(DEFAULT_SUMMARY_PROMPT);
-                            }
-                            setShowPromptModal(true);
+                    <div style={{ marginTop: '4px' }}>
+                      <button
+                        className="btn-sm"
+                        onClick={() => {
+                          // Pre-fill with default prompt if empty
+                          if (!summaryPromptValue.trim()) {
+                            setSummaryPromptValue(DEFAULT_SUMMARY_PROMPT);
                           }
+                          setShowPromptModal(true);
                         }}
-                        className="rerank-checkbox"
-                      />
-                      <span>Override System Prompt</span>
-                      <span
-                        className="rerank-tooltip"
-                        title="Replace the default AI summary system prompt with a custom prompt for this group."
                       >
-                        ⓘ
-                      </span>
-                    </label>
-                    {summaryPromptEnabled && (
-                      <div style={{ marginTop: '8px' }}>
-                        <button
-                          className="btn-sm"
-                          onClick={() => setShowPromptModal(true)}
-                        >
-                          Edit Prompt
-                        </button>
-                        <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>
-                          Custom system prompt is active for this group.
-                        </p>
-                      </div>
-                    )}
+                        Edit Prompt
+                      </button>
+                      <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>
+                        {summaryPromptValue.trim()
+                          ? 'Custom system prompt is active for this group.'
+                          : 'Using default system prompt. Click Edit to customize.'}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
