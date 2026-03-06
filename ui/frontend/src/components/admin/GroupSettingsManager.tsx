@@ -719,9 +719,12 @@ const GroupSettingsManager: React.FC = () => {
               </button>
               <button
                 className="btn-sm"
-                onClick={() => setShowPromptModal(false)}
+                onClick={() => {
+                  setShowPromptModal(false);
+                  handleSave();
+                }}
               >
-                Done
+                Save &amp; Close
               </button>
             </div>
           </div>
