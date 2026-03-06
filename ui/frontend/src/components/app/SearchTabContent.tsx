@@ -102,11 +102,11 @@ interface SearchTabContentProps {
   hasSearchRun?: boolean;
 }
 
-const DOT_SIZES = [12, 12, 12, 12, 12];
+const DOT_SIZES = [18, 18, 18, 18, 18];
 const DOT_OPACITIES = [1, 0.8, 0.6, 0.4, 0.2];
-const TRAIL_GAP = 10; // frames between each trailing dot
+const TRAIL_GAP = 12; // frames between each trailing dot
 const HISTORY_SIZE = TRAIL_GAP * 4 + 1;
-const ORBIT_RADIUS = 30;
+const ORBIT_RADIUS = 40;
 const ORBIT_PERIOD_MS = 1800;
 const ORBIT_COUNT = 3;
 const ORBIT_DURATION_MS = ORBIT_PERIOD_MS * ORBIT_COUNT;

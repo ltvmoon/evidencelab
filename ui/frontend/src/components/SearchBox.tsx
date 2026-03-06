@@ -9,6 +9,7 @@ interface SearchBoxProps {
   onQueryChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onShowFilters?: () => void;
+  activeFiltersCount?: number;
   datasetName?: string;
   documentCount?: number;
   exampleQueries?: string[];
@@ -24,6 +25,7 @@ export const SearchBox = ({
   onQueryChange,
   onSubmit,
   onShowFilters,
+  activeFiltersCount = 0,
   datasetName,
   documentCount,
   exampleQueries,
@@ -58,9 +60,14 @@ export const SearchBox = ({
                 />
                 {onShowFilters && (
                   <button type="button" className="search-input-filters" onClick={onShowFilters}>
-                    <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M1 3h14M4 8h8M6 13h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
+                    <span className="search-input-filters-icon-wrap">
+                      <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1 3h14M4 8h8M6 13h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                      {activeFiltersCount > 0 && (
+                        <span className="search-input-filters-badge" />
+                      )}
+                    </span>
                     Filters
                   </button>
                 )}
