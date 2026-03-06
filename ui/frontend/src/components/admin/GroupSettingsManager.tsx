@@ -675,11 +675,10 @@ const GroupSettingsManager: React.FC = () => {
 
       {/* Summary Prompt Modal */}
       {showPromptModal && (
-        <div className="modal-overlay" onClick={() => setShowPromptModal(false)}>
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowPromptModal(false); }}>
           <div
             className="modal-content"
             style={{ maxWidth: '900px', height: '80vh', display: 'flex', flexDirection: 'column' }}
-            onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
               <h3>AI Summary System Prompt</h3>
