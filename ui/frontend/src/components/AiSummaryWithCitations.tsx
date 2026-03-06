@@ -82,6 +82,23 @@ const buildCitationMapping = (summaryText: string): Map<number, number> => {
   return citationMapping;
 };
 
+/** Strip trailing Conclusion / Summary sections the LLM sometimes adds despite prompt instructions. */
+const stripTrailingBoilerplate = (text: string): string => {
+  const lines = text.split('\n');
+  let cutIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const heading = parseHeading(lines[i].trim());
+    if (heading && /^(summary|conclusion|in\s+summary|final\s+summary)$/i.test(heading.text)) {
+      cutIndex = i;
+      break;
+    }
+    // Stop searching once we hit a non-empty, non-heading line above the last heading
+    if (cutIndex === -1 && lines[i].trim() && !parseHeading(lines[i].trim())) continue;
+  }
+  if (cutIndex > 0) return lines.slice(0, cutIndex).join('\n').trimEnd();
+  return text;
+};
+
 const splitSummaryBlocks = (summaryText: string): string[] =>
   summaryText.split(/\n\n+/);
 
@@ -309,8 +326,9 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
   findOutMoreLoading,
   findOutMoreActiveFact,
 }) => {
-  const citationMapping = buildCitationMapping(summaryText);
-  const blocks = splitSummaryBlocks(summaryText);
+  const cleanedText = stripTrailingBoilerplate(summaryText);
+  const citationMapping = buildCitationMapping(cleanedText);
+  const blocks = splitSummaryBlocks(cleanedText);
   // Track across all blocks so only the very first heading gets the button
   let isFirstHeadingGlobal = true;
 
@@ -369,7 +387,7 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
 
         lines.forEach((line) => {
           const trimmed = line.trim();
-          if (!trimmed || CITATION_ONLY_LINE.test(trimmed)) return;
+          if (!trimmed || CITATION_ONLY_LINE.test(trimmed) || /^-{3,}$/.test(trimmed)) return;
 
           const heading = parseHeading(trimmed);
           if (heading) {
@@ -379,7 +397,7 @@ export const AiSummaryWithCitations: React.FC<AiSummaryWithCitationsProps> = ({
             afterKeyFacts = isKeyFacts;
             const content = renderLineWithCitations(heading.text, searchResults, citationMapping, onResultClick, `${blockIndex}-h-${elements.length}`);
             elements.push(renderHeadingElement(heading, `${blockIndex}-h-${elements.length}`, content, {
-              isKeyFacts, isFirstHeading: isFirstHeadingGlobal, summaryText, onFindOutMore, findOutMoreLoading, findOutMoreActiveFact,
+              isKeyFacts, isFirstHeading: isFirstHeadingGlobal, summaryText: cleanedText, onFindOutMore, findOutMoreLoading, findOutMoreActiveFact,
             }));
             if (isFirstHeadingGlobal) isFirstHeadingGlobal = false;
             return;
