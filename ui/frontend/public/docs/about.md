@@ -40,6 +40,7 @@ Evidence Lab document processing pipeline includes the following features:
 ### User interface
 
 - Hybrid search with AI summary and reranking
+- **Drilldown research** — highlight text or click "Find out more" to automatically drill into sub-topics, building an explorable research tree with query inheritance (root + parent context)
 - Experimental features such as [Heatmapper](/?tab=heatmap&dataset=UN+Humanitarian+Evaluation+Reports&model=azure_small&model_combo=Azure+Foundry&hm_row=document_type&hm_col=published_year&hm_metric=documents&hm_sens=0.2&published_year=2021%2C2022%2C2023%2C2024%2C2025) for tracking trends in content
 - Filtering by metadata, in-document section types
 - Search and reranking settings to explore different models
@@ -47,6 +48,20 @@ Evidence Lab document processing pipeline includes the following features:
 - Basic language translation
 - PDF preview with in-document search
 - Administration views to track pipeline, documents, performance and errors
+
+### User Authentication & Permissions (opt-in)
+
+Evidence Lab includes an optional user module that adds authentication and data-source-level access control. When enabled (`USER_MODULE=true`), the system supports:
+
+- **Email/password registration** with email verification
+- **OAuth login** with Google and Microsoft
+- **User profiles** with display name and group membership
+- **Group-based permissions** — admins can create groups and control which data sources each group can access
+- **Admin panel** — manage users, groups, and data source assignments
+- **User feedback** — rate search results, AI summaries, document summaries, and taxonomy tags with 1–5 stars and optional comments
+- **Activity logging** — automatic logging of search queries and results for authenticated users, with admin views and XLSX export
+
+The module is built on [fastapi-users](https://fastapi-users.github.io/fastapi-users/) for industry-standard authentication patterns and is designed with future MFA support in mind.
 
 More features will be added soon, focused on document evidence analysis.
 
