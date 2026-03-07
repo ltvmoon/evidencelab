@@ -468,6 +468,21 @@ const SaveNameModal: React.FC<{
   );
 };
 
+/** Clickable global summary indicator in tree view — navigates to root summary */
+const GlobalSummaryInTree: React.FC<{
+  summary: string;
+  onClick: () => void;
+}> = ({ summary, onClick }) => {
+  if (!summary) return null;
+  return (
+    <div className="global-summary-in-tree">
+      <button className="global-summary-in-tree-toggle" onClick={onClick} type="button">
+        <GlobeIcon /> View Global Summary
+      </button>
+    </div>
+  );
+};
+
 /** Hint text shown above summary — extracted to isolate CC from main component */
 const SummaryHintText: React.FC<{
   collapsed: boolean; summary: string; loading: boolean; viewMode: string;
@@ -711,10 +726,12 @@ export const AiSummaryPanel = ({
     if (requestShowGraph) setViewMode('tree');
   }, [requestShowGraph]);
 
-  // Reset global summary when tree changes
+  // Reset global summary only when the tree is fully cleared (new search)
   useEffect(() => {
-    setGlobalSummary('');
-    setGlobalSummaryResults([]);
+    if (!drilldownTree) {
+      setGlobalSummary('');
+      setGlobalSummaryResults([]);
+    }
   }, [drilldownTree]);
 
   const handleGenerateGlobalSummary = useCallback(async () => {
@@ -840,6 +857,13 @@ export const AiSummaryPanel = ({
         />
         {showGraphView ? (
           <>
+            <GlobalSummaryInTree
+              summary={globalSummary}
+              onClick={() => {
+                if (onDrilldownNavigate) onDrilldownNavigate('root');
+                setViewMode('summary');
+              }}
+            />
             <p className="ai-summary-hint" style={{ fontStyle: 'italic' }}>Click on nodes below to see their results and summaries.</p>
             <DrilldownGraphView
               tree={drilldownTree!}

@@ -8723,6 +8723,29 @@ li.ai-fact-active::before {
   cursor: not-allowed;
 }
 
+/* Global summary indicator in tree view */
+.global-summary-in-tree {
+  margin: 0 0 4px;
+}
+
+.global-summary-in-tree-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: none;
+  border: 1px solid var(--brand-primary, #2563eb);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--brand-primary, #2563eb);
+}
+
+.global-summary-in-tree-toggle:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+
 .drilldown-graph-toggle.save-success {
   color: #16a34a;
 }

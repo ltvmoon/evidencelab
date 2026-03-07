@@ -15,16 +15,18 @@ _MAX_JSONB_DEPTH = 10
 _MAX_JSONB_SIZE = 200_000  # chars when serialised (≈200 KB)
 
 
-def _check_jsonb_depth(obj: Any, depth: int = 0) -> None:
+def _check_jsonb_depth(
+    obj: Any, depth: int = 0, max_depth: int = _MAX_JSONB_DEPTH
+) -> None:
     """Raise ValueError when *obj* exceeds the allowed nesting depth."""
-    if depth > _MAX_JSONB_DEPTH:
-        raise ValueError(f"JSONB nesting exceeds maximum depth of {_MAX_JSONB_DEPTH}")
+    if depth > max_depth:
+        raise ValueError(f"JSONB nesting exceeds maximum depth of {max_depth}")
     if isinstance(obj, dict):
         for v in obj.values():
-            _check_jsonb_depth(v, depth + 1)
+            _check_jsonb_depth(v, depth + 1, max_depth)
     elif isinstance(obj, list):
         for item in obj:
-            _check_jsonb_depth(item, depth + 1)
+            _check_jsonb_depth(item, depth + 1, max_depth)
 
 
 def _validate_jsonb(v: Any) -> Any:
@@ -300,13 +302,16 @@ class ActivityRead(BaseModel):
 # ---------------------------------------------------------------------------
 
 _MAX_RESEARCH_JSONB_SIZE = 10_000_000  # 10 MB limit for full research trees
+_MAX_RESEARCH_JSONB_DEPTH = (
+    20  # Research trees are deeply nested (nodes → results → headings)
+)
 
 
 def _validate_research_jsonb(v: Any) -> Any:
     """Validate a research JSONB payload (larger limit than standard)."""
     if v is None:
         return v
-    _check_jsonb_depth(v)
+    _check_jsonb_depth(v, max_depth=_MAX_RESEARCH_JSONB_DEPTH)
     import json
 
     if len(json.dumps(v, default=str)) > _MAX_RESEARCH_JSONB_SIZE:
