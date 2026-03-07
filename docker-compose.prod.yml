@@ -192,7 +192,7 @@ services:
       - app-network
     working_dir: /app
     # Run migrations, wait for Qdrant (runs on host, not in Docker), then start Uvicorn
-    command: bash -c "alembic upgrade head && echo 'Waiting for Qdrant...' && until curl -sf ${QDRANT_HOST:-http://host.docker.internal:6333}/healthz > /dev/null 2>&1; do sleep 2; done && echo 'Qdrant ready' && uvicorn ui.backend.main:app --host 0.0.0.0 --port 8000 --workers 1"
+    command: bash -c "alembic upgrade head && echo 'Waiting for Qdrant...' && until python3 -c 'import urllib.request; urllib.request.urlopen(\"${QDRANT_HOST:-http://host.docker.internal:6333}/healthz\")' 2>/dev/null; do sleep 2; done && echo 'Qdrant ready' && uvicorn ui.backend.main:app --host 0.0.0.0 --port 8000 --workers 1"
     restart: unless-stopped
     deploy:
       resources:
