@@ -20,6 +20,9 @@ interface UseDrilldownTreeResult {
   loadTree: (tree: DrilldownNode) => void;
   startDrilldown: (highlightedText: string, snapshot: AiSummarySnapshot, rootLabel?: string) => string;
   addChildNode: (label: string, snapshot: AiSummarySnapshot, rootLabel?: string) => string;
+  addChildToNode: (parentId: string, label: string) => string;
+  removeNode: (nodeId: string) => void;
+  getNode: (nodeId: string) => DrilldownNode | null;
   updateNodeData: (nodeId: string, data: Partial<AiSummarySnapshot>) => void;
   navigateBack: (snapshot: AiSummarySnapshot) => DrilldownNode | null;
   navigateToNode: (nodeId: string, snapshot: AiSummarySnapshot) => DrilldownNode | null;
@@ -242,6 +245,61 @@ export const useDrilldownTree = (): UseDrilldownTreeResult => {
     return newId;
   }, [currentNodeId]);
 
+  /**
+   * Add a child node to a specific parent (by ID) without navigating.
+   * Unlike addChildNode, this does not save a snapshot or require current-node context.
+   * Returns the new child node ID.
+   */
+  const addChildToNode = useCallback((
+    parentId: string,
+    label: string,
+  ): string => {
+    const newId = `dd-${++idCounter.current}`;
+    const childStub: DrilldownNode = {
+      id: newId,
+      label,
+      summary: '',
+      prompt: '',
+      results: [],
+      translatedText: null,
+      translatedLang: null,
+      expanded: false,
+      children: [],
+    };
+    setDrilldownTree((prev) => {
+      if (!prev) return prev;
+      return updateNodeInTree(prev, parentId, (node) => ({
+        ...node,
+        children: [...node.children, childStub],
+      }));
+    });
+    return newId;
+  }, []);
+
+  /** Remove a node (and its subtree) from the tree. Cannot remove root. */
+  const removeNode = useCallback((nodeId: string): void => {
+    if (nodeId === 'root') return;
+    setDrilldownTree((prev) => {
+      if (!prev) return prev;
+      const removeFromChildren = (node: DrilldownNode): DrilldownNode => ({
+        ...node,
+        children: node.children
+          .filter((c) => c.id !== nodeId)
+          .map(removeFromChildren),
+      });
+      return removeFromChildren(prev);
+    });
+    // If the removed node was the current node, navigate to root
+    if (currentNodeId === nodeId) {
+      setCurrentNodeId(null);
+    }
+  }, [currentNodeId]);
+
+  /** Look up a node by ID (read-only) */
+  const getNode = useCallback((nodeId: string): DrilldownNode | null => {
+    return findNode(drilldownTree, nodeId);
+  }, [drilldownTree]);
+
   /** Update a node's data (summary, results, etc.) without navigating */
   const updateNodeData = useCallback((
     nodeId: string,
@@ -262,6 +320,9 @@ export const useDrilldownTree = (): UseDrilldownTreeResult => {
     loadTree,
     startDrilldown,
     addChildNode,
+    addChildToNode,
+    removeNode,
+    getNode,
     updateNodeData,
     navigateBack,
     navigateToNode,

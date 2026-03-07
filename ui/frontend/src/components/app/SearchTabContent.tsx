@@ -100,9 +100,16 @@ interface SearchTabContentProps {
   dataSource?: string;
   summaryModelConfig?: SummaryModelConfig | null;
   hasSearchRun?: boolean;
-  onSaveResearch?: () => void;
+  onSaveResearch?: (title: string) => void;
   saveResearchLoading?: boolean;
   saveResearchStatus?: 'idle' | 'saved' | 'error';
+  onLoadPreviousResearch?: () => void;
+  onGlobalSummaryGenerated?: (summary: string, results: SearchResult[]) => void;
+  onAddNodeToTree?: (parentId: string, query: string) => void;
+  onRemoveNodeFromTree?: (nodeId: string) => void;
+  addingNodeParentId?: string | null;
+  onAddNodeClick?: (parentId: string) => void;
+  onAddNodeCancel?: () => void;
 }
 
 const DOT_SIZES = [12, 12, 12, 12, 12];
@@ -454,6 +461,13 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   onSaveResearch,
   saveResearchLoading,
   saveResearchStatus,
+  onLoadPreviousResearch,
+  onGlobalSummaryGenerated,
+  onAddNodeToTree,
+  onRemoveNodeFromTree,
+  addingNodeParentId,
+  onAddNodeClick,
+  onAddNodeCancel,
 }) => {
   const [filteredOrgs, setFilteredOrgs] = useState<string[]>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -790,6 +804,13 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             onSaveResearch={onSaveResearch}
             saveResearchLoading={saveResearchLoading}
             saveResearchStatus={saveResearchStatus}
+            onLoadPreviousResearch={onLoadPreviousResearch}
+            onGlobalSummaryGenerated={onGlobalSummaryGenerated}
+            onAddNodeToTree={onAddNodeToTree}
+            onRemoveNodeFromTree={onRemoveNodeFromTree}
+            addingNodeParentId={addingNodeParentId}
+            onAddNodeClick={onAddNodeClick}
+            onAddNodeCancel={onAddNodeCancel}
             ratingScore={aiRating?.score || 0}
             onRequestRatingModal={(selectedScore) => {
               setAiRatingModalInitialScore(aiRating?.score || selectedScore);

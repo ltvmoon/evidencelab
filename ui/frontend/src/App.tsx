@@ -37,6 +37,7 @@ import { SearchTabContent } from './components/app/SearchTabContent';
 import { HeatmapTabContent } from './components/app/HeatmapTabContent';
 import { TabContent } from './components/app/TabContent';
 import { CookieConsent, getGaConsent } from './components/CookieConsent';
+import SavedResearchModal from './components/SavedResearchModal';
 import { AuthContext, useAuthState } from './hooks/useAuth';
 import { useGroupDefaults } from './hooks/useGroupDefaults';
 import { useActivityLogging } from './hooks/useActivityLogging';
@@ -55,6 +56,16 @@ import {
 // import datasourcesConfig from './datasources.config.json';
 
 const AI_SUMMARY_ERROR = 'Uh oh. Something went wrong asking the AI.';
+
+/** Wrapper to isolate conditional render from main App CC */
+const LoadResearchModalWrapper: React.FC<{
+  show: boolean;
+  onClose: () => void;
+  onLoad: (id: string) => void;
+}> = ({ show, onClose, onLoad }) => {
+  if (!show) return null;
+  return <SavedResearchModal onClose={onClose} onLoadResearch={onLoad} />;
+};
 
 const getCsrfToken = (): string | null => {
   const match = document.cookie.match(/(?:^|;\s*)evidencelab_csrf=([^;]*)/);
@@ -754,6 +765,9 @@ function App() {
     loadTree: loadDrilldownTree,
     startDrilldown: startDrilldownInTree,
     addChildNode: addChildNodeInTree,
+    addChildToNode: addChildToNodeInTree,
+    removeNode: removeNodeInTree,
+    getNode: getNodeInTree,
     updateNodeData: updateNodeDataInTree,
     navigateBack: navigateBackInTree,
     navigateToNode: navigateToNodeInTree,
@@ -764,6 +778,8 @@ function App() {
   const [savedResearchId, setSavedResearchId] = useState<string | null>(null);
   const [saveResearchLoading, setSaveResearchLoading] = useState(false);
   const [saveResearchStatus, setSaveResearchStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [showLoadResearchModal, setShowLoadResearchModal] = useState(false);
+  const [addingNodeParentId, setAddingNodeParentId] = useState<string | null>(null);
 
   // Apply per-group search defaults (fetched when user is authenticated)
   useGroupDefaults(USER_MODULE, authState, {
@@ -1631,6 +1647,8 @@ function App() {
 
     resetDrilldownTree();
     setSavedResearchId(null);
+    setAddingNodeParentId(null);
+    setFindOutMoreDone(false);
 
     const sliced = summaryResults.slice(0, 20);
     setAiSummaryResults(sliced);
@@ -1712,7 +1730,7 @@ function App() {
       const parentContext = drilldownHighlight && drilldownHighlight !== query
         ? `, specifically "${drilldownHighlight}"`
         : '';
-      const drilldownQuery = `Regarding the following excerpt from a previous summary:\n\n"${highlightedText}"\n\nProvide more detail about this, in the context of: "${query}"${parentContext}`;
+      const drilldownQuery = `Regarding: "${highlightedText}"\n\nProvide detail about this, in the context of: "${query}"${parentContext}`;
       launchSummaryStream(drilldownQuery, freshResults);
     } catch (error) {
       console.error('Drilldown search failed:', error);
@@ -1816,8 +1834,80 @@ function App() {
       minChunkSize, rerankModel, rerankModelPageSize, searchModel, dataSource,
       autoMinScore, deduplicateEnabled, fieldBoostEnabled, fieldBoostFields]);
 
+  // Add a custom node to the tree: create stub, search, summarize, update
+  const handleAddNodeToTree = useCallback(async (parentId: string, userQuery: string) => {
+    setAddingNodeParentId(null);
+
+    // Create stub child node
+    const nodeId = addChildToNodeInTree(parentId, userQuery);
+    updateNodeDataInTree(nodeId, { summary: 'Researching...' });
+
+    // Build contextual query with parent label for inheritance
+    const parentNode = getNodeInTree(parentId);
+    const parentLabel = parentNode?.label;
+    const parentContext = parentLabel && parentLabel !== query
+      ? `, specifically "${parentLabel}"`
+      : '';
+    const summaryQuery = `Regarding: "${userQuery}"\n\nProvide detail about this, in the context of: "${query}"${parentContext}`;
+
+    try {
+      const params = buildSearchParams({
+        query: userQuery, filters, searchDenseWeight, rerankEnabled,
+        recencyBoostEnabled, recencyWeight, recencyScaleDays, sectionTypes,
+        keywordBoostShortQueries, minChunkSize, rerankModel, rerankModelPageSize,
+        searchModel, dataSource, autoMinScore, deduplicateEnabled,
+        fieldBoostEnabled, fieldBoostFields,
+      });
+      const searchResp = await axios.get<SearchResponse>(`${API_BASE_URL}/search?${params}`);
+      const freshResults = searchResp.data.results.slice(0, 20);
+
+      const leanResults = freshResults.map((r) => ({
+        chunk_id: r.chunk_id, doc_id: r.doc_id, text: r.text,
+        title: r.title, organization: r.organization, year: r.year,
+        page_num: r.page_num, headings: r.headings, score: r.score,
+      }));
+      const summaryResp = await axios.post<{ summary: string; prompt: string }>(
+        `${API_BASE_URL}/ai-summary?data_source=${dataSource}`,
+        {
+          query: summaryQuery,
+          results: leanResults,
+          max_results: 20,
+          ...(summaryModelConfig ? { summary_model_config: summaryModelConfig } : {}),
+        }
+      );
+
+      updateNodeDataInTree(nodeId, {
+        summary: summaryResp.data.summary,
+        prompt: summaryResp.data.prompt,
+        results: freshResults,
+      });
+    } catch (error) {
+      console.error('Add node to tree failed:', error);
+      updateNodeDataInTree(nodeId, { summary: 'Failed to generate summary.' });
+    }
+  }, [addChildToNodeInTree, getNodeInTree, updateNodeDataInTree, query, summaryModelConfig,
+      filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
+      recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
+      minChunkSize, rerankModel, rerankModelPageSize, searchModel, dataSource,
+      autoMinScore, deduplicateEnabled, fieldBoostEnabled, fieldBoostFields]);
+
+  // Remove a node from the tree
+  const handleRemoveNodeFromTree = useCallback((nodeId: string) => {
+    removeNodeInTree(nodeId);
+  }, [removeNodeInTree]);
+
+  // Show add-node input for a specific parent
+  const handleAddNodeClick = useCallback((parentId: string) => {
+    setAddingNodeParentId(parentId);
+  }, []);
+
+  // Cancel adding a node
+  const handleAddNodeCancel = useCallback(() => {
+    setAddingNodeParentId(null);
+  }, []);
+
   // Save research tree to backend
-  const handleSaveResearch = useCallback(async () => {
+  const handleSaveResearch = useCallback(async (title: string) => {
     if (!drilldownTree || !authState.user) return;
     setSaveResearchLoading(true);
     setSaveResearchStatus('idle');
@@ -1829,13 +1919,13 @@ function App() {
 
       if (savedResearchId) {
         await axios.put(`${API_BASE_URL}/research/${savedResearchId}`, {
-          title: drilldownTree.label || query,
+          title,
           drilldown_tree: fullTree,
           filters,
         });
       } else {
-        const resp = await axios.post<{ id: string }>(`${API_BASE_URL}/research`, {
-          title: drilldownTree.label || query,
+        const resp = await axios.post<{ id: string }>(`${API_BASE_URL}/research/`, {
+          title,
           query,
           filters,
           data_source: dataSource,
@@ -1875,11 +1965,28 @@ function App() {
       loadDrilldownTree(tree);
       restoreFromNode(tree);
       setSavedResearchId(data.id);
+      setFindOutMoreDone(true);
+      setAiSummaryExpanded(true);
       handleTabChange('search');
     } catch (error) {
       console.error('Failed to load research:', error);
     }
   }, [loadDrilldownTree, restoreFromNode, handleTabChange]);
+
+  // Update root node when global summary is generated and display it
+  const handleGlobalSummaryGenerated = useCallback((summary: string, globalResults: SearchResult[]) => {
+    updateNodeDataInTree('root', { summary, results: globalResults });
+    // Also update displayed state so the summary view renders it immediately
+    setAiSummary(summary);
+    setAiSummaryResults(globalResults);
+  }, [updateNodeDataInTree]);
+
+  const closeLoadResearchModal = useCallback(() => setShowLoadResearchModal(false), []);
+
+  const handleLoadResearchFromModal = useCallback((id: string) => {
+    setShowLoadResearchModal(false);
+    handleLoadResearch(id);
+  }, [handleLoadResearch]);
 
   const handlePostSearchResults = useCallback((data: SearchResponse) => {
     if (data.results.length > 0) {
@@ -2575,6 +2682,13 @@ function App() {
       onSaveResearch={handleSaveResearch}
       saveResearchLoading={saveResearchLoading}
       saveResearchStatus={saveResearchStatus}
+      onLoadPreviousResearch={() => setShowLoadResearchModal(true)}
+      onGlobalSummaryGenerated={handleGlobalSummaryGenerated}
+      onAddNodeToTree={handleAddNodeToTree}
+      onRemoveNodeFromTree={handleRemoveNodeFromTree}
+      addingNodeParentId={addingNodeParentId}
+      onAddNodeClick={handleAddNodeClick}
+      onAddNodeCancel={handleAddNodeCancel}
     />
   );
 
@@ -2808,6 +2922,12 @@ function App() {
         summary={selectedSummary}
         title={selectedSummaryTitle}
         docId={selectedSummaryDocId}
+      />
+
+      <LoadResearchModalWrapper
+        show={showLoadResearchModal}
+        onClose={closeLoadResearchModal}
+        onLoad={handleLoadResearchFromModal}
       />
 
       <CookieConsent />
