@@ -763,6 +763,7 @@ function App() {
   const [findOutMoreDone, setFindOutMoreDone] = useState(false);
   const [savedResearchId, setSavedResearchId] = useState<string | null>(null);
   const [saveResearchLoading, setSaveResearchLoading] = useState(false);
+  const [saveResearchStatus, setSaveResearchStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
   // Apply per-group search defaults (fetched when user is authenticated)
   useGroupDefaults(USER_MODULE, authState, {
@@ -1819,6 +1820,7 @@ function App() {
   const handleSaveResearch = useCallback(async () => {
     if (!drilldownTree || !authState.user) return;
     setSaveResearchLoading(true);
+    setSaveResearchStatus('idle');
 
     try {
       const currentId = currentNodeId || drilldownTree.id;
@@ -1841,8 +1843,12 @@ function App() {
         });
         setSavedResearchId(resp.data.id);
       }
+      setSaveResearchStatus('saved');
+      setTimeout(() => setSaveResearchStatus('idle'), 3000);
     } catch (error) {
       console.error('Failed to save research:', error);
+      setSaveResearchStatus('error');
+      setTimeout(() => setSaveResearchStatus('idle'), 4000);
     } finally {
       setSaveResearchLoading(false);
     }
@@ -2568,6 +2574,7 @@ function App() {
       hasSearchRun={hasSearchRun}
       onSaveResearch={handleSaveResearch}
       saveResearchLoading={saveResearchLoading}
+      saveResearchStatus={saveResearchStatus}
     />
   );
 

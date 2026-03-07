@@ -8723,6 +8723,14 @@ li.ai-fact-active::before {
   cursor: not-allowed;
 }
 
+.drilldown-graph-toggle.save-success {
+  color: #16a34a;
+}
+
+.drilldown-graph-toggle.save-error {
+  color: #dc2626;
+}
+
 /* Admin panel */
 .admin-panel {
   max-width: 1400px;

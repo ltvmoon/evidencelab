@@ -58,6 +58,8 @@ interface AiSummaryPanelProps {
   onSaveResearch?: () => void;
   /** Whether save is in progress */
   saveResearchLoading?: boolean;
+  /** Save status for user feedback */
+  saveResearchStatus?: 'idle' | 'saved' | 'error';
 }
 
 const GeneratingText = () => (
@@ -383,6 +385,7 @@ const DrilldownNavRow = ({
   onExportResearch,
   onSaveResearch,
   saveResearchLoading,
+  saveResearchStatus,
   isAuthenticated,
   onDrilldownBack,
 }: {
@@ -396,6 +399,7 @@ const DrilldownNavRow = ({
   onExportResearch: () => void;
   onSaveResearch?: () => void;
   saveResearchLoading?: boolean;
+  saveResearchStatus?: 'idle' | 'saved' | 'error';
   isAuthenticated?: boolean;
   onDrilldownBack: () => void;
 }) => (
@@ -437,14 +441,17 @@ const DrilldownNavRow = ({
         )}
         {isAuthenticated && onSaveResearch && (
           <button
-            className="drilldown-graph-toggle"
+            className={`drilldown-graph-toggle${saveResearchStatus === 'saved' ? ' save-success' : ''}${saveResearchStatus === 'error' ? ' save-error' : ''}`}
             onClick={onSaveResearch}
             type="button"
             disabled={saveResearchLoading}
             style={{ marginLeft: 'auto' }}
           >
             <SaveIcon />
-            {saveResearchLoading ? 'Saving...' : 'Save your research'}
+            {saveResearchLoading ? 'Saving...'
+              : saveResearchStatus === 'saved' ? 'Saved!'
+              : saveResearchStatus === 'error' ? 'Save failed'
+              : 'Save your research'}
           </button>
         )}
         <button
@@ -620,6 +627,7 @@ export const AiSummaryPanel = ({
   summaryModelConfig,
   onSaveResearch,
   saveResearchLoading,
+  saveResearchStatus,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
   // viewMode: 'summary' = node summary, 'tree' = graph, 'global' = global summary
@@ -733,6 +741,7 @@ export const AiSummaryPanel = ({
             }}
             onSaveResearch={onSaveResearch}
             saveResearchLoading={saveResearchLoading}
+            saveResearchStatus={saveResearchStatus}
             isAuthenticated={isAuthenticated}
             onDrilldownBack={onDrilldownBack}
           />
