@@ -60,6 +60,10 @@ interface AiSummaryPanelProps {
   saveResearchLoading?: boolean;
   /** Save status for user feedback */
   saveResearchStatus?: 'idle' | 'saved' | 'error';
+  /** Callback to open saved research picker */
+  onLoadPreviousResearch?: () => void;
+  /** Callback when global summary is generated — patches root node */
+  onGlobalSummaryGenerated?: (summary: string, results: SearchResult[]) => void;
 }
 
 const GeneratingText = () => (
@@ -374,21 +378,57 @@ const SaveIcon = () => (
   </svg>
 );
 
-const DrilldownNavRow = ({
-  viewMode,
-  hasGraph,
-  globalSummaryLoading,
-  drilldownStackDepth,
-  drilldownHighlight,
-  onSetViewMode,
-  onGenerateGlobalSummary,
-  onExportResearch,
-  onSaveResearch,
-  saveResearchLoading,
-  saveResearchStatus,
-  isAuthenticated,
-  onDrilldownBack,
+const FolderOpenIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    <line x1="12" y1="11" x2="12" y2="17" />
+    <polyline points="9 14 12 11 15 14" />
+  </svg>
+);
+
+/** Resolve the save button label from loading/status state */
+const getSaveLabel = (loading?: boolean, status?: string): string => {
+  if (loading) return 'Saving...';
+  if (status === 'saved') return 'Saved!';
+  if (status === 'error') return 'Save failed';
+  return 'Save your research';
+};
+
+/** Tree-view action buttons (save, load, export) — extracted for complexity */
+const TreeViewActions = ({
+  isAuthenticated, onSaveResearch, saveResearchLoading, saveResearchStatus,
+  onLoadPreviousResearch, onExportResearch,
 }: {
+  isAuthenticated?: boolean; onSaveResearch?: () => void;
+  saveResearchLoading?: boolean; saveResearchStatus?: 'idle' | 'saved' | 'error';
+  onLoadPreviousResearch?: () => void; onExportResearch: () => void;
+}) => {
+  const hasAuthActions = isAuthenticated && (onSaveResearch || onLoadPreviousResearch);
+  const saveClass = `drilldown-graph-toggle${saveResearchStatus === 'saved' ? ' save-success' : ''}${saveResearchStatus === 'error' ? ' save-error' : ''}`;
+  return (
+    <>
+      {isAuthenticated && onSaveResearch && (
+        <button className={saveClass} onClick={onSaveResearch} type="button"
+          disabled={saveResearchLoading} style={{ marginLeft: 'auto' }}>
+          <SaveIcon /> {getSaveLabel(saveResearchLoading, saveResearchStatus)}
+        </button>
+      )}
+      {isAuthenticated && onLoadPreviousResearch && (
+        <button className="drilldown-graph-toggle" onClick={onLoadPreviousResearch} type="button"
+          style={!(isAuthenticated && onSaveResearch) ? { marginLeft: 'auto' } : undefined}>
+          <FolderOpenIcon /> Load Previous Research
+        </button>
+      )}
+      <button className="drilldown-graph-toggle" onClick={onExportResearch} type="button"
+        style={!hasAuthActions ? { marginLeft: 'auto' } : undefined}>
+        <DownloadIcon /> Export research
+      </button>
+    </>
+  );
+};
+
+interface DrilldownNavRowProps {
   viewMode: 'summary' | 'tree' | 'global';
   hasGraph: boolean;
   globalSummaryLoading: boolean;
@@ -402,85 +442,49 @@ const DrilldownNavRow = ({
   saveResearchStatus?: 'idle' | 'saved' | 'error';
   isAuthenticated?: boolean;
   onDrilldownBack: () => void;
-}) => (
+  onLoadPreviousResearch?: () => void;
+}
+
+const DrilldownNavRow = ({
+  viewMode, hasGraph, globalSummaryLoading, drilldownStackDepth, drilldownHighlight,
+  onSetViewMode, onGenerateGlobalSummary, onExportResearch, onSaveResearch,
+  saveResearchLoading, saveResearchStatus, isAuthenticated, onDrilldownBack,
+  onLoadPreviousResearch,
+}: DrilldownNavRowProps) => (
   <div className="ai-drilldown-nav-row">
     {viewMode === 'summary' && hasGraph && (
-      <button
-        className="drilldown-graph-toggle"
-        onClick={() => onSetViewMode('tree')}
-        type="button"
-      >
-        <NetworkIcon />
-        Show tree
+      <button className="drilldown-graph-toggle" onClick={() => onSetViewMode('tree')} type="button">
+        <NetworkIcon /> Show tree
       </button>
     )}
     {viewMode === 'tree' && (
       <>
-        <button
-          className="drilldown-graph-toggle"
-          onClick={() => onSetViewMode('summary')}
-          type="button"
-        >
-          <DocumentIcon />
-          Show summary
+        <button className="drilldown-graph-toggle" onClick={() => onSetViewMode('summary')} type="button">
+          <DocumentIcon /> Show summary
         </button>
-        {!globalSummaryLoading && (
-          <button
-            className="drilldown-graph-toggle"
-            onClick={onGenerateGlobalSummary}
-            type="button"
-          >
-            <GlobeIcon />
-            Generate Global Summary
+        {!globalSummaryLoading ? (
+          <button className="drilldown-graph-toggle" onClick={onGenerateGlobalSummary} type="button">
+            <GlobeIcon /> Generate Global Summary
           </button>
-        )}
-        {globalSummaryLoading && (
+        ) : (
           <span className="global-summary-loading">
             <RainbowText text="Generating global summary..." />
           </span>
         )}
-        {isAuthenticated && onSaveResearch && (
-          <button
-            className={`drilldown-graph-toggle${saveResearchStatus === 'saved' ? ' save-success' : ''}${saveResearchStatus === 'error' ? ' save-error' : ''}`}
-            onClick={onSaveResearch}
-            type="button"
-            disabled={saveResearchLoading}
-            style={{ marginLeft: 'auto' }}
-          >
-            <SaveIcon />
-            {saveResearchLoading ? 'Saving...'
-              : saveResearchStatus === 'saved' ? 'Saved!'
-              : saveResearchStatus === 'error' ? 'Save failed'
-              : 'Save your research'}
-          </button>
-        )}
-        <button
-          className="drilldown-graph-toggle"
-          onClick={onExportResearch}
-          type="button"
-          style={!(isAuthenticated && onSaveResearch) ? { marginLeft: 'auto' } : undefined}
-        >
-          <DownloadIcon />
-          Export research
-        </button>
+        <TreeViewActions
+          isAuthenticated={isAuthenticated} onSaveResearch={onSaveResearch}
+          saveResearchLoading={saveResearchLoading} saveResearchStatus={saveResearchStatus}
+          onLoadPreviousResearch={onLoadPreviousResearch} onExportResearch={onExportResearch}
+        />
       </>
     )}
     {viewMode === 'global' && (
-      <button
-        className="drilldown-graph-toggle"
-        onClick={() => onSetViewMode('tree')}
-        type="button"
-      >
-        <NetworkIcon />
-        Show tree
+      <button className="drilldown-graph-toggle" onClick={() => onSetViewMode('tree')} type="button">
+        <NetworkIcon /> Show tree
       </button>
     )}
     {viewMode === 'summary' && (
-      <DrilldownBreadcrumb
-        stackDepth={drilldownStackDepth}
-        onBack={onDrilldownBack}
-        currentHighlight={drilldownHighlight}
-      />
+      <DrilldownBreadcrumb stackDepth={drilldownStackDepth} onBack={onDrilldownBack} currentHighlight={drilldownHighlight} />
     )}
   </div>
 );
@@ -628,6 +632,8 @@ export const AiSummaryPanel = ({
   onSaveResearch,
   saveResearchLoading,
   saveResearchStatus,
+  onLoadPreviousResearch,
+  onGlobalSummaryGenerated,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
   // viewMode: 'summary' = node summary, 'tree' = graph, 'global' = global summary
@@ -682,13 +688,17 @@ export const AiSummaryPanel = ({
       );
       setGlobalSummary(resp.data.summary);
       setGlobalSummaryResults(allResults);
-      setViewMode('global');
+      if (onGlobalSummaryGenerated) {
+        onGlobalSummaryGenerated(resp.data.summary, allResults);
+      } else {
+        setViewMode('global');
+      }
     } catch (err) {
       console.error('Failed to generate global summary:', err);
     } finally {
       setGlobalSummaryLoading(false);
     }
-  }, [drilldownTree, globalSummaryLoading, dataSource, summaryModelConfig]);
+  }, [drilldownTree, globalSummaryLoading, dataSource, summaryModelConfig, onGlobalSummaryGenerated]);
 
   if (!enabled) return null;
 
@@ -744,6 +754,7 @@ export const AiSummaryPanel = ({
             saveResearchStatus={saveResearchStatus}
             isAuthenticated={isAuthenticated}
             onDrilldownBack={onDrilldownBack}
+            onLoadPreviousResearch={onLoadPreviousResearch}
           />
         )}
         {showGraphView ? (

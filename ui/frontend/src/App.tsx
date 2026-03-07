@@ -37,6 +37,7 @@ import { SearchTabContent } from './components/app/SearchTabContent';
 import { HeatmapTabContent } from './components/app/HeatmapTabContent';
 import { TabContent } from './components/app/TabContent';
 import { CookieConsent, getGaConsent } from './components/CookieConsent';
+import SavedResearchModal from './components/SavedResearchModal';
 import { AuthContext, useAuthState } from './hooks/useAuth';
 import { useGroupDefaults } from './hooks/useGroupDefaults';
 import { useActivityLogging } from './hooks/useActivityLogging';
@@ -55,6 +56,16 @@ import {
 // import datasourcesConfig from './datasources.config.json';
 
 const AI_SUMMARY_ERROR = 'Uh oh. Something went wrong asking the AI.';
+
+/** Wrapper to isolate conditional render from main App CC */
+const LoadResearchModalWrapper: React.FC<{
+  show: boolean;
+  onClose: () => void;
+  onLoad: (id: string) => void;
+}> = ({ show, onClose, onLoad }) => {
+  if (!show) return null;
+  return <SavedResearchModal onClose={onClose} onLoadResearch={onLoad} />;
+};
 
 const getCsrfToken = (): string | null => {
   const match = document.cookie.match(/(?:^|;\s*)evidencelab_csrf=([^;]*)/);
@@ -764,6 +775,7 @@ function App() {
   const [savedResearchId, setSavedResearchId] = useState<string | null>(null);
   const [saveResearchLoading, setSaveResearchLoading] = useState(false);
   const [saveResearchStatus, setSaveResearchStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [showLoadResearchModal, setShowLoadResearchModal] = useState(false);
 
   // Apply per-group search defaults (fetched when user is authenticated)
   useGroupDefaults(USER_MODULE, authState, {
@@ -1883,6 +1895,18 @@ function App() {
     }
   }, [loadDrilldownTree, restoreFromNode, handleTabChange]);
 
+  // Update root node when global summary is generated
+  const handleGlobalSummaryGenerated = useCallback((summary: string, globalResults: SearchResult[]) => {
+    updateNodeDataInTree('root', { summary, results: globalResults });
+  }, [updateNodeDataInTree]);
+
+  const closeLoadResearchModal = useCallback(() => setShowLoadResearchModal(false), []);
+
+  const handleLoadResearchFromModal = useCallback((id: string) => {
+    setShowLoadResearchModal(false);
+    handleLoadResearch(id);
+  }, [handleLoadResearch]);
+
   const handlePostSearchResults = useCallback((data: SearchResponse) => {
     if (data.results.length > 0) {
       const calculatedMaxScore = Math.max(...data.results.map(r => r.score || 0));
@@ -2577,6 +2601,8 @@ function App() {
       onSaveResearch={handleSaveResearch}
       saveResearchLoading={saveResearchLoading}
       saveResearchStatus={saveResearchStatus}
+      onLoadPreviousResearch={() => setShowLoadResearchModal(true)}
+      onGlobalSummaryGenerated={handleGlobalSummaryGenerated}
     />
   );
 
@@ -2810,6 +2836,12 @@ function App() {
         summary={selectedSummary}
         title={selectedSummaryTitle}
         docId={selectedSummaryDocId}
+      />
+
+      <LoadResearchModalWrapper
+        show={showLoadResearchModal}
+        onClose={closeLoadResearchModal}
+        onLoad={handleLoadResearchFromModal}
       />
 
       <CookieConsent />
