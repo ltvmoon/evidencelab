@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ModelComboConfig } from '../../types/api';
+import { USER_MODULE } from '../../config';
+import UserMenu from '../auth/UserMenu';
 
 interface TopBarProps {
   selectedDomain: string;
@@ -25,6 +27,8 @@ interface TopBarProps {
   onAboutClick: () => void;
   onTechClick: () => void;
   onDataClick: () => void;
+  onAdminClick?: () => void;
+  onLoadResearch?: (id: string) => void;
   navTabs?: React.ReactNode;
 }
 
@@ -52,6 +56,8 @@ export const TopBar = ({
   onAboutClick,
   onTechClick,
   onDataClick,
+  onAdminClick,
+  onLoadResearch,
   navTabs,
 }: TopBarProps) => {
   const [hoveredModelCombo, setHoveredModelCombo] = useState<string | null>(null);
@@ -277,6 +283,7 @@ export const TopBar = ({
               </div>
             )}
           </div>
+          {USER_MODULE && <UserMenu onAdminClick={onAdminClick} onLoadResearch={onLoadResearch} />}
         </div>
       </div>
       {navTabs}

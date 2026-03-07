@@ -645,7 +645,7 @@ interface PipelineProps {
   dataSource?: string;
 }
 
-export const Pipeline: React.FC<PipelineProps> = ({ dataSource = 'uneg' }) => {
+export const Pipeline: React.FC<PipelineProps> = ({ dataSource = '' }) => {
   const { stats, sankeyData, timelineData, loading, error } =
     usePipelineData(dataSource);
 
@@ -838,7 +838,7 @@ export const Pipeline: React.FC<PipelineProps> = ({ dataSource = 'uneg' }) => {
   );
 };
 
-export const Processing: React.FC<PipelineProps> = ({ dataSource = 'uneg' }) => {
+export const Processing: React.FC<PipelineProps> = ({ dataSource = '' }) => {
   const { timelineData, loading, error } = usePipelineData(dataSource);
   const [timeRange, setTimeRange] = useState<'24h' | '48h' | 'all'>('all');
   const filteredData = filterTimelineData(timelineData, timeRange);

@@ -415,7 +415,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   searchQuery = '',
   initialBBox = [],
   metadata = {},
-  dataSource = 'uneg',
+  dataSource = '',
   semanticHighlightModelConfig,
   onOpenMetadata,
   searchDenseWeight = 0.8,
