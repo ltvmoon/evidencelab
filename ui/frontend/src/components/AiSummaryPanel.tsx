@@ -64,6 +64,16 @@ interface AiSummaryPanelProps {
   onLoadPreviousResearch?: () => void;
   /** Callback when global summary is generated — patches root node */
   onGlobalSummaryGenerated?: (summary: string, results: SearchResult[]) => void;
+  /** Callback to add a new node to the tree (search + summarize) */
+  onAddNodeToTree?: (parentId: string, query: string) => void;
+  /** Callback to remove a node from the tree */
+  onRemoveNodeFromTree?: (nodeId: string) => void;
+  /** Which parent has the add-node input visible */
+  addingNodeParentId?: string | null;
+  /** Callback when user clicks + to add a child */
+  onAddNodeClick?: (parentId: string) => void;
+  /** Callback when user cancels adding a node */
+  onAddNodeCancel?: () => void;
 }
 
 const GeneratingText = () => (
@@ -724,6 +734,11 @@ export const AiSummaryPanel = ({
   saveResearchStatus,
   onLoadPreviousResearch,
   onGlobalSummaryGenerated,
+  onAddNodeToTree,
+  onRemoveNodeFromTree,
+  addingNodeParentId,
+  onAddNodeClick,
+  onAddNodeCancel,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
   // viewMode: 'summary' = node summary, 'tree' = graph, 'global' = global summary
@@ -737,11 +752,12 @@ export const AiSummaryPanel = ({
     if (requestShowGraph) setViewMode('tree');
   }, [requestShowGraph]);
 
-  // Reset global summary only when the tree is fully cleared (new search)
+  // Reset global summary and view mode when the tree is fully cleared (new search)
   useEffect(() => {
     if (!drilldownTree) {
       setGlobalSummary('');
       setGlobalSummaryResults([]);
+      setViewMode('summary');
     }
   }, [drilldownTree]);
 
@@ -886,6 +902,11 @@ export const AiSummaryPanel = ({
                 onDrilldownNavigate!(nodeId);
                 setViewMode('summary');
               }}
+              onAddChild={onAddNodeClick}
+              onRemoveNode={onRemoveNodeFromTree}
+              addingNodeParentId={addingNodeParentId}
+              onAddNodeSubmit={onAddNodeToTree}
+              onAddNodeCancel={onAddNodeCancel}
             />
           </>
         ) : showGlobalView ? (

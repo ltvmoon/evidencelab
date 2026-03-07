@@ -4151,16 +4151,11 @@ li.ai-fact-active::before {
 }
 
 .drilldown-graph-node {
-  fill: var(--gray-300);
-  stroke: var(--gray-400);
+  fill: var(--brand-primary);
+  stroke: var(--brand-primary);
   stroke-width: 2;
   cursor: pointer;
   transition: fill 0.15s ease, stroke 0.15s ease;
-}
-
-.drilldown-graph-node.root {
-  fill: var(--brand-primary);
-  stroke: var(--brand-primary);
 }
 
 .drilldown-graph-node.active {
@@ -4195,6 +4190,114 @@ li.ai-fact-active::before {
 
 .drilldown-graph-label:hover {
   color: var(--brand-primary);
+}
+
+/* Label row with action buttons */
+.drilldown-graph-label-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Node action buttons (+/−) — always visible */
+.drilldown-graph-actions {
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.drilldown-node-btn {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gray-300);
+  background: transparent;
+  color: var(--gray-400);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.drilldown-node-btn svg {
+  display: block;
+}
+.drilldown-node-btn:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+  background: rgba(0,0,0,0.03);
+}
+.drilldown-node-btn.remove:hover {
+  border-color: #dc3545;
+  color: #dc3545;
+  background: rgba(220,53,69,0.05);
+}
+
+/* Loading node — rainbow pulse animation */
+.drilldown-graph-node.loading {
+  animation: node-rainbow-pulse 2s ease-in-out infinite;
+}
+@keyframes node-rainbow-pulse {
+  0%   { fill: #5b9bd5; stroke: #5b9bd5; }
+  25%  { fill: #e06c75; stroke: #e06c75; }
+  50%  { fill: #e5c07b; stroke: #e5c07b; }
+  75%  { fill: #98c379; stroke: #98c379; }
+  100% { fill: #5b9bd5; stroke: #5b9bd5; }
+}
+.drilldown-graph-label.loading {
+  font-style: italic;
+}
+.drilldown-loading-indicator {
+  font-size: 0.75rem;
+  color: var(--gray-400);
+  font-weight: 400;
+  animation: loading-fade 1.5s ease-in-out infinite;
+}
+@keyframes loading-fade {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Add-node circle in tree — gray, same size as regular nodes */
+.drilldown-graph-node.add-node {
+  fill: var(--gray-300);
+  stroke: var(--gray-400);
+  stroke-width: 2;
+  cursor: pointer;
+}
+.drilldown-graph-node.add-node:hover {
+  fill: var(--gray-400);
+  stroke: var(--gray-500);
+}
+
+/* Add-node label text */
+.drilldown-add-node {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--gray-400);
+  font-style: italic;
+  line-height: 20px;
+  padding-top: 0;
+}
+.drilldown-add-node:hover {
+  color: var(--brand-primary);
+}
+
+/* Inline query input for adding a node */
+.drilldown-add-input {
+  font-size: 0.8125rem;
+  padding: 3px 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  width: 100%;
+  max-width: 400px;
+  outline: none;
+  font-family: inherit;
+}
+.drilldown-add-input:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
 }
 
 .modal-overlay {
