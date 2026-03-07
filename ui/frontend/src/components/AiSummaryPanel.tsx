@@ -10,6 +10,7 @@ import { DigDeeperPopover } from './DigDeeperPopover';
 import { DrilldownBreadcrumb } from './DrilldownBreadcrumb';
 import { DrilldownGraphView } from './DrilldownGraphView';
 import { exportResearchToPdf } from '../utils/exportResearch';
+import { patchNodeInTree } from '../utils/drilldownUtils';
 import StarRating from './ratings/StarRating';
 
 interface AiSummaryPanelProps {
@@ -53,6 +54,12 @@ interface AiSummaryPanelProps {
   dataSource?: string;
   /** Summary model config for the global summary API call */
   summaryModelConfig?: SummaryModelConfig | null;
+  /** Callback to save current research tree */
+  onSaveResearch?: () => void;
+  /** Whether save is in progress */
+  saveResearchLoading?: boolean;
+  /** Save status for user feedback */
+  saveResearchStatus?: 'idle' | 'saved' | 'error';
 }
 
 const GeneratingText = () => (
@@ -358,21 +365,14 @@ const collectAllResults = (node: DrilldownNode): SearchResult[] => {
   return all;
 };
 
-/** Return a deep copy of the tree with one node's summary/results patched in */
-const patchNodeInTree = (
-  node: DrilldownNode,
-  targetId: string,
-  summary: string,
-  nodeResults: SearchResult[]
-): DrilldownNode => {
-  if (node.id === targetId) {
-    return { ...node, summary, results: nodeResults, children: node.children.map((c) => ({ ...c })) };
-  }
-  return {
-    ...node,
-    children: node.children.map((c) => patchNodeInTree(c, targetId, summary, nodeResults)),
-  };
-};
+const SaveIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+    <polyline points="17 21 17 13 7 13 7 21" />
+    <polyline points="7 3 7 8 15 8" />
+  </svg>
+);
 
 const DrilldownNavRow = ({
   viewMode,
@@ -383,6 +383,10 @@ const DrilldownNavRow = ({
   onSetViewMode,
   onGenerateGlobalSummary,
   onExportResearch,
+  onSaveResearch,
+  saveResearchLoading,
+  saveResearchStatus,
+  isAuthenticated,
   onDrilldownBack,
 }: {
   viewMode: 'summary' | 'tree' | 'global';
@@ -393,6 +397,10 @@ const DrilldownNavRow = ({
   onSetViewMode: (mode: 'summary' | 'tree' | 'global') => void;
   onGenerateGlobalSummary: () => void;
   onExportResearch: () => void;
+  onSaveResearch?: () => void;
+  saveResearchLoading?: boolean;
+  saveResearchStatus?: 'idle' | 'saved' | 'error';
+  isAuthenticated?: boolean;
   onDrilldownBack: () => void;
 }) => (
   <div className="ai-drilldown-nav-row">
@@ -431,11 +439,26 @@ const DrilldownNavRow = ({
             <RainbowText text="Generating global summary..." />
           </span>
         )}
+        {isAuthenticated && onSaveResearch && (
+          <button
+            className={`drilldown-graph-toggle${saveResearchStatus === 'saved' ? ' save-success' : ''}${saveResearchStatus === 'error' ? ' save-error' : ''}`}
+            onClick={onSaveResearch}
+            type="button"
+            disabled={saveResearchLoading}
+            style={{ marginLeft: 'auto' }}
+          >
+            <SaveIcon />
+            {saveResearchLoading ? 'Saving...'
+              : saveResearchStatus === 'saved' ? 'Saved!'
+              : saveResearchStatus === 'error' ? 'Save failed'
+              : 'Save your research'}
+          </button>
+        )}
         <button
           className="drilldown-graph-toggle"
           onClick={onExportResearch}
           type="button"
-          style={{ marginLeft: 'auto' }}
+          style={!(isAuthenticated && onSaveResearch) ? { marginLeft: 'auto' } : undefined}
         >
           <DownloadIcon />
           Export research
@@ -602,6 +625,9 @@ export const AiSummaryPanel = ({
   onRequestRatingModal,
   dataSource,
   summaryModelConfig,
+  onSaveResearch,
+  saveResearchLoading,
+  saveResearchStatus,
 }: AiSummaryPanelProps) => {
   const summaryContentRef = useRef<HTMLDivElement>(null);
   // viewMode: 'summary' = node summary, 'tree' = graph, 'global' = global summary
@@ -713,6 +739,10 @@ export const AiSummaryPanel = ({
                 );
               }
             }}
+            onSaveResearch={onSaveResearch}
+            saveResearchLoading={saveResearchLoading}
+            saveResearchStatus={saveResearchStatus}
+            isAuthenticated={isAuthenticated}
             onDrilldownBack={onDrilldownBack}
           />
         )}

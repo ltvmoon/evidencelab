@@ -100,6 +100,9 @@ interface SearchTabContentProps {
   dataSource?: string;
   summaryModelConfig?: SummaryModelConfig | null;
   hasSearchRun?: boolean;
+  onSaveResearch?: () => void;
+  saveResearchLoading?: boolean;
+  saveResearchStatus?: 'idle' | 'saved' | 'error';
 }
 
 const DOT_SIZES = [12, 12, 12, 12, 12];
@@ -448,6 +451,9 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   dataSource,
   summaryModelConfig,
   hasSearchRun,
+  onSaveResearch,
+  saveResearchLoading,
+  saveResearchStatus,
 }) => {
   const [filteredOrgs, setFilteredOrgs] = useState<string[]>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -781,6 +787,9 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             dataSource={dataSource}
             summaryModelConfig={summaryModelConfig}
             isAuthenticated={isAuthenticated}
+            onSaveResearch={onSaveResearch}
+            saveResearchLoading={saveResearchLoading}
+            saveResearchStatus={saveResearchStatus}
             ratingScore={aiRating?.score || 0}
             onRequestRatingModal={(selectedScore) => {
               setAiRatingModalInitialScore(aiRating?.score || selectedScore);

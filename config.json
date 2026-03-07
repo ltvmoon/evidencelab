@@ -420,6 +420,104 @@
           ]
         }
       }
+    },
+    "World Bank Fraud and Integrity Reports": {
+      "data_subdir": "worldbank",
+      "field_mapping": {
+        "organization": "fixed_value:World Bank",
+        "title": "display_title",
+        "published_year": "year",
+        "document_type": "majdocty",
+        "country": "count",
+        "language": "available_in",
+        "abstract": "abstract",
+        "pdf_url": "pdf_url",
+        "report_url": "report_url"
+      },
+      "example_queries": [],
+      "filter_fields": {
+        "organization": "Organization",
+        "title": "Document Title",
+        "published_year": "Year Published",
+        "document_type": "Document Type",
+        "country": "Country",
+        "language": "Language"
+      },
+      "metadata_panel_fields": {
+        "organization": "Organization",
+        "title": "Document Title",
+        "published_year": "Year Published",
+        "document_type": "Document Type",
+        "country": "Country",
+        "language": "Language",
+        "full_summary": "Summary",
+        "toc_classified": "Table of Contents"
+      },
+      "pipeline": {
+        "processing_timeout": 3600,
+        "download": {
+          "command": "pipeline/integration/evidencelab-ai-integration/worldbank/download.py",
+          "args": [
+            "--download-dir",
+            "{data_dir}",
+            "--max-results",
+            "{num_records}",
+            "--year",
+            "{year}",
+            "--from-year",
+            "{from_year}",
+            "--to-year",
+            "{to_year}"
+          ]
+        },
+        "parse": {
+          "use_subprocess": true,
+          "table_mode": "fast",
+          "no_ocr": true,
+          "images_scale": 1.0,
+          "enable_superscripts": true
+        },
+        "chunk": {
+          "max_tokens": 450,
+          "min_substantive_size": 50,
+          "tokenizer": "intfloat/multilingual-e5-large"
+        },
+        "summarize": {
+          "enabled": true,
+          "dense_model": "e5_large",
+          "llm_model": {
+            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "provider": "huggingface",
+            "temperature": 0.2,
+            "max_tokens": 2000
+          },
+          "llm_workers": 6,
+          "context_window": 29000
+        },
+        "tag": {
+          "enabled": true,
+          "dense_model": "e5_large",
+          "llm_model": {
+            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "provider": "huggingface",
+            "temperature": 0.0,
+            "max_tokens": 4000
+          },
+          "taxonomies": {}
+        },
+        "index": {
+          "batch_size": 10,
+          "embedding_workers": 1,
+          "oversize_chunks_strategy": "truncate",
+          "dense_models": [
+            "azure_small",
+            "e5_large"
+          ],
+          "sparse_models": [
+            "bm25"
+          ]
+        }
+      }
     }
   }
 }
