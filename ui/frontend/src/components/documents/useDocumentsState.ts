@@ -77,6 +77,7 @@ export const useDocumentsState = (dataSource: string, dataSourceConfig?: any) =>
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState<string>('');
   const [selectedSummaryTitle, setSelectedSummaryTitle] = useState<string>('');
+  const [selectedSummaryDocId, setSelectedSummaryDocId] = useState<string>('');
   const [selectedTocPdfUrl, setSelectedTocPdfUrl] = useState<string>('');
   const [selectedTocDocId, setSelectedTocDocId] = useState<string>('');
   const [selectedTocApproved, setSelectedTocApproved] = useState(false);
@@ -89,6 +90,9 @@ export const useDocumentsState = (dataSource: string, dataSourceConfig?: any) =>
   const [selectedTaxonomyValue, setSelectedTaxonomyValue] = useState<any>(null);
   const [selectedTaxonomyDefinition, setSelectedTaxonomyDefinition] = useState<string>('');
   const [selectedTaxonomyName, setSelectedTaxonomyName] = useState<string>('');
+  const [selectedTaxonomyDocId, setSelectedTaxonomyDocId] = useState<string>('');
+  const [selectedTaxonomyDocTitle, setSelectedTaxonomyDocTitle] = useState<string>('');
+  const [selectedTaxonomyDocSummary, setSelectedTaxonomyDocSummary] = useState<string>('');
   const [selectedTimelineDoc, setSelectedTimelineDoc] = useState<any>(null);
   const [logsModalOpen, setLogsModalOpen] = useState(false);
   const [selectedLogsDocId, setSelectedLogsDocId] = useState<string>('');
@@ -403,16 +407,20 @@ export const useDocumentsState = (dataSource: string, dataSourceConfig?: any) =>
     setQueueModalOpen(true);
   };
 
-  const handleOpenSummary = (summary: string, docTitle: string) => {
+  const handleOpenSummary = (summary: string, docTitle: string, docId?: string) => {
     setSelectedSummary(summary);
     setSelectedSummaryTitle(docTitle);
+    setSelectedSummaryDocId(docId || '');
     setSummaryModalOpen(true);
   };
 
-  const handleOpenTaxonomyModal = (value: any, definition: string, taxonomyName: string) => {
+  const handleOpenTaxonomyModal = (value: any, definition: string, taxonomyName: string, docId?: string, docTitle?: string, docSummary?: string) => {
     setSelectedTaxonomyValue(value);
     setSelectedTaxonomyDefinition(definition);
     setSelectedTaxonomyName(taxonomyName);
+    setSelectedTaxonomyDocId(docId || '');
+    setSelectedTaxonomyDocTitle(docTitle || '');
+    setSelectedTaxonomyDocSummary(docSummary || '');
     setTaxonomyModalOpen(true);
   };
 
@@ -524,11 +532,15 @@ export const useDocumentsState = (dataSource: string, dataSourceConfig?: any) =>
     summaryModalOpen,
     selectedSummary,
     selectedSummaryTitle,
+    selectedSummaryDocId,
     closeSummaryModal,
     taxonomyModalOpen,
     selectedTaxonomyValue,
     selectedTaxonomyDefinition,
     selectedTaxonomyName,
+    selectedTaxonomyDocId,
+    selectedTaxonomyDocTitle,
+    selectedTaxonomyDocSummary,
     handleOpenTaxonomyModal,
     closeTaxonomyModal,
     metadataModalOpen,

@@ -78,6 +78,7 @@ Search powered by hybrid retrieval and AI.
   * **Translation**: Translate search results (titles + snippets) into 10+ languages on request.
   * **Semantic Highlighting**: Highlights relevant phrases in the result snippet effectively, even when the search terms are in a different language from the result.
 * **AI Search Summary**: Generates a direct answer to the user's query by synthesizing the top search results.
+* **Drilldown Research**: Highlight text in an AI summary or click "Find out more" on the top heading to automatically drill into sub-topics. Each sub-query inherits the root search query plus the immediate parent topic for context, building an explorable tree of research. The tree view lets you navigate back to any previous node to review its results and summary. Sub-queries also inherit all active filters (data source, date range, etc.) from the parent search.
 * **Preview & Deep-Linking**: Integrated PDF viewer that opens directly to the specific page and highlights the relevant paragraph.
 
 ## Administration & Observability
@@ -116,6 +117,53 @@ Above you can see a menu options for models. The demo data was processed using t
 As shown in the above models drop-down, this user interface can use either open models found on Huggingface or Azure foundry (Azure open AI). Over time, more will be added.
 
 One thing to note, is that if using Huggingface models, the search reranker model runs locally on the application host. Since this project aims for low-cost, using such a model will result in slow search queries as the host isn't that powerful. With more work and engineering (and hosting cost) this could be addressed in future.
+
+## User Authentication & Permissions
+
+The authentication module is opt-in and built on [fastapi-users](https://fastapi-users.github.io/fastapi-users/) for industry-standard authentication patterns. It supports three modes via the `USER_MODULE` environment variable: `off` (default, no auth), `on_passive` (auth available but optional — anonymous users can browse freely), and `on_active` (all access requires login). It is designed with future MFA support in mind.
+
+### Authentication
+
+* **Email/password registration** with mandatory email verification before first sign-in. Passwords are hashed with bcrypt and must meet configurable complexity rules (minimum length, at least one letter and one digit).
+* **OAuth single sign-on** with Google and Microsoft — users are auto-linked by email so an OAuth user who later sets a password (or vice versa) shares a single account.
+* **Cookie-based sessions** using httpOnly, secure, SameSite cookies. No tokens are stored in localStorage, eliminating XSS token-theft risk.
+* **CSRF protection** via the double-submit cookie pattern — a non-httpOnly `evidencelab_csrf` cookie is read by the frontend and echoed as the `X-CSRF-Token` header on every state-changing request.
+
+### Security
+
+* **Account lockout** — after a configurable number of consecutive failed login attempts (default 5), the account is locked for a configurable period (default 15 minutes).
+* **Rate limiting** — login, registration, and password-reset endpoints are rate-limited per IP address to mitigate brute-force and credential-stuffing attacks.
+* **Audit logging** — all security-relevant events (login success/failure, registration, password reset, account deletion) are recorded in an append-only audit log with timestamp, user, and IP address.
+* **Domain restriction** — registration can optionally be restricted to approved email domains via `AUTH_ALLOWED_EMAIL_DOMAINS`.
+
+### Permissions
+
+* **Group-based access control** — users belong to one or more groups, each of which is granted access to specific data-source keys. Searches and document views are filtered so users only see data sources their groups allow.
+* **Default group** — new users are automatically added to a configurable default group so they have baseline access without admin intervention.
+* **Admin panel** — superusers can manage users (activate, verify, promote), create and edit groups, and assign data-source access from the UI. The first admin is bootstrapped via the `FIRST_SUPERUSER_EMAIL` environment variable.
+
+### User Feedback & Activity
+
+* **Ratings** — authenticated users can rate search results, AI summaries, document summaries, and taxonomy tags on a 1–5 star scale with optional comments. Ratings are stored in the `user_ratings` table with upsert semantics (one rating per user per type per reference per item).
+* **Activity logging** — every search by an authenticated user is automatically logged to the `user_activity` table, including the query, filters, first-page results (lean payload), AI summary (appended after streaming completes), and the page URL. Activity records are linked by a UUID search ID.
+* **Admin views** — the admin panel includes Ratings and Activity tabs with search, sort, pagination, and XLSX export.
+* **API endpoints**:
+  * `POST /ratings/` — create or update a rating (upsert)
+  * `GET /ratings/mine` — retrieve the current user's ratings (optionally filtered by type/reference)
+  * `DELETE /ratings/{id}` — delete a specific rating
+  * `GET /ratings/all` — admin: paginated list of all ratings
+  * `GET /ratings/export` — admin: XLSX download
+  * `POST /activity/` — log a search activity event
+  * `PATCH /activity/{search_id}/summary` — append AI summary to an activity record
+  * `GET /activity/all` — admin: paginated list of all activity
+  * `GET /activity/export` — admin: XLSX download
+* **Data lifecycle** — both tables use `ON DELETE CASCADE` on the `user_id` foreign key, so all ratings and activity are automatically deleted when a user account is removed.
+
+### User self-service
+
+* **Profile management** — users can update their display name from the Profile modal.
+* **Account deletion** — users can permanently delete their account, which removes group memberships, OAuth links, ratings, activity logs, and anonymises audit log entries (user_id set to NULL while preserving the security record).
+* **Privacy policy** — linked from the registration form; covers data collected, cookies, user rights, and retention periods.
 
 ## Technical Foundation
 
