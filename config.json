@@ -435,7 +435,7 @@
         "report_url": "report_url"
       },
       "example_queries": [],
-      "filter_fields": {
+      "default_filter_fields": {
         "organization": "Organization",
         "title": "Document Title",
         "published_year": "Year Published",
