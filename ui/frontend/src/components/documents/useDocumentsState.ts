@@ -142,11 +142,12 @@ export const useDocumentsState = (dataSource: string, dataSourceConfig?: any) =>
     }
   }, [chartView, columnFilters, currentPage, dataSource, filterText, pageSize, selectedCategory, sortField, sortDirection]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (refresh = false) => {
     try {
       setLoading(true);
+      const qs = refresh ? '&refresh=true' : '';
       const statsResponse = await axios.get<StatsData>(
-        `${API_BASE_URL}/stats?data_source=${dataSource}`
+        `${API_BASE_URL}/stats?data_source=${dataSource}${qs}`
       );
       setStats(statsResponse.data);
       setError(null);
@@ -568,6 +569,6 @@ export const useDocumentsState = (dataSource: string, dataSourceConfig?: any) =>
     loadingTable,
     tableContainerRef,
     setCurrentPage,
-    refreshStats: loadData,
+    refreshStats: () => loadData(true),
   };
 };
