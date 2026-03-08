@@ -125,13 +125,13 @@
       "model": "Qwen/Qwen2.5-7B-Instruct",
       "provider": "huggingface",
       "inference_provider": "together",
-      "max_tokens": 4096
+      "max_tokens": 8192
     },
     "qwen2.5-72b-instruct": {
       "model": "Qwen/Qwen2.5-72B-Instruct",
       "provider": "huggingface",
       "inference_provider": "novita",
-      "max_tokens": 4096
+      "max_tokens": 8192
     },
     "llama-3.1-8b-instruct": {
       "model": "meta-llama/Llama-3.1-8B-Instruct",
@@ -141,17 +141,17 @@
     "gpt-4.1-mini": {
       "model": "gpt-4.1-mini",
       "provider": "azure_foundry",
-      "max_tokens": 16384
+      "max_tokens": 32768
     },
     "gemini-2.5-flash": {
       "model": "gemini-2.5-flash",
       "provider": "google_vertex",
-      "max_tokens": 8192
+      "max_tokens": 65536
     },
     "gemini-2.5-pro": {
       "model": "gemini-2.5-pro",
       "provider": "google_vertex",
-      "max_tokens": 8192
+      "max_tokens": 65536
     },
     "gemini-2.0-flash": {
       "model": "gemini-2.0-flash",
