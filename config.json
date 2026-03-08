@@ -252,14 +252,6 @@
         "pdf_url": "pdf_url",
         "report_url": "report_url"
       },
-      "filter_fields": {
-        "organization": "Organization",
-        "title": "Document Title",
-        "published_year": "Year Published",
-        "document_type": "Document Type",
-        "country": "Country",
-        "language": "Language"
-      },
       "pipeline": {
         "processing_timeout": 3600,
         "download": {
@@ -456,6 +448,30 @@
             "bm25"
           ]
         }
+      },
+      "default_filter_fields": {
+        "organization": "Organization",
+        "title": "Document Title",
+        "published_year": "Year Published",
+        "document_type": "Document Type",
+        "country": "Country",
+        "language": "Language"
+      },
+      "example_queries": [
+        "impact of humanitarian interventions on food security",
+        "gender equality in development programmes",
+        "effectiveness of disaster response operations"
+      ],
+      "metadata_panel_fields": {
+        "organization": "Organization",
+        "title": "Document Title",
+        "published_year": "Year Published",
+        "document_type": "Document Type",
+        "country": "Country",
+        "language": "Language",
+        "region": "Region",
+        "full_summary": "Summary",
+        "toc_classified": "Table of Contents"
       }
     },
     "World Bank Fraud and Integrity Reports": {
