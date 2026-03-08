@@ -4572,10 +4572,10 @@ li.ai-fact-active::before {
 }
 
 .docs-nav-item.active {
-  color: var(--brand-primary-dark);
-  background: var(--brand-primary-light, rgba(59, 130, 246, 0.08));
+  color: #fff;
+  background: var(--brand-primary);
   font-weight: 500;
-  border-right: 3px solid var(--brand-primary);
+  border-right: 3px solid var(--brand-primary-dark);
 }
 
 .docs-content {

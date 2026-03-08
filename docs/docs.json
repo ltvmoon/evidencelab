@@ -5,11 +5,25 @@
       "title": "Overview",
       "children": [
         { "title": "About Evidence Lab", "path": "overview/about.md" },
+        { "title": "Getting Started", "path": "overview/getting-started.md" },
         { "title": "Technical Architecture", "path": "overview/tech.md" },
-        { "title": "Data Sources", "path": "overview/data.md" },
-        { "title": "Data & Attribution", "path": "overview/data_and_attribution.md" },
-        { "title": "Heatmapper", "path": "overview/heatmapper.md" },
-        { "title": "Privacy Policy", "path": "overview/privacy.md" }
+        { "title": "Data Sources", "path": "overview/data.md" }
+      ]
+    },
+    {
+      "title": "Using Evidence Lab",
+      "children": [
+        { "title": "Search", "path": "using-evidence-lab/search.md" },
+        { "title": "Research Trees", "path": "using-evidence-lab/research-trees.md" },
+        { "title": "Heatmapper", "path": "using-evidence-lab/heatmapper.md" }
+      ]
+    },
+    {
+      "title": "Admin",
+      "children": [
+        { "title": "Pipeline Configuration", "path": "admin/pipeline-configuration.md" },
+        { "title": "User Administration", "path": "admin/user-administration.md" },
+        { "title": "System Monitoring", "path": "admin/system-monitoring.md" }
       ]
     }
   ]
