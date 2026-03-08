@@ -446,12 +446,19 @@ def _create_google_vertex_llm(
             "GOOGLE_APPLICATION_CREDENTIALS pointing to a service account JSON."
         )
     location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    # Gemini 2.5 models enable "thinking" by default, which consumes output
+    # tokens from max_output_tokens and truncates the visible response.
+    # Disable thinking so all output tokens are used for the actual response.
+    kwargs: dict[str, Any] = {}
+    if "2.5" in model:
+        kwargs["thinking_budget"] = 0
     return ChatVertexAI(
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
         project=project,
         location=location,
+        **kwargs,
     )
 
 

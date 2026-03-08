@@ -26,6 +26,7 @@ def test_create_google_vertex_llm_from_env(monkeypatch):
         max_tokens=2000,
         project="test-proj",
         location="europe-west1",
+        thinking_budget=0,
     )
 
 
@@ -49,6 +50,29 @@ def test_create_google_vertex_llm_from_creds_file(monkeypatch, tmp_path):
         temperature=0.0,
         max_tokens=4000,
         project="creds-project",
+        location="us-central1",
+        thinking_budget=0,
+    )
+
+
+def test_create_google_vertex_llm_no_thinking_for_non_25(monkeypatch):
+    """Gemini 2.0 models should NOT get thinking_budget kwarg."""
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-proj")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+    with patch.object(llm_factory, "ChatVertexAI") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        llm_factory._create_google_vertex_llm(
+            model="gemini-2.0-flash",
+            temperature=0.2,
+            max_tokens=2000,
+        )
+
+    mock_cls.assert_called_once_with(
+        model="gemini-2.0-flash",
+        temperature=0.2,
+        max_tokens=2000,
+        project="test-proj",
         location="us-central1",
     )
 
