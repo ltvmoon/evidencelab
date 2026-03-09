@@ -9711,7 +9711,6 @@ a.admin-citation-clickable:hover {
   max-width: 900px;
   margin: 0 auto;
   width: 100%;
-  position: relative;
 }
 
 /* Welcome screen */
@@ -10138,32 +10137,34 @@ a.admin-citation-clickable:hover {
   background: var(--brand-accent);
 }
 
+/* Row below input: chat history (left) + disclaimer (right) */
+.chat-input-below {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.3rem;
+  padding: 0 0.25rem;
+  min-height: 1.2rem;
+}
+
 .chat-input-hint {
   font-size: 0.7rem;
   color: var(--brand-text-tertiary);
-  text-align: center;
-  margin-top: 0.35rem;
-}
-
-/* Chat history toggle below input */
-.chat-input-footer {
-  display: flex;
-  justify-content: flex-start;
-  padding: 0.15rem 1rem 0.25rem;
 }
 
 .chat-history-toggle {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
   background: none;
   border: none;
   color: var(--brand-text-tertiary);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   cursor: pointer;
-  padding: 0.2rem 0.4rem;
+  padding: 0.15rem 0.35rem;
   border-radius: 4px;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .chat-history-toggle:hover {
@@ -10189,10 +10190,6 @@ a.admin-citation-clickable:hover {
   font-size: 0.9rem;
 }
 
-.agent-status-icon {
-  font-size: 1.1rem;
-}
-
 .agent-status-label {
   font-style: italic;
 }
@@ -10208,6 +10205,45 @@ a.admin-citation-clickable:hover {
 
 .agent-status-dots .dot:nth-child(3) {
   animation-delay: 0.4s;
+}
+
+/* Search progress detail shown during searching phase */
+.agent-status-detail {
+  margin-top: 0.4rem;
+  padding-left: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.agent-status-query {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  padding: 0.15rem 0;
+}
+
+.agent-status-query-text {
+  color: var(--brand-text-secondary);
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-status-query-count {
+  color: var(--brand-text-tertiary);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.agent-status-query-pending .agent-status-query-count {
+  color: var(--brand-primary);
+  font-style: italic;
 }
 
 @keyframes dotPulse {
@@ -10307,28 +10343,49 @@ a.admin-citation-clickable:hover {
   font-size: 0.7rem;
 }
 
-/* Thread panel overlay */
-.thread-panel-overlay {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  z-index: 20;
-  width: 280px;
-  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.08);
+/* Thread history modal */
+.thread-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+
+.thread-modal {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  width: 380px;
+  max-width: 90vw;
+  max-height: 70vh;
+  overflow: hidden;
+  animation: modalSlideUp 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .thread-sidebar {
   width: 100%;
   height: 100%;
-  background: white;
-  border-right: 1px solid var(--brand-border-light);
   display: flex;
   flex-direction: column;
+  max-height: 70vh;
 }
 
 .thread-sidebar-open {
-  /* used for panel mode — no transition needed */
+  /* modal mode */
 }
 
 .thread-sidebar-header {
@@ -10392,7 +10449,23 @@ a.admin-citation-clickable:hover {
 .thread-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0.35rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--brand-border) transparent;
+}
+
+.thread-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.thread-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thread-list::-webkit-scrollbar-thumb {
+  background-color: var(--brand-border);
+  border-radius: 2px;
 }
 
 .thread-list-empty {
@@ -10469,19 +10542,13 @@ a.admin-citation-clickable:hover {
 }
 
 /* Mobile responsiveness */
-@media (max-width: 1024px) {
-  .thread-panel-overlay {
-    width: 240px;
-  }
-}
-
 @media (max-width: 768px) {
   .assistant-container {
     height: calc(100vh - 160px);
   }
 
-  .thread-panel-overlay {
-    width: 260px;
+  .thread-modal {
+    width: 340px;
   }
 
   .chat-message {

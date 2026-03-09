@@ -9,6 +9,7 @@ interface ChatMessageListProps {
   streamingContent?: string;
   streamingPhase?: string;
   streamingToolCalls?: SearchToolCall[];
+  streamingSearchQueries?: string[];
   streamingSources?: SourceReference[];
   isStreaming?: boolean;
   onSourceClick?: (source: SourceReference) => void;
@@ -19,6 +20,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   streamingContent,
   streamingPhase,
   streamingToolCalls,
+  streamingSearchQueries,
   streamingSources,
   isStreaming = false,
   onSourceClick,
@@ -69,10 +71,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       {isStreaming && streamingPhase && !streamingContent && (
         <div className="chat-message chat-message-assistant">
           <div className="assistant-status-container">
-            <AgentStatus phase={streamingPhase} />
-            {streamingToolCalls && streamingToolCalls.length > 0 && (
-              <ToolCallPanel toolCalls={streamingToolCalls} defaultExpanded />
-            )}
+            <AgentStatus phase={streamingPhase} searchQueries={streamingSearchQueries} toolCalls={streamingToolCalls} />
           </div>
         </div>
       )}

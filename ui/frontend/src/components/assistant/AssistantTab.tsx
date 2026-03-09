@@ -266,13 +266,27 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
   const hasExamples = exampleQueries && exampleQueries.length > 0;
   const hasMessages = messages.length > 0 || isStreaming;
 
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  const chatHistoryButton = isAuthenticated ? (
+    <button
+      className="chat-history-toggle"
+      onClick={() => setSidebarOpen(!sidebarOpen)}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+      Chat history
+    </button>
+  ) : undefined;
+
   return (
     <div className="assistant-container">
-      {/* Main chat area */}
-      <div className="assistant-chat-area">
-        {/* Thread history panel - overlays left side of chat area */}
-        {isAuthenticated && sidebarOpen && (
-          <div className="thread-panel-overlay">
+      {/* Thread history modal */}
+      {isAuthenticated && sidebarOpen && (
+        <div className="thread-modal-backdrop" onClick={() => setSidebarOpen(false)}>
+          <div className="thread-modal" onClick={(e) => e.stopPropagation()}>
             <ThreadSidebar
               threads={threads}
               activeThreadId={activeThreadId}
@@ -283,8 +297,11 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
               onToggle={() => setSidebarOpen(false)}
             />
           </div>
-        )}
+        </div>
+      )}
 
+      {/* Main chat area */}
+      <div className="assistant-chat-area">
         {!hasMessages ? (
           <div className="assistant-welcome">
             <div className="assistant-welcome-icon">
@@ -306,7 +323,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
                     className="assistant-example-btn"
                     onClick={() => submitQuery(q)}
                   >
-                    {q}
+                    {capitalize(q)}
                   </button>
                 ))}
               </div>
@@ -318,6 +335,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             streamingContent={streamingContent}
             streamingPhase={streamingPhase}
             streamingToolCalls={toolCalls}
+            streamingSearchQueries={searchQueries}
             streamingSources={streamingSources}
             isStreaming={isStreaming}
             onSourceClick={handleSourceClick}
@@ -331,22 +349,8 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
           onStop={handleStop}
           disabled={isStreaming}
           isStreaming={isStreaming}
+          footerLeft={chatHistoryButton}
         />
-        {/* Chat history toggle below input */}
-        {isAuthenticated && (
-          <div className="chat-input-footer">
-            <button
-              className="chat-history-toggle"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-              Chat history
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

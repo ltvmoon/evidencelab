@@ -8,6 +8,7 @@ interface ChatInputProps {
   disabled?: boolean;
   isStreaming?: boolean;
   placeholder?: string;
+  footerLeft?: React.ReactNode;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -18,6 +19,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   disabled = false,
   isStreaming = false,
   placeholder = 'Ask a research question...',
+  footerLeft,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -82,8 +84,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           )}
         </div>
       </div>
-      <div className="chat-input-hint">
-        AI can, and will, gleefully make mistakes. Check all responses
+      <div className="chat-input-below">
+        {footerLeft || <span />}
+        <span className="chat-input-hint">
+          AI can, and will, gleefully make mistakes. Check all responses
+        </span>
       </div>
     </div>
   );
