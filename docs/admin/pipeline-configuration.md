@@ -356,6 +356,89 @@ docker compose exec pipeline \
 
 ---
 
+### Running on the Host (Hardware Acceleration)
+
+Docker doesn't always provide GPU or MPS acceleration for computationally intensive pipeline stages like document parsing and embedding. For large corpora, running the pipeline directly on the host machine can be significantly faster.
+
+Evidence Lab includes a host execution script at `scripts/pipeline/run_pipeline_host.sh` that automates the setup.
+
+#### What the Script Does
+
+1. **Creates a virtual environment** at `~/.venvs/evidencelab-ai` with all pipeline dependencies
+2. **Detects the operating system** (macOS or Linux) and patches dependencies accordingly
+3. **Stops the Docker embedding server** to free GPU/MPS resources
+4. **Starts a native embedding server** for direct hardware acceleration
+5. **Remaps service hostnames** — Docker service names like `qdrant` and `postgres` are automatically switched to `localhost`
+6. **Waits for Qdrant** to become reachable before starting processing
+
+#### Prerequisites
+
+- **Docker services running** — Qdrant and Postgres must be running (via `docker compose up -d qdrant postgres`)
+- **LibreOffice** — required for document format conversion
+- **Data directory** — if `DATA_MOUNT_PATH` is set in `.env`, create a symlink: `ln -s "$DATA_MOUNT_PATH" ./data`
+
+#### macOS (Apple Silicon)
+
+On macOS, the script enables **MPS (Metal Performance Shaders) acceleration** for Docling parsing and embedding inference.
+
+Install LibreOffice:
+
+```bash
+brew install --cask libreoffice
+```
+
+The script automatically:
+- Upgrades `transformers` for Docling rt_detr_v2 model support
+- Removes `optimum` to avoid BetterTransformer/MPS incompatibilities
+- Installs `infinity-emb` for native embedding serving
+- Sets `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` for multiprocessing compatibility
+
+#### Linux (CUDA GPU)
+
+On Linux, the script enables **CUDA GPU acceleration** for parsing and embedding.
+
+Install LibreOffice:
+
+```bash
+sudo apt install libreoffice
+```
+
+The script installs:
+- `infinity-emb==0.0.77` with version pinning for stability
+- `sentence-transformers>=3.0` for embedding support
+- CLI monitoring tools
+
+#### Usage
+
+```bash
+# Default: process 'uneg' datasource with 7 workers, skip download/scan
+./scripts/pipeline/run_pipeline_host.sh
+
+# Process a specific document by ID
+./scripts/pipeline/run_pipeline_host.sh --data-source uneg --file-id doc_123
+
+# Custom worker count
+./scripts/pipeline/run_pipeline_host.sh --workers 14
+
+# Pass any orchestrator arguments directly
+./scripts/pipeline/run_pipeline_host.sh --data-source my_source --num-records 100
+```
+
+When run without arguments, the script defaults to `--data-source uneg --workers 7 --skip-download --skip-scan --recent-first`.
+
+#### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `QDRANT_HOST` | Auto-remapped from `qdrant` to `localhost` |
+| `POSTGRES_HOST` | Auto-remapped from `postgres` to `localhost` |
+| `QDRANT_API_KEY` | Passed through for authenticated Qdrant connections |
+| `DATA_MOUNT_PATH` | Validated against `./data` symlink target |
+| `QDRANT_WAIT_SECS` | Timeout for Qdrant health check (default: 60) |
+| `INTEGRATION_FILE_ID` | Process a specific file in integration test mode |
+
+---
+
 ### Validation
 
 Evidence Lab validates your configuration at startup:

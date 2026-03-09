@@ -4468,7 +4468,6 @@ li.ai-fact-active::before {
   width: 100%;
   margin: 0 auto;
   gap: 0;
-  min-height: calc(100vh - 200px);
 }
 
 .docs-sidebar {
@@ -4480,6 +4479,9 @@ li.ai-fact-active::before {
   flex-direction: column;
   overflow-y: auto;
   padding: 1rem 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
 }
 
 .docs-search {
@@ -4582,8 +4584,84 @@ li.ai-fact-active::before {
   flex: 1;
   padding: 2rem;
   background: var(--white);
-  overflow-y: auto;
   min-width: 0;
+}
+
+/* Table of Contents - right sidebar */
+.docs-toc {
+  width: 200px;
+  min-width: 200px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 1.5rem 0.75rem;
+  border-left: 1px solid var(--gray-100);
+}
+
+.docs-toc-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+  padding-left: 0.5rem;
+}
+
+.docs-toc-item {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: none;
+  font-size: 0.8rem;
+  color: var(--gray-500);
+  cursor: pointer;
+  text-align: left;
+  line-height: 1.4;
+  border-left: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.docs-toc-item:hover {
+  color: var(--gray-700);
+}
+
+.docs-toc-item.active {
+  color: var(--brand-primary);
+  border-left-color: var(--brand-primary);
+  font-weight: 500;
+}
+
+.docs-toc-indent {
+  padding-left: 1.25rem;
+}
+
+@media (max-width: 1100px) {
+  .docs-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .docs-page {
+    flex-direction: column;
+  }
+
+  .docs-sidebar {
+    position: static;
+    width: 100%;
+    min-width: unset;
+    height: auto;
+    max-height: 50vh;
+    border-right: none;
+    border-bottom: 1px solid var(--gray-200);
+  }
+
+  .docs-content {
+    padding: 1rem;
+  }
 }
 
 .docs-loading {
@@ -4618,6 +4696,21 @@ li.ai-fact-active::before {
   color: var(--gray-700);
 }
 
+.about-content h2 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.about-content h3 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.about-content h4 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
 .about-content p {
   margin-bottom: 1rem;
 }
@@ -4643,10 +4736,23 @@ li.ai-fact-active::before {
 
 .about-content code {
   font-size: 0.9em;
+  background: var(--gray-100);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
 }
 
 .about-content pre {
   font-size: 0.9em;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  background: var(--gray-50);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+.about-content pre code {
+  background: none;
+  padding: 0;
 }
 
 .about-content table {

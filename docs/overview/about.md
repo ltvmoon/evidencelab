@@ -1,4 +1,4 @@
-# Evidence Lab
+## Evidence Lab
 
 ![Evidence Lab Architecture](/docs/images/evidence-lab.png)
 
