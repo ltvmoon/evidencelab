@@ -2,8 +2,6 @@
 
 Evidence Lab's search combines hybrid retrieval with AI-powered summaries to help you find and understand the most relevant content across thousands of documents.
 
-![Search results page](/docs/images/search.png)
-
 ### Entering a Search Query
 
 Type your question or topic into the search bar using natural language. Evidence Lab understands full questions, phrases, and keywords — in multiple languages. You can also click one of the **suggested queries** on the homepage to get started quickly.
