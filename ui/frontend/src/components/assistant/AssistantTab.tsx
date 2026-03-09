@@ -268,17 +268,27 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
 
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-  const chatHistoryButton = isAuthenticated ? (
-    <button
-      className="chat-history-toggle"
-      onClick={() => setSidebarOpen(!sidebarOpen)}
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="12 6 12 12 16 14" />
-      </svg>
-      Chat history
-    </button>
+  const chatFooterLinks = isAuthenticated ? (
+    <span className="chat-footer-links">
+      <button
+        className="chat-history-toggle"
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+        Chat history
+      </button>
+      {hasMessages && (
+        <button className="chat-history-toggle" onClick={handleNewChat}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          New chat
+        </button>
+      )}
+    </span>
   ) : undefined;
 
   return (
@@ -349,7 +359,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
           onStop={handleStop}
           disabled={isStreaming}
           isStreaming={isStreaming}
-          footerLeft={chatHistoryButton}
+          footerLeft={chatFooterLinks}
         />
       </div>
     </div>

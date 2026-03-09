@@ -10152,6 +10152,12 @@ a.admin-citation-clickable:hover {
   color: var(--brand-text-tertiary);
 }
 
+.chat-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
 .chat-history-toggle {
   display: flex;
   align-items: center;
@@ -10359,7 +10365,7 @@ a.admin-citation-clickable:hover {
   background: white;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-  width: 380px;
+  width: 520px;
   max-width: 90vw;
   max-height: 70vh;
   overflow: hidden;
@@ -10444,6 +10450,33 @@ a.admin-citation-clickable:hover {
 .thread-new-btn:hover {
   background: #f1f5f9;
   border-color: var(--brand-text-tertiary);
+}
+
+/* Search box in thread modal */
+.thread-search {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--brand-border-light);
+}
+
+.thread-search-input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--brand-text-secondary);
+  background: var(--brand-bg-secondary, #f8fafc);
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.thread-search-input:focus {
+  border-color: var(--brand-primary);
+}
+
+.thread-search-input::placeholder {
+  color: var(--brand-text-tertiary);
 }
 
 .thread-list {
@@ -10548,7 +10581,7 @@ a.admin-citation-clickable:hover {
   }
 
   .thread-modal {
-    width: 340px;
+    width: 90vw;
   }
 
   .chat-message {

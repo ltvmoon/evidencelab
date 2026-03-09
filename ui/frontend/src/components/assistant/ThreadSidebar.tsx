@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { ThreadListItem } from '../../types/api';
 
 interface ThreadSidebarProps {
@@ -16,11 +16,12 @@ const formatDate = (dateStr: string): string => {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return date.toLocaleDateString();
+  if (diffDays === 0) return `Today ${time}`;
+  if (diffDays === 1) return `Yesterday ${time}`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
 /* SVG icons */
@@ -51,12 +52,20 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
   isOpen,
   onToggle,
 }) => {
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return threads;
+    const q = search.toLowerCase();
+    return threads.filter((t) => t.title.toLowerCase().includes(q));
+  }, [threads, search]);
+
   if (!isOpen) return null;
 
   return (
     <div className="thread-sidebar thread-sidebar-open">
       <div className="thread-sidebar-header">
-        <h3>Conversations</h3>
+        <h3>Chat History</h3>
         <div className="thread-sidebar-header-actions">
           <button className="thread-new-btn" onClick={onNewChat} title="New conversation">
             <PlusIcon />
@@ -68,15 +77,32 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
         </div>
       </div>
 
+      {threads.length > 3 && (
+        <div className="thread-search">
+          <input
+            type="text"
+            className="thread-search-input"
+            placeholder="Search conversations..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      )}
+
       <div className="thread-list">
-        {threads.length === 0 && (
+        {filtered.length === 0 && !search && (
           <div className="thread-list-empty">
             No conversations yet.
             <br />
             Start a new chat!
           </div>
         )}
-        {threads.map((thread) => (
+        {filtered.length === 0 && search && (
+          <div className="thread-list-empty">
+            No matching conversations.
+          </div>
+        )}
+        {filtered.map((thread) => (
           <div
             key={thread.id}
             className={`thread-item ${activeThreadId === thread.id ? 'thread-item-active' : ''}`}
