@@ -1,24 +1,35 @@
-Heatmapper is a quick way to analyze lots of documents to see trends in document tags and types as part of evidence research. It generates a grid showing search results for combinations of document attributes you provide, allowing you to see where there are gaps as well as peaks in activity.
+## Heatmapper
 
-Another way to think of it is as a grid search.
+Heatmapper is a visual analysis tool for identifying trends, gaps, and patterns across your document corpus. It generates a color-coded grid showing how documents are distributed across combinations of attributes you define.
 
-For example, you can view:
+![Heatmapper](/docs/images/heatmapper.png)
 
-- The number of documents by type **X** published each year
-- The number of documents by AI-generated tag **X** publishing organization
-- The number of search hits by queries you provide **X** year
+### What Can You Visualize?
 
-.. and more!
+Think of Heatmapper as a configurable cross-tabulation. You choose what goes on each axis, and the grid shows document counts at each intersection. For example:
 
-You can get granular, filtering searches down the individual documents and queries.
+- **Document type × Year** — see how the mix of evaluations, reports, and thematic studies has changed over time.
+- **AI-generated tag × Organization** — compare thematic coverage across publishing agencies.
+- **Search query × Year** — track how frequently specific topics appear in documents over time.
 
-#### Heatmapper modes
+### Heatmapper Modes
 
-Heatmapper can run in two modes, depending on whether you want to refine results using search queries:
+Heatmapper operates in two modes depending on whether you include search queries:
 
-- **Search query mode**: If you use search queries to filter your data, the system searches document content and counts the unique documents in the search results (noting that one document can have multiple search hits). This will focus on *top* search hits and so might not retrieve all documents in the system, just those most closely aligned with your query
-- **Document Attribute Mode**: Otherwise, if you don't use queries, the counts are simply the documents which have the attributes you define, and so will include many more documents
+| Mode | When to Use | How It Counts |
+|------|-------------|---------------|
+| **Search Query Mode** | You provide search queries to filter results | Searches document content and counts unique documents among the top search hits. Best for focused analysis of specific topics. |
+| **Document Attribute Mode** | No search queries — just attribute filters | Counts all documents matching the selected attributes. Covers the full corpus and gives the broadest view. |
 
-#### Data Drilldown
+### Data Drilldown
 
-You can also drill down into the underlying content to view individual documents and paragraphs as well as export to Excel for further offline analysis.
+Click any cell in the heatmap to drill down into the underlying data. You can:
+
+- View individual **documents and paragraphs** that make up that cell's count.
+- **Export to Excel** for further offline analysis and reporting.
+
+### Tips
+
+- Start with broad attribute combinations to get an overview, then add search queries to focus on specific topics.
+- Use Heatmapper alongside [Search](/docs/using-evidence-lab/search.md) — if you spot an interesting pattern in the heatmap, run a search to explore the underlying evidence.
+- Export data for inclusion in presentations or reports.
