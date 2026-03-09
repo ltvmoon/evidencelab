@@ -18,9 +18,9 @@ const DocsSidebar: React.FC<DocsSidebarProps> = ({
   onNavigate,
   onSearchChange,
 }) => {
-  // Track which folders are expanded
+  // Track which folders are expanded — "Using Evidence Lab" open by default
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set()
+    new Set(["Using Evidence Lab"])
   );
 
   // Auto-expand folder containing the active page

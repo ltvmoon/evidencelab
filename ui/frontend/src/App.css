@@ -4461,10 +4461,17 @@ li.ai-fact-active::before {
   margin: 0;
 }
 
-/* Documentation Page — override .main-content padding/overflow so columns fill viewport */
+/* Documentation Page — lock viewport so docs columns fill remaining space exactly */
+.app:has(.docs-page) {
+  height: 100vh;
+  overflow: hidden;
+}
+
 .main-content:has(.docs-page) {
-  padding: 0;
-  overflow: visible;
+  padding: var(--spacing-xl);
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .docs-page {
@@ -4472,19 +4479,59 @@ li.ai-fact-active::before {
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
-  gap: 0;
-  height: calc(100vh - 52px);   /* fill viewport below the sticky top-bar */
+  gap: var(--spacing-lg);
+  height: 100%;
+}
+
+/* Subtle scrollbars for docs columns */
+.docs-sidebar,
+.docs-content,
+.docs-toc,
+.docs-nav-tree {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+
+.docs-sidebar::-webkit-scrollbar,
+.docs-content::-webkit-scrollbar,
+.docs-toc::-webkit-scrollbar,
+.docs-nav-tree::-webkit-scrollbar {
+  width: 6px;
+}
+
+.docs-sidebar::-webkit-scrollbar-track,
+.docs-content::-webkit-scrollbar-track,
+.docs-toc::-webkit-scrollbar-track,
+.docs-nav-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.docs-sidebar::-webkit-scrollbar-thumb,
+.docs-content::-webkit-scrollbar-thumb,
+.docs-toc::-webkit-scrollbar-thumb,
+.docs-nav-tree::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: 3px;
+}
+
+.docs-sidebar::-webkit-scrollbar-thumb:hover,
+.docs-content::-webkit-scrollbar-thumb:hover,
+.docs-toc::-webkit-scrollbar-thumb:hover,
+.docs-nav-tree::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-400);
 }
 
 .docs-sidebar {
-  width: 280px;
-  min-width: 280px;
+  width: 260px;
+  min-width: 260px;
   background: var(--white);
-  border-right: 1px solid var(--gray-200);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding: 1rem 0;
+  padding: 1.25rem 0 1rem;
 }
 
 .docs-search {
@@ -4587,17 +4634,19 @@ li.ai-fact-active::before {
   flex: 1;
   padding: 2rem;
   background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   min-width: 0;
   overflow-y: auto;
 }
 
-/* Table of Contents - right sidebar */
+/* Table of Contents - right sidebar (stays on gray background) */
 .docs-toc {
   width: 200px;
   min-width: 200px;
   overflow-y: auto;
-  padding: 1.5rem 0.75rem;
-  border-left: 1px solid var(--gray-100);
+  padding: 1rem 0.75rem 1.5rem;
 }
 
 .docs-toc-title {
@@ -4646,6 +4695,15 @@ li.ai-fact-active::before {
 }
 
 @media (max-width: 768px) {
+  .app:has(.docs-page) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .main-content:has(.docs-page) {
+    overflow: visible;
+  }
+
   .docs-page {
     flex-direction: column;
     height: auto;
@@ -4656,7 +4714,9 @@ li.ai-fact-active::before {
     min-width: unset;
     height: auto;
     max-height: 50vh;
-    border-right: none;
+    border-radius: 0;
+    box-shadow: none;
+    border: none;
     border-bottom: 1px solid var(--gray-200);
   }
 
