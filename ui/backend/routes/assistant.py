@@ -6,6 +6,7 @@ Provides endpoints for:
 - Conversation thread CRUD (for authenticated users)
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -54,6 +55,75 @@ else:
 
 
 # ---------------------------------------------------------------------------
+# SSE heartbeat helper
+# ---------------------------------------------------------------------------
+_STREAM_STOP = object()
+_HEARTBEAT_INTERVAL = 15  # seconds
+
+
+async def _anext_or_stop(ait):
+    """Await next item from async iterator, return sentinel at end."""
+    try:
+        return await ait.__anext__()
+    except StopAsyncIteration:
+        return _STREAM_STOP
+
+
+# ---------------------------------------------------------------------------
+# Streaming chat helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_model_config(body: AssistantChatRequest):
+    """Extract model key, temperature, max_tokens from the request."""
+    cfg = body.assistant_model_config
+    return (
+        cfg.model if cfg else None,
+        cfg.temperature if cfg else None,
+        cfg.max_tokens if cfg else None,
+    )
+
+
+async def _load_conversation_history(body, user, session):
+    """Load prior messages for a thread, returning a list of dicts."""
+    if not (body.thread_id and _USER_MODULE and user and session):
+        return []
+    try:
+        thread_id = uuid.UUID(body.thread_id)
+        stmt = (
+            select(ConversationMessage)
+            .where(ConversationMessage.thread_id == thread_id)
+            .order_by(ConversationMessage.created_at)
+        )
+        result = await session.execute(stmt)
+        msgs = result.scalars().all()
+        return [{"role": m.role, "content": m.content} for m in msgs]
+    except Exception as exc:
+        logger.warning("Failed to load thread history: %s", exc)
+        return []
+
+
+async def _stream_with_heartbeat(ait):
+    """Yield events from *ait*, inserting SSE heartbeat comments on idle."""
+    task = None
+    try:
+        while True:
+            task = asyncio.create_task(_anext_or_stop(ait))
+            while not task.done():
+                done, _ = await asyncio.wait({task}, timeout=_HEARTBEAT_INTERVAL)
+                if not done:
+                    yield None  # caller sends heartbeat
+            event = task.result()
+            task = None
+            if event is _STREAM_STOP:
+                break
+            yield event
+    finally:
+        if task and not task.done():
+            task.cancel()
+
+
+# ---------------------------------------------------------------------------
 # Streaming chat endpoint
 # ---------------------------------------------------------------------------
 
@@ -72,37 +142,13 @@ async def stream_assistant_chat(
     The agent performs: plan -> search -> synthesize -> reflect
     in a loop, streaming progress events at each phase.
     """
-    # Resolve model config from request
-    model_config = body.assistant_model_config
-    model_key = model_config.model if model_config else None
-    temperature = model_config.temperature if model_config else None
-    max_tokens = model_config.max_tokens if model_config else None
-
-    # Load conversation history if thread_id provided and user authenticated
-    conversation_messages = []
-    if body.thread_id and _USER_MODULE and user and session:
-        try:
-            thread_id = uuid.UUID(body.thread_id)
-            stmt = (
-                select(ConversationMessage)
-                .where(
-                    ConversationMessage.thread_id == thread_id,
-                )
-                .order_by(ConversationMessage.created_at)
-            )
-            result = await session.execute(stmt)
-            msgs = result.scalars().all()
-            conversation_messages = [
-                {"role": m.role, "content": m.content} for m in msgs
-            ]
-        except Exception as exc:
-            logger.warning("Failed to load thread history: %s", exc)
+    model_key, temperature, max_tokens = _resolve_model_config(body)
+    conversation_messages = await _load_conversation_history(body, user, session)
 
     async def event_generator():
-        """Stream assistant events as SSE."""
         thread_id = body.thread_id
         try:
-            async for event in stream_research_response(
+            ait = stream_research_response(
                 query=body.query,
                 data_source=body.data_source,
                 model_key=model_key,
@@ -110,23 +156,16 @@ async def stream_assistant_chat(
                 max_tokens=max_tokens,
                 max_iterations=3,
                 conversation_messages=conversation_messages,
-            ):
-                # Persist messages on completion if user is authenticated
-                if event.get("type") == "done" and _USER_MODULE and user and session:
-                    try:
-                        thread_id = await _persist_conversation(
-                            session=session,
-                            user=user,
-                            thread_id=body.thread_id,
-                            query=body.query,
-                            data_source=body.data_source,
-                            synthesis=event.get("synthesis", ""),
-                            sources=event.get("sources"),
-                        )
-                        event["threadId"] = str(thread_id)
-                    except Exception as exc:
-                        logger.warning("Failed to persist conversation: %s", exc)
+            ).__aiter__()
 
+            async for event in _stream_with_heartbeat(ait):
+                if event is None:
+                    yield ": heartbeat\n\n"
+                    continue
+                if _should_persist(event, user, session):
+                    thread_id = await _try_persist(
+                        session, user, body, event, thread_id
+                    )
                 yield f"data: {json.dumps(event)}\n\n"
 
         except Exception as e:
@@ -142,6 +181,35 @@ async def stream_assistant_chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _should_persist(event, user, session) -> bool:
+    """Check if this event should trigger conversation persistence."""
+    return (
+        event.get("type") == "done"
+        and _USER_MODULE
+        and user is not None
+        and session is not None
+    )
+
+
+async def _try_persist(session, user, body, event, thread_id):
+    """Attempt to persist conversation, returning updated thread_id."""
+    try:
+        tid = await _persist_conversation(
+            session=session,
+            user=user,
+            thread_id=body.thread_id,
+            query=body.query,
+            data_source=body.data_source,
+            synthesis=event.get("synthesis", ""),
+            sources=event.get("sources"),
+        )
+        event["threadId"] = str(tid)
+        return tid
+    except Exception as exc:
+        logger.warning("Failed to persist conversation: %s", exc)
+        return thread_id
 
 
 async def _persist_conversation(

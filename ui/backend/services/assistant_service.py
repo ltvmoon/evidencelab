@@ -1,7 +1,7 @@
 """
 Research Assistant service.
 
-High-level service wrapping the LangGraph research agent, providing
+High-level service wrapping the deepagents research agent, providing
 SSE streaming and conversation persistence.
 """
 
@@ -13,7 +13,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from ui.backend.services.assistant_graph import ResearchState, build_research_graph
+from ui.backend.services.assistant_graph import build_research_agent
 
 logger = logging.getLogger(__name__)
 
@@ -58,69 +58,6 @@ def _build_conversation_messages(
     return messages
 
 
-def _build_initial_state(
-    query: str,
-    messages: List,
-    data_source: Optional[str],
-    max_iterations: int,
-) -> ResearchState:
-    """Build the initial ResearchState for the graph."""
-    return {
-        "messages": messages,
-        "query": query,
-        "search_queries": [],
-        "search_results": [],
-        "per_query_results": [],
-        "synthesis": "",
-        "reflection": "",
-        "iteration": 0,
-        "max_iterations": max_iterations,
-        "sources": [],
-        "should_continue": True,
-        "data_source": data_source,
-    }
-
-
-def _events_for_node(
-    node_name: str,
-    node_output: Dict[str, Any],
-    initial_state: ResearchState,
-) -> List[Dict[str, Any]]:
-    """Generate SSE events for a given graph node output."""
-    events: List[Dict[str, Any]] = []
-
-    if node_name == "plan":
-        queries = node_output.get("search_queries", [])
-        events.append({"type": "plan", "queries": queries})
-        events.append({"type": "phase", "phase": "searching"})
-
-    elif node_name == "search":
-        results = node_output.get("search_results", [])
-        per_query = node_output.get("per_query_results", [])
-        events.append(
-            {
-                "type": "search_status",
-                "queries": per_query,
-                "total_results": len(results),
-            }
-        )
-        events.append({"type": "phase", "phase": "synthesizing"})
-
-    elif node_name == "synthesize":
-        synthesis = node_output.get("synthesis", "")
-        sources = node_output.get("sources", [])
-        events.append({"type": "token", "token": synthesis})
-        if sources:
-            events.append({"type": "sources", "sources": sources})
-        events.append({"type": "phase", "phase": "reflecting"})
-
-    elif node_name == "reflect":
-        if node_output.get("should_continue", False):
-            events.append({"type": "phase", "phase": "planning"})
-
-    return events
-
-
 def _build_done_event(run_id: uuid_mod.UUID) -> Dict[str, Any]:
     """Build the completion event with optional LangSmith trace URL."""
     done_event: Dict[str, Any] = {
@@ -131,6 +68,48 @@ def _build_done_event(run_id: uuid_mod.UUID) -> Dict[str, Any]:
     if langsmith_url:
         done_event["langsmith_trace_url"] = langsmith_url
     return done_event
+
+
+def _extract_search_queries(msg) -> List[str]:
+    """Extract search_documents queries from an AI message's tool calls."""
+    queries: List[str] = []
+    if hasattr(msg, "tool_calls") and msg.tool_calls:
+        for tc in msg.tool_calls:
+            if tc.get("name") == "search_documents":
+                query = tc.get("args", {}).get("query", "")
+                if query:
+                    queries.append(query)
+    return queries
+
+
+def _has_any_tool_calls(msg) -> bool:
+    """Check if an AI message has any tool calls (search, write_todos, etc)."""
+    return bool(getattr(msg, "tool_calls", None))
+
+
+def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
+    """Process output from the model node.
+
+    Only treat a message as final response text if it has NO tool calls.
+    The deepagents framework has built-in tools (write_todos, etc.) that
+    produce tool calls we don't surface, but their presence means the
+    model is still working, not producing the final answer.
+    """
+    result: Dict[str, Any] = {
+        "tool_queries": [],
+        "response_text": "",
+    }
+    messages = node_output.get("messages", [])
+    for msg in messages:
+        search_queries = _extract_search_queries(msg)
+        if search_queries:
+            result["tool_queries"].extend(search_queries)
+        elif _has_any_tool_calls(msg):
+            # Model called non-search tools (write_todos, etc.) — skip
+            pass
+        elif hasattr(msg, "content") and msg.content:
+            result["response_text"] = msg.content
+    return result
 
 
 async def stream_research_response(
@@ -145,10 +124,11 @@ async def stream_research_response(
     """
     Stream a research response via SSE events.
 
-    Runs the LangGraph research agent and yields structured events
-    as the agent progresses through plan/search/synthesize/reflect phases.
+    Runs the deepagents research agent and yields structured events
+    as the agent searches, plans, and synthesizes its response.
     """
     run_id = uuid_mod.uuid4()
+    tracker = None
 
     try:
         llm = _get_llm(
@@ -156,23 +136,87 @@ async def stream_research_response(
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        graph = build_research_graph(llm)
+        agent, tracker = build_research_agent(llm, data_source)
         messages = _build_conversation_messages(query, conversation_messages)
-        initial_state = _build_initial_state(
-            query, messages, data_source, max_iterations
-        )
 
         yield {"type": "phase", "phase": "planning"}
 
-        async for step_output in graph.astream(
-            initial_state, config={"run_id": str(run_id)}
+        async for step_output in agent.astream(
+            {"messages": messages},
+            config={"run_id": str(run_id), "recursion_limit": 80},
+            stream_mode="updates",
         ):
-            for node_name, node_output in step_output.items():
-                for event in _events_for_node(node_name, node_output, initial_state):
-                    yield event
+            for event in _events_from_step(step_output, tracker):
+                yield event
+
+        # Emit final sources from tracker
+        sources = tracker.get_sources()
+        if sources:
+            yield {"type": "sources", "sources": sources}
 
         yield _build_done_event(run_id)
 
     except Exception as exc:
-        logger.error("Research stream error: %s", exc, exc_info=True)
-        yield {"type": "error", "error": str(exc)}
+        is_recursion = "recursion" in str(exc).lower()
+        if is_recursion:
+            logger.warning("Agent hit recursion limit: %s", exc)
+        else:
+            logger.error("Research stream error: %s", exc, exc_info=True)
+
+        # On recursion limit, still return sources if we have them
+        if is_recursion and tracker and tracker.all_results:
+            sources = tracker.get_sources()
+            if sources:
+                yield {"type": "sources", "sources": sources}
+            yield _build_done_event(run_id)
+        else:
+            yield {"type": "error", "error": str(exc)}
+
+
+def _events_from_step(
+    step_output: Dict[str, Any],
+    tracker: Any,
+) -> List[Dict[str, Any]]:
+    """Generate SSE events from a single graph step output.
+
+    The deepagents framework uses "model" as the LLM node name and "tools"
+    for tool execution.  Middleware nodes (e.g. "TodoListMiddleware.before_model")
+    are ignored.
+    """
+    events: List[Dict[str, Any]] = []
+
+    for node_name, node_output in step_output.items():
+        if node_name == "model":
+            agent_result = _process_agent_output(node_output)
+            if agent_result["tool_queries"]:
+                events.append({"type": "phase", "phase": "searching"})
+                events.append(
+                    {
+                        "type": "plan",
+                        "queries": agent_result["tool_queries"],
+                    }
+                )
+            elif agent_result["response_text"]:
+                events.append(
+                    {
+                        "type": "token",
+                        "token": agent_result["response_text"],
+                    }
+                )
+
+        elif node_name == "tools":
+            # Only emit NEW search queries (not previously emitted ones)
+            new_queries = tracker.get_new_queries()
+            if new_queries:
+                events.append(
+                    {
+                        "type": "search_status",
+                        "queries": new_queries,
+                        "total_results": len(tracker.all_results),
+                    }
+                )
+
+        else:
+            logger.debug("Skipping middleware node: %s", node_name)
+
+    return events

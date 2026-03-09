@@ -186,6 +186,8 @@ export const streamAssistantChat = async ({
     await readStream(reader, handlers);
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return;
-    handlers.onError('Something went wrong with the research assistant.');
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Assistant stream error:', error);
+    handlers.onError(`Research assistant connection error: ${msg}`);
   }
 };

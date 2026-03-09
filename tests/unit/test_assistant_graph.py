@@ -1,29 +1,21 @@
-"""Unit tests for the LangGraph research assistant graph."""
+"""Unit tests for the deepagents research assistant graph."""
 
-import json
 import sys
 from types import ModuleType
-from unittest.mock import MagicMock
-
-from langchain_core.messages import AIMessage, HumanMessage
+from unittest.mock import MagicMock, patch
 
 # Mock the heavy imports that assistant_graph pulls in transitively.
 # search -> search_models -> google_vertex_reranker -> google.cloud
-# We mock the search module at the module level before importing the graph.
 _mock_search = ModuleType("ui.backend.services.search")
 _mock_search_fn = MagicMock(return_value=[])
 _mock_search.search_chunks = _mock_search_fn
 sys.modules.setdefault("ui.backend.services.search", _mock_search)
 
 from ui.backend.services.assistant_graph import (  # noqa: E402
-    ResearchState,
-    _get_conversation_context,
-    build_research_graph,
-    plan_node,
-    reflect_node,
-    search_node,
-    should_continue,
-    synthesize_node,
+    SearchTracker,
+    _build_search_tool,
+    _format_search_result,
+    build_research_agent,
 )
 
 
@@ -41,493 +33,244 @@ def _make_scored_point(chunk_id, doc_id, title="Doc", text="T", score=0.9, **ext
     return _FakeScoredPoint(id=chunk_id, score=score, payload=payload)
 
 
-def _make_state(**overrides) -> ResearchState:
-    """Create a default ResearchState with overrides."""
-    defaults: ResearchState = {
-        "messages": [HumanMessage(content="test query")],
-        "query": "test query",
-        "search_queries": [],
-        "search_results": [],
-        "per_query_results": [],
-        "synthesis": "",
-        "reflection": "",
-        "iteration": 0,
-        "max_iterations": 3,
-        "sources": [],
-        "should_continue": True,
-        "data_source": None,
-    }
-    defaults.update(overrides)
-    return defaults
+class TestFormatSearchResult:
+    """Tests for _format_search_result."""
+
+    def test_formats_scored_point(self):
+        point = _make_scored_point("c1", "d1", "Title", "Content", 0.85)
+        result = _format_search_result(point)
+
+        assert result["chunk_id"] == "c1"
+        assert result["doc_id"] == "d1"
+        assert result["title"] == "Title"
+        assert result["text"] == "Content"
+        assert result["score"] == 0.85
+
+    def test_handles_dict_input(self):
+        data = {
+            "chunk_id": "c1",
+            "doc_id": "d1",
+            "title": "Title",
+            "text": "Content",
+            "score": 0.9,
+        }
+        result = _format_search_result(data)
+
+        assert result["doc_id"] == "d1"
+        assert result["title"] == "Title"
 
 
-class TestGetConversationContext:
-    """Tests for _get_conversation_context helper."""
+class TestSearchTracker:
+    """Tests for the SearchTracker class."""
 
-    def test_empty_messages(self):
-        result = _get_conversation_context([])
-        assert result == ""
-
-    def test_single_user_message(self):
-        msgs = [HumanMessage(content="Hello")]
-        result = _get_conversation_context(msgs)
-        assert "User: Hello" in result
-
-    def test_mixed_messages(self):
-        msgs = [
-            HumanMessage(content="Question"),
-            AIMessage(content="Answer"),
-        ]
-        result = _get_conversation_context(msgs)
-        assert "User: Question" in result
-        assert "Assistant: Answer" in result
-
-    def test_truncates_long_content(self):
-        long_text = "x" * 500
-        msgs = [HumanMessage(content=long_text)]
-        result = _get_conversation_context(msgs)
-        assert "..." in result
-        assert len(result) < 500
-
-    def test_respects_max_msgs(self):
-        msgs = [HumanMessage(content=f"Msg {i}") for i in range(10)]
-        result = _get_conversation_context(msgs, max_msgs=3)
-        # Should only include the last 3
-        assert "Msg 7" in result
-        assert "Msg 8" in result
-        assert "Msg 9" in result
-        assert "Msg 0" not in result
-
-
-class TestPlanNode:
-    """Tests for the plan_node function."""
-
-    def test_decomposes_into_queries(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(
-            content='["food security impact", "nutrition outcomes"]'
-        )
-
-        state = _make_state(query="What are the impacts on food security?")
-        result = plan_node(state, llm)
-
-        assert "search_queries" in result
-        assert len(result["search_queries"]) == 2
-        assert "food security impact" in result["search_queries"]
-
-    def test_handles_markdown_code_fences(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(
-            content='```json\n["query 1", "query 2"]\n```'
-        )
-
-        state = _make_state(query="test")
-        result = plan_node(state, llm)
-
-        assert len(result["search_queries"]) == 2
-
-    def test_fallback_on_invalid_json(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(content="not valid json")
-
-        state = _make_state(query="my question")
-        result = plan_node(state, llm)
-
-        # Should fall back to the original query
-        assert result["search_queries"] == ["my question"]
-
-    def test_fallback_on_non_list_json(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(content='{"queries": ["a", "b"]}')
-
-        state = _make_state(query="my question")
-        result = plan_node(state, llm)
-
-        # Parsed a dict instead of list, falls back
-        assert result["search_queries"] == ["my question"]
-
-    def test_limits_to_3_queries(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(content='["q1", "q2", "q3", "q4", "q5"]')
-
-        state = _make_state(query="test")
-        result = plan_node(state, llm)
-
-        assert len(result["search_queries"]) == 3
-
-
-class TestSearchNode:
-    """Tests for the search_node function."""
-
-    def test_searches_and_returns_results(self):
+    def test_search_tracks_results(self):
         _mock_search_fn.reset_mock()
-        _mock_search_fn.side_effect = None
         _mock_search_fn.return_value = [
             _make_scored_point("c1", "d1", "Doc 1", "Content", 0.9),
             _make_scored_point("c2", "d2", "Doc 2", "Content", 0.8),
         ]
 
-        state = _make_state(search_queries=["food security"])
-        result = search_node(state)
+        tracker = SearchTracker(data_source="test")
+        results = tracker.search("food security")
 
-        assert "search_results" in result
-        assert len(result["search_results"]) == 2
-        _mock_search_fn.assert_called_once_with(
-            query="food security",
-            data_source=None,
-            limit=20,
-            rerank=True,
-        )
+        assert len(results) == 2
+        assert len(tracker.all_results) == 2
+        assert len(tracker.per_query) == 1
+        assert tracker.per_query[0]["query"] == "food security"
+        assert tracker.per_query[0]["result_count"] == 2
 
-    def test_returns_per_query_results(self):
+    def test_deduplicates_across_queries(self):
         _mock_search_fn.reset_mock()
-        _mock_search_fn.side_effect = None
-        _mock_search_fn.return_value = [
-            _make_scored_point("c1", "d1", score=0.9),
-        ]
-
-        state = _make_state(search_queries=["food security"])
-        result = search_node(state)
-
-        assert "per_query_results" in result
-        assert len(result["per_query_results"]) == 1
-        assert result["per_query_results"][0]["query"] == "food security"
-        assert result["per_query_results"][0]["result_count"] == 1
-
-    def test_deduplicates_by_chunk_id(self):
-        _mock_search_fn.reset_mock()
-        _mock_search_fn.side_effect = None
-        _mock_search_fn.return_value = [
-            _make_scored_point("c1", "d1", score=0.9),
-        ]
-
-        # State already has c1 in search_results
-        state = _make_state(
-            search_queries=["query"],
-            search_results=[
-                {
-                    "chunk_id": "c1",
-                    "doc_id": "d1",
-                    "title": "Doc",
-                    "text": "T",
-                    "score": 0.8,
-                },
+        _mock_search_fn.side_effect = [
+            [_make_scored_point("c1", "d1", score=0.9)],
+            [
+                _make_scored_point("c1", "d1", score=0.9),
+                _make_scored_point("c2", "d2", score=0.8),
             ],
-        )
-        result = search_node(state)
+        ]
 
-        # c1 should appear only once (the existing one)
-        chunk_ids = [r["chunk_id"] for r in result["search_results"]]
+        tracker = SearchTracker()
+        tracker.search("query 1")
+        tracker.search("query 2")
+
+        # c1 should appear only once even though returned by both queries
+        assert len(tracker.all_results) == 2
+        chunk_ids = [r["chunk_id"] for r in tracker.all_results]
         assert chunk_ids.count("c1") == 1
 
-    def test_sorts_by_score_descending(self):
-        _mock_search_fn.reset_mock()
-        _mock_search_fn.side_effect = None
-        _mock_search_fn.return_value = [
-            _make_scored_point("c2", "d2", score=0.5),
-            _make_scored_point("c3", "d3", score=0.9),
-        ]
-
-        state = _make_state(
-            search_queries=["q"],
-            search_results=[
-                {"chunk_id": "c1", "doc_id": "d1", "text": "T", "score": 0.7},
-            ],
-        )
-        result = search_node(state)
-
-        scores = [r["score"] for r in result["search_results"]]
-        assert scores == sorted(scores, reverse=True)
-
-    def test_multiple_queries(self):
+    def test_tracks_multiple_queries(self):
         _mock_search_fn.reset_mock()
         _mock_search_fn.side_effect = [
             [_make_scored_point("c1", "d1", score=0.9)],
             [_make_scored_point("c2", "d2", score=0.8)],
         ]
 
-        state = _make_state(search_queries=["query 1", "query 2"])
-        result = search_node(state)
+        tracker = SearchTracker()
+        tracker.search("query 1")
+        tracker.search("query 2")
 
-        assert len(result["search_results"]) == 2
-        assert _mock_search_fn.call_count == 2
-        assert len(result["per_query_results"]) == 2
+        assert len(tracker.per_query) == 2
+        assert tracker.per_query[0]["query"] == "query 1"
+        assert tracker.per_query[1]["query"] == "query 2"
 
+    def test_handles_search_error(self):
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = Exception("Connection error")
 
-class TestSynthesizeNode:
-    """Tests for the synthesize_node function."""
+        tracker = SearchTracker()
+        results = tracker.search("bad query")
 
-    def test_produces_synthesis_and_sources(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(
-            content="Food security impacts are significant [1]."
-        )
+        assert results == []
+        assert len(tracker.per_query) == 1
+        assert tracker.per_query[0]["result_count"] == 0
 
-        state = _make_state(
-            query="food security",
-            search_results=[
-                {
-                    "chunk_id": "c1",
-                    "doc_id": "d1",
-                    "title": "Report A",
-                    "text": "Detailed content about food security.",
-                    "score": 0.9,
-                    "page": 5,
-                },
-                {
-                    "chunk_id": "c2",
-                    "doc_id": "d2",
-                    "title": "Report B",
-                    "text": "More data on nutrition.",
-                    "score": 0.8,
-                    "page": 10,
-                },
-            ],
-        )
-        result = synthesize_node(state, llm)
-
-        assert "synthesis" in result
-        assert "sources" in result
-        assert len(result["sources"]) == 2
-        assert result["sources"][0]["docId"] == "d1"
-        assert result["sources"][0]["title"] == "Report A"
-
-    def test_deduplicates_sources_by_doc_id(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(content="Answer")
-
-        state = _make_state(
-            search_results=[
-                {
-                    "chunk_id": "c1",
-                    "doc_id": "d1",
-                    "title": "Doc",
-                    "text": "T1",
-                    "score": 0.9,
-                },
-                {
-                    "chunk_id": "c2",
-                    "doc_id": "d1",
-                    "title": "Doc",
-                    "text": "T2",
-                    "score": 0.8,
-                },
-            ],
-        )
-        result = synthesize_node(state, llm)
-
-        # Same doc_id should appear only once
-        assert len(result["sources"]) == 1
-
-    def test_truncates_long_text_in_sources(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(content="Answer")
-
-        long_text = "x" * 300
-        state = _make_state(
-            search_results=[
-                {
-                    "chunk_id": "c1",
-                    "doc_id": "d1",
-                    "title": "Doc",
-                    "text": long_text,
-                    "score": 0.9,
-                },
-            ],
-        )
-        result = synthesize_node(state, llm)
-
-        source_text = result["sources"][0]["text"]
-        assert len(source_text) < 300
-        assert source_text.endswith("...")
-
-
-class TestReflectNode:
-    """Tests for the reflect_node function."""
-
-    def test_decides_to_stop(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(
-            content=json.dumps(
-                {
-                    "should_continue": False,
-                    "reasoning": "Answer is comprehensive.",
-                    "additional_queries": [],
-                }
-            )
-        )
-
-        state = _make_state(iteration=0, max_iterations=3, synthesis="Answer")
-        result = reflect_node(state, llm)
-
-        assert result["should_continue"] is False
-        assert result["iteration"] == 1
-
-    def test_decides_to_continue(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(
-            content=json.dumps(
-                {
-                    "should_continue": True,
-                    "reasoning": "Missing details on nutrition.",
-                    "additional_queries": ["nutrition outcomes"],
-                }
-            )
-        )
-
-        state = _make_state(iteration=0, max_iterations=3, synthesis="Partial")
-        result = reflect_node(state, llm)
-
-        assert result["should_continue"] is True
-        assert result["search_queries"] == ["nutrition outcomes"]
-
-    def test_stops_at_max_iterations(self):
-        llm = MagicMock()
-        # LLM should NOT be called when max iterations reached
-        state = _make_state(iteration=2, max_iterations=3, synthesis="Answer")
-        result = reflect_node(state, llm)
-
-        assert result["should_continue"] is False
-        assert result["iteration"] == 3
-        llm.invoke.assert_not_called()
-
-    def test_handles_invalid_json(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(content="not json at all")
-
-        state = _make_state(iteration=0, max_iterations=3, synthesis="Answer")
-        result = reflect_node(state, llm)
-
-        # Should default to not continuing
-        assert result["should_continue"] is False
-
-    def test_handles_markdown_code_fences(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(
-            content='```json\n{"should_continue": false, "reasoning": "Good"}\n```'
-        )
-
-        state = _make_state(iteration=0, max_iterations=3, synthesis="Answer")
-        result = reflect_node(state, llm)
-
-        assert result["should_continue"] is False
-
-    def test_limits_additional_queries_to_2(self):
-        llm = MagicMock()
-        llm.invoke.return_value = AIMessage(
-            content=json.dumps(
-                {
-                    "should_continue": True,
-                    "reasoning": "Need more info",
-                    "additional_queries": ["q1", "q2", "q3", "q4"],
-                }
-            )
-        )
-
-        state = _make_state(iteration=0, max_iterations=3, synthesis="Partial")
-        result = reflect_node(state, llm)
-
-        assert len(result["search_queries"]) <= 2
-
-
-class TestShouldContinue:
-    """Tests for the should_continue routing function."""
-
-    def test_returns_search_when_true(self):
-        state = _make_state(should_continue=True)
-        assert should_continue(state) == "search"
-
-    def test_returns_end_when_false(self):
-        state = _make_state(should_continue=False)
-        result = should_continue(state)
-        assert result == "__end__"
-
-    def test_defaults_to_end(self):
-        # should_continue not set at all
-        state: ResearchState = {
-            "messages": [],
-            "query": "",
-            "search_queries": [],
-            "search_results": [],
-            "per_query_results": [],
-            "synthesis": "",
-            "reflection": "",
-            "iteration": 0,
-            "max_iterations": 3,
-            "sources": [],
-            "should_continue": False,
-            "data_source": None,
-        }
-        result = should_continue(state)
-        assert result == "__end__"
-
-
-class TestBuildResearchGraph:
-    """Tests for the build_research_graph function."""
-
-    def test_builds_graph_successfully(self):
-        llm = MagicMock()
-        graph = build_research_graph(llm)
-        # The compiled graph should have an invoke method
-        assert hasattr(graph, "invoke")
-        assert hasattr(graph, "stream")
-
-    def test_full_graph_e2e(self):
-        """End-to-end test with mocked LLM and search."""
+    def test_get_sources_deduplicates_by_doc_id(self):
         _mock_search_fn.reset_mock()
         _mock_search_fn.side_effect = None
         _mock_search_fn.return_value = [
-            _make_scored_point(
-                "c1", "d1", "Test Doc", "Content about food security.", 0.9
-            ),
+            _make_scored_point("c1", "d1", "Doc A", "Text 1", 0.9),
+            _make_scored_point("c2", "d1", "Doc A", "Text 2", 0.8),
+            _make_scored_point("c3", "d2", "Doc B", "Text 3", 0.7),
         ]
 
+        tracker = SearchTracker()
+        tracker.search("query")
+        sources = tracker.get_sources()
+
+        # d1 should appear only once
+        assert len(sources) == 2
+        doc_ids = [s["docId"] for s in sources]
+        assert "d1" in doc_ids
+        assert "d2" in doc_ids
+
+    def test_get_sources_sorted_by_score(self):
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c1", "d1", "Low", "Text", 0.3),
+            _make_scored_point("c2", "d2", "High", "Text", 0.9),
+        ]
+
+        tracker = SearchTracker()
+        tracker.search("query")
+        sources = tracker.get_sources()
+
+        assert sources[0]["docId"] == "d2"  # highest score first
+        assert sources[1]["docId"] == "d1"
+
+    def test_get_sources_truncates_long_text(self):
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        long_text = "x" * 300
+        _mock_search_fn.return_value = [
+            _make_scored_point("c1", "d1", "Doc", long_text, 0.9),
+        ]
+
+        tracker = SearchTracker()
+        tracker.search("query")
+        sources = tracker.get_sources()
+
+        assert len(sources[0]["text"]) < 300
+        assert sources[0]["text"].endswith("...")
+
+    def test_get_new_queries_returns_only_new(self):
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = [
+            [_make_scored_point("c1", "d1", score=0.9)],
+            [_make_scored_point("c2", "d2", score=0.8)],
+            [_make_scored_point("c3", "d3", score=0.7)],
+        ]
+
+        tracker = SearchTracker()
+        tracker.search("query 1")
+        tracker.search("query 2")
+
+        # First call returns both queries
+        new = tracker.get_new_queries()
+        assert len(new) == 2
+        assert new[0]["query"] == "query 1"
+        assert new[1]["query"] == "query 2"
+
+        # Second call returns nothing (no new queries)
+        new = tracker.get_new_queries()
+        assert len(new) == 0
+
+        # After another search, returns only the new one
+        tracker.search("query 3")
+        new = tracker.get_new_queries()
+        assert len(new) == 1
+        assert new[0]["query"] == "query 3"
+
+
+class TestBuildSearchTool:
+    """Tests for _build_search_tool."""
+
+    def test_tool_returns_formatted_results(self):
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c1", "d1", "Doc 1", "Content about food", 0.9),
+        ]
+
+        tracker = SearchTracker()
+        tool_fn = _build_search_tool(tracker)
+        result = tool_fn.invoke("food security")
+
+        assert "Found 1 results" in result
+        assert "Doc 1" in result
+        assert "Content about food" in result
+
+    def test_tool_returns_no_results_message(self):
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = []
+
+        tracker = SearchTracker()
+        tool_fn = _build_search_tool(tracker)
+        result = tool_fn.invoke("nonexistent topic")
+
+        assert "No results found" in result
+
+    def test_tool_tracks_via_tracker(self):
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c1", "d1", score=0.9),
+        ]
+
+        tracker = SearchTracker()
+        tool_fn = _build_search_tool(tracker)
+        tool_fn.invoke("test query")
+
+        assert len(tracker.per_query) == 1
+        assert len(tracker.all_results) == 1
+
+
+class TestBuildResearchAgent:
+    """Tests for build_research_agent."""
+
+    @patch("ui.backend.services.assistant_graph.create_agent")
+    def test_creates_agent_and_tracker(self, mock_create):
+        mock_agent = MagicMock()
+        mock_create.return_value = mock_agent
+
         llm = MagicMock()
-        # Plan: return queries
-        # Synthesize: return answer
-        # Reflect: stop
-        call_count = [0]
+        agent, tracker = build_research_agent(llm, data_source="worldbank")
 
-        def mock_invoke(messages):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                # Plan
-                return AIMessage(content='["food security impacts"]')
-            elif call_count[0] == 2:
-                # Synthesize
-                return AIMessage(content="Food security is important [1].")
-            else:
-                # Reflect
-                return AIMessage(
-                    content=json.dumps(
-                        {
-                            "should_continue": False,
-                            "reasoning": "Answer is good.",
-                        }
-                    )
-                )
+        assert agent is mock_agent
+        assert isinstance(tracker, SearchTracker)
+        assert tracker.data_source == "worldbank"
 
-        llm.invoke.side_effect = mock_invoke
+    @patch("ui.backend.services.assistant_graph.create_agent")
+    def test_passes_search_tool_and_prompt(self, mock_create):
+        mock_create.return_value = MagicMock()
 
-        graph = build_research_graph(llm)
+        llm = MagicMock()
+        build_research_agent(llm, data_source="worldbank")
 
-        initial_state: ResearchState = {
-            "messages": [HumanMessage(content="food security")],
-            "query": "food security",
-            "search_queries": [],
-            "search_results": [],
-            "per_query_results": [],
-            "synthesis": "",
-            "reflection": "",
-            "iteration": 0,
-            "max_iterations": 3,
-            "sources": [],
-            "should_continue": True,
-            "data_source": None,
-        }
-
-        result = graph.invoke(initial_state)
-
-        assert result["synthesis"] != ""
-        assert len(result["sources"]) >= 1
-        assert result["should_continue"] is False
+        # Verify create_agent was called with model, tools, system_prompt
+        mock_create.assert_called_once()
+        call_kwargs = mock_create.call_args
+        assert call_kwargs.kwargs["model"] is llm
+        assert len(call_kwargs.kwargs["tools"]) == 1
+        assert "research assistant" in call_kwargs.kwargs["system_prompt"].lower()
