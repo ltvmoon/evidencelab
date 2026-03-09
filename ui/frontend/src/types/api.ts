@@ -120,6 +120,7 @@ export interface ModelComboConfig {
   summarization_model: SummaryModelConfig;
   semantic_highlighting_model: SummaryModelConfig;
   assistant_model?: SummaryModelConfig;
+  assistant_model_location?: string;
   reranker_model: string;
   rerank_model_page_size?: number;
   summarization_model_location?: string;

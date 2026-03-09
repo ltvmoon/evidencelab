@@ -564,7 +564,7 @@ function App() {
     }
     setSearchModel(combo.embedding_model);
     setSummaryModelConfig(combo.summarization_model);
-    setAssistantModelConfig(combo.summarization_model);
+    setAssistantModelConfig(combo.assistant_model ?? combo.summarization_model);
     setSemanticHighlightModelConfig(combo.semantic_highlighting_model);
     setRerankModel(combo.reranker_model);
     setRerankModelPageSize(combo.rerank_model_page_size ?? null);
