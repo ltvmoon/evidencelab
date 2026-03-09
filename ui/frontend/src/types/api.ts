@@ -141,6 +141,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   sources?: SourceReference[];
+  toolCalls?: SearchToolCall[];
   agentState?: AgentState;
   createdAt: string;
 }
@@ -158,6 +159,11 @@ export interface AgentState {
   phase: string;
   searchQueries?: string[];
   iterationCount?: number;
+}
+
+export interface SearchToolCall {
+  query: string;
+  resultCount: number;
 }
 
 export interface ThreadListItem {

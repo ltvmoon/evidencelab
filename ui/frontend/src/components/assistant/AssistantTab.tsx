@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import API_BASE_URL, { USER_MODULE } from '../../config';
 import { useAuth } from '../../hooks/useAuth';
-import { ChatMessage, SourceReference, SummaryModelConfig, ThreadListItem } from '../../types/api';
+import { ChatMessage, SearchToolCall, SourceReference, SummaryModelConfig, ThreadListItem } from '../../types/api';
 import { streamAssistantChat, AssistantStreamHandlers } from '../../utils/assistantStream';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
@@ -31,6 +31,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingSources, setStreamingSources] = useState<SourceReference[]>([]);
   const [searchQueries, setSearchQueries] = useState<string[]>([]);
+  const [toolCalls, setToolCalls] = useState<SearchToolCall[]>([]);
 
   // Thread state
   const [threads, setThreads] = useState<ThreadListItem[]>([]);
@@ -115,6 +116,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     setStreamingPhase('');
     setStreamingSources([]);
     setSearchQueries([]);
+    setToolCalls([]);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -135,6 +137,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     setStreamingContent('');
     setStreamingSources([]);
     setSearchQueries([]);
+    setToolCalls([]);
 
     // Setup abort controller
     const controller = new AbortController();
@@ -143,7 +146,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     const handlers: AssistantStreamHandlers = {
       onPhase: (phase) => setStreamingPhase(phase),
       onPlan: (queries) => setSearchQueries(queries),
-      onSearchStatus: () => {},
+      onSearchStatus: (calls) => setToolCalls((prev) => [...prev, ...calls]),
       onToken: (fullText) => {
         setStreamingContent(fullText);
         setStreamingPhase('');
@@ -224,16 +227,20 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     // Finalize: convert streaming state into a proper message
     setStreamingContent((content) => {
       if (content) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextMessageId(),
-            role: 'assistant',
-            content,
-            sources: [],
-            createdAt: new Date().toISOString(),
-          },
-        ]);
+        setToolCalls((tc) => {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextMessageId(),
+              role: 'assistant',
+              content,
+              sources: [],
+              toolCalls: tc.length > 0 ? tc : undefined,
+              createdAt: new Date().toISOString(),
+            },
+          ]);
+          return [];
+        });
       }
       return '';
     });
@@ -317,6 +324,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             streamingContent={streamingContent}
             streamingPhase={streamingPhase}
             searchQueries={searchQueries}
+            streamingToolCalls={toolCalls}
             streamingSources={streamingSources}
             isStreaming={isStreaming}
           />

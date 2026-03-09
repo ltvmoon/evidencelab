@@ -17,7 +17,7 @@ from jinja2 import Environment, FileSystemLoader
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph import END, StateGraph
 
-from ui.backend.services.assistant_tools import search_documents
+from ui.backend.services.search import search_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ class ResearchState(TypedDict):
     query: str
     search_queries: List[str]
     search_results: List[Dict[str, Any]]
+    per_query_results: List[Dict[str, Any]]
     synthesis: str
     reflection: str
     iteration: int
@@ -92,18 +93,44 @@ def plan_node(state: ResearchState, llm) -> Dict[str, Any]:
     return {"search_queries": queries}
 
 
+def _format_search_result(r: Any) -> Dict[str, Any]:
+    """Format a Qdrant ScoredPoint into a plain dict for the agent."""
+    payload = r.payload if hasattr(r, "payload") else r
+    return {
+        "chunk_id": getattr(r, "id", payload.get("chunk_id", "")),
+        "doc_id": payload.get("doc_id", ""),
+        "title": payload.get("title", "Untitled"),
+        "text": payload.get("text", ""),
+        "score": getattr(r, "score", payload.get("score", 0.0)),
+        "page": payload.get("page_num", None),
+        "headings": payload.get("headings", []),
+    }
+
+
 def search_node(state: ResearchState) -> Dict[str, Any]:
     """Execute search queries against the document database."""
     all_results = list(state.get("search_results", []))
     seen_ids = {r.get("chunk_id") for r in all_results}
 
+    # Track per-query results for the tool call panel
+    per_query: List[Dict[str, Any]] = []
+
     for query in state["search_queries"]:
-        results = search_documents(
-            query=query,
-            data_source=state.get("data_source"),
-            limit=20,
-        )
-        for r in results:
+        try:
+            raw = search_chunks(
+                query=query,
+                limit=20,
+                data_source=state.get("data_source"),
+                rerank=True,
+            )
+            formatted = [_format_search_result(r) for r in raw]
+        except Exception as exc:
+            logger.error("Search failed for query %r: %s", query, exc)
+            formatted = []
+
+        per_query.append({"query": query, "result_count": len(formatted)})
+
+        for r in formatted:
             cid = r.get("chunk_id", "")
             if cid not in seen_ids:
                 all_results.append(r)
@@ -120,7 +147,7 @@ def search_node(state: ResearchState) -> Dict[str, Any]:
         len(state["search_queries"]),
     )
 
-    return {"search_results": all_results}
+    return {"search_results": all_results, "per_query_results": per_query}
 
 
 def synthesize_node(state: ResearchState, llm) -> Dict[str, Any]:

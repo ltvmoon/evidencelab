@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatMessage as ChatMessageType, SourceReference } from '../../types/api';
+import { ToolCallPanel } from './ToolCallPanel';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -48,6 +49,9 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onSo
 
   return (
     <div className={`chat-message ${isUser ? 'chat-message-user' : 'chat-message-assistant'}`}>
+      {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
+        <ToolCallPanel toolCalls={message.toolCalls} />
+      )}
       <div className={`chat-message-bubble ${isUser ? 'chat-bubble-user' : 'chat-bubble-assistant'}`}>
         {isUser ? (
           <div className="chat-message-text">{message.content}</div>

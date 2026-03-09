@@ -1,4 +1,4 @@
-import { SummaryModelConfig, SourceReference } from '../types/api';
+import { SummaryModelConfig, SourceReference, SearchToolCall } from '../types/api';
 
 interface AssistantDoneData {
   threadId?: string;
@@ -9,7 +9,7 @@ interface AssistantDoneData {
 export interface AssistantStreamHandlers {
   onPhase: (phase: string) => void;
   onPlan: (queries: string[]) => void;
-  onSearchStatus: (status: { query: string; resultCount: number }) => void;
+  onSearchStatus: (toolCalls: SearchToolCall[]) => void;
   onToken: (fullText: string) => void;
   onSources: (sources: SourceReference[]) => void;
   onDone: (data: AssistantDoneData) => void;
@@ -79,12 +79,13 @@ const handleStreamedData = (
       handlers.onPlan(streamedData.queries || []);
       return fullText;
 
-    case 'search_status':
-      handlers.onSearchStatus({
-        query: streamedData.query || '',
-        resultCount: streamedData.result_count || 0,
-      });
+    case 'search_status': {
+      const queries: SearchToolCall[] = (streamedData.queries || []).map(
+        (q: any) => ({ query: q.query || '', resultCount: q.result_count || 0 })
+      );
+      handlers.onSearchStatus(queries);
       return fullText;
+    }
 
     case 'token': {
       // The assistant sends the full synthesis as one token event

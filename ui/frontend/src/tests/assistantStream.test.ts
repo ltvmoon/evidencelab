@@ -28,13 +28,23 @@ describe('Assistant Stream Utilities', () => {
       expect(parsed.queries).toHaveLength(2);
     });
 
-    test('parses search_status event', () => {
-      const data = { type: 'search_status', query: 'food security', result_count: 15 };
+    test('parses search_status event with per-query results', () => {
+      const data = {
+        type: 'search_status',
+        queries: [
+          { query: 'food security', result_count: 10 },
+          { query: 'nutrition outcomes', result_count: 5 },
+        ],
+        total_results: 15,
+      };
       const line = `data: ${JSON.stringify(data)}`;
       const payload = line.trim().slice(6);
       const parsed = JSON.parse(payload);
       expect(parsed.type).toBe('search_status');
-      expect(parsed.result_count).toBe(15);
+      expect(parsed.queries).toHaveLength(2);
+      expect(parsed.total_results).toBe(15);
+      expect(parsed.queries[0].query).toBe('food security');
+      expect(parsed.queries[0].result_count).toBe(10);
     });
 
     test('parses token event', () => {

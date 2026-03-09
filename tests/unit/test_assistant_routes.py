@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from starlette.requests import Request
 
 # Mock the heavy transitive imports that assistant routes pull in.
-# assistant_service -> assistant_graph -> assistant_tools -> search -> google.cloud
+# assistant_service -> assistant_graph -> search -> google.cloud
 _mock_service = ModuleType("ui.backend.services.assistant_service")
 
 
@@ -22,10 +22,10 @@ async def _noop_stream(*args, **kwargs):
 _mock_service.stream_research_response = _noop_stream
 sys.modules.setdefault("ui.backend.services.assistant_service", _mock_service)
 
-# Also mock assistant_tools since assistant_graph imports it
-_mock_tools = ModuleType("ui.backend.services.assistant_tools")
-_mock_tools.search_documents = MagicMock(return_value=[])
-sys.modules.setdefault("ui.backend.services.assistant_tools", _mock_tools)
+# Mock search module since assistant_graph imports search_chunks
+_mock_search = ModuleType("ui.backend.services.search")
+_mock_search.search_chunks = MagicMock(return_value=[])
+sys.modules.setdefault("ui.backend.services.search", _mock_search)
 
 from ui.backend.auth.schemas import AssistantChatRequest  # noqa: E402
 

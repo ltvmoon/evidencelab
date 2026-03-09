@@ -1,13 +1,15 @@
 import React, { useRef, useEffect } from 'react';
-import { ChatMessage, SourceReference } from '../../types/api';
+import { ChatMessage, SearchToolCall, SourceReference } from '../../types/api';
 import { ChatMessageComponent } from './ChatMessage';
 import { AgentStatus } from './AgentStatus';
+import { ToolCallPanel } from './ToolCallPanel';
 
 interface ChatMessageListProps {
   messages: ChatMessage[];
   streamingContent?: string;
   streamingPhase?: string;
   searchQueries?: string[];
+  streamingToolCalls?: SearchToolCall[];
   streamingSources?: SourceReference[];
   isStreaming?: boolean;
   onSourceClick?: (source: SourceReference) => void;
@@ -18,6 +20,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   streamingContent,
   streamingPhase,
   searchQueries,
+  streamingToolCalls,
   streamingSources,
   isStreaming = false,
   onSourceClick,
@@ -44,21 +47,31 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
         <div className="chat-message chat-message-assistant">
           <div className="chat-bubble-assistant">
             <AgentStatus phase={streamingPhase} searchQueries={searchQueries} />
+            {streamingToolCalls && streamingToolCalls.length > 0 && (
+              <ToolCallPanel toolCalls={streamingToolCalls} defaultExpanded />
+            )}
           </div>
         </div>
       )}
 
       {isStreaming && streamingContent && (
-        <ChatMessageComponent
-          message={{
-            id: 'streaming',
-            role: 'assistant',
-            content: streamingContent,
-            sources: streamingSources,
-            createdAt: new Date().toISOString(),
-          }}
-          onSourceClick={onSourceClick}
-        />
+        <>
+          {streamingToolCalls && streamingToolCalls.length > 0 && (
+            <div className="chat-message chat-message-assistant">
+              <ToolCallPanel toolCalls={streamingToolCalls} />
+            </div>
+          )}
+          <ChatMessageComponent
+            message={{
+              id: 'streaming',
+              role: 'assistant',
+              content: streamingContent,
+              sources: streamingSources,
+              createdAt: new Date().toISOString(),
+            }}
+            onSourceClick={onSourceClick}
+          />
+        </>
       )}
 
       <div ref={bottomRef} />

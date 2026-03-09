@@ -70,6 +70,7 @@ def _build_initial_state(
         "query": query,
         "search_queries": [],
         "search_results": [],
+        "per_query_results": [],
         "synthesis": "",
         "reflection": "",
         "iteration": 0,
@@ -95,11 +96,12 @@ def _events_for_node(
 
     elif node_name == "search":
         results = node_output.get("search_results", [])
+        per_query = node_output.get("per_query_results", [])
         events.append(
             {
                 "type": "search_status",
-                "query": ", ".join(initial_state.get("search_queries", [])),
-                "result_count": len(results),
+                "queries": per_query,
+                "total_results": len(results),
             }
         )
         events.append({"type": "phase", "phase": "synthesizing"})

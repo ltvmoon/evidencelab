@@ -2818,7 +2818,7 @@ function App() {
         searchTab={searchTab}
         assistantTab={
           <AssistantTab
-            dataSource={selectedDomain}
+            dataSource={dataSource}
             assistantModelConfig={assistantModelConfig}
           />
         }

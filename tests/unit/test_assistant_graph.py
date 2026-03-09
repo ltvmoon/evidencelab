@@ -8,12 +8,12 @@ from unittest.mock import MagicMock
 from langchain_core.messages import AIMessage, HumanMessage
 
 # Mock the heavy imports that assistant_graph pulls in transitively.
-# assistant_tools -> search -> search_models -> google_vertex_reranker -> google.cloud
-# We mock assistant_tools at the module level before importing the graph.
-_mock_tools = ModuleType("ui.backend.services.assistant_tools")
+# search -> search_models -> google_vertex_reranker -> google.cloud
+# We mock the search module at the module level before importing the graph.
+_mock_search = ModuleType("ui.backend.services.search")
 _mock_search_fn = MagicMock(return_value=[])
-_mock_tools.search_documents = _mock_search_fn
-sys.modules.setdefault("ui.backend.services.assistant_tools", _mock_tools)
+_mock_search.search_chunks = _mock_search_fn
+sys.modules.setdefault("ui.backend.services.search", _mock_search)
 
 from ui.backend.services.assistant_graph import (  # noqa: E402
     ResearchState,
@@ -27,6 +27,20 @@ from ui.backend.services.assistant_graph import (  # noqa: E402
 )
 
 
+class _FakeScoredPoint:
+    """Mimics a Qdrant ScoredPoint for testing."""
+
+    def __init__(self, id, score, payload):
+        self.id = id
+        self.score = score
+        self.payload = payload
+
+
+def _make_scored_point(chunk_id, doc_id, title="Doc", text="T", score=0.9, **extra):
+    payload = {"doc_id": doc_id, "title": title, "text": text, **extra}
+    return _FakeScoredPoint(id=chunk_id, score=score, payload=payload)
+
+
 def _make_state(**overrides) -> ResearchState:
     """Create a default ResearchState with overrides."""
     defaults: ResearchState = {
@@ -34,6 +48,7 @@ def _make_state(**overrides) -> ResearchState:
         "query": "test query",
         "search_queries": [],
         "search_results": [],
+        "per_query_results": [],
         "synthesis": "",
         "reflection": "",
         "iteration": 0,
@@ -148,20 +163,8 @@ class TestSearchNode:
         _mock_search_fn.reset_mock()
         _mock_search_fn.side_effect = None
         _mock_search_fn.return_value = [
-            {
-                "chunk_id": "c1",
-                "doc_id": "d1",
-                "title": "Doc 1",
-                "text": "Content",
-                "score": 0.9,
-            },
-            {
-                "chunk_id": "c2",
-                "doc_id": "d2",
-                "title": "Doc 2",
-                "text": "Content",
-                "score": 0.8,
-            },
+            _make_scored_point("c1", "d1", "Doc 1", "Content", 0.9),
+            _make_scored_point("c2", "d2", "Doc 2", "Content", 0.8),
         ]
 
         state = _make_state(search_queries=["food security"])
@@ -173,19 +176,29 @@ class TestSearchNode:
             query="food security",
             data_source=None,
             limit=20,
+            rerank=True,
         )
+
+    def test_returns_per_query_results(self):
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c1", "d1", score=0.9),
+        ]
+
+        state = _make_state(search_queries=["food security"])
+        result = search_node(state)
+
+        assert "per_query_results" in result
+        assert len(result["per_query_results"]) == 1
+        assert result["per_query_results"][0]["query"] == "food security"
+        assert result["per_query_results"][0]["result_count"] == 1
 
     def test_deduplicates_by_chunk_id(self):
         _mock_search_fn.reset_mock()
         _mock_search_fn.side_effect = None
         _mock_search_fn.return_value = [
-            {
-                "chunk_id": "c1",
-                "doc_id": "d1",
-                "title": "Doc",
-                "text": "T",
-                "score": 0.9,
-            },
+            _make_scored_point("c1", "d1", score=0.9),
         ]
 
         # State already has c1 in search_results
@@ -211,8 +224,8 @@ class TestSearchNode:
         _mock_search_fn.reset_mock()
         _mock_search_fn.side_effect = None
         _mock_search_fn.return_value = [
-            {"chunk_id": "c2", "doc_id": "d2", "text": "T", "score": 0.5},
-            {"chunk_id": "c3", "doc_id": "d3", "text": "T", "score": 0.9},
+            _make_scored_point("c2", "d2", score=0.5),
+            _make_scored_point("c3", "d3", score=0.9),
         ]
 
         state = _make_state(
@@ -229,8 +242,8 @@ class TestSearchNode:
     def test_multiple_queries(self):
         _mock_search_fn.reset_mock()
         _mock_search_fn.side_effect = [
-            [{"chunk_id": "c1", "doc_id": "d1", "text": "T", "score": 0.9}],
-            [{"chunk_id": "c2", "doc_id": "d2", "text": "T", "score": 0.8}],
+            [_make_scored_point("c1", "d1", score=0.9)],
+            [_make_scored_point("c2", "d2", score=0.8)],
         ]
 
         state = _make_state(search_queries=["query 1", "query 2"])
@@ -238,6 +251,7 @@ class TestSearchNode:
 
         assert len(result["search_results"]) == 2
         assert _mock_search_fn.call_count == 2
+        assert len(result["per_query_results"]) == 2
 
 
 class TestSynthesizeNode:
@@ -435,6 +449,7 @@ class TestShouldContinue:
             "query": "",
             "search_queries": [],
             "search_results": [],
+            "per_query_results": [],
             "synthesis": "",
             "reflection": "",
             "iteration": 0,
@@ -462,13 +477,9 @@ class TestBuildResearchGraph:
         _mock_search_fn.reset_mock()
         _mock_search_fn.side_effect = None
         _mock_search_fn.return_value = [
-            {
-                "chunk_id": "c1",
-                "doc_id": "d1",
-                "title": "Test Doc",
-                "text": "Content about food security.",
-                "score": 0.9,
-            },
+            _make_scored_point(
+                "c1", "d1", "Test Doc", "Content about food security.", 0.9
+            ),
         ]
 
         llm = MagicMock()
@@ -505,6 +516,7 @@ class TestBuildResearchGraph:
             "query": "food security",
             "search_queries": [],
             "search_results": [],
+            "per_query_results": [],
             "synthesis": "",
             "reflection": "",
             "iteration": 0,
