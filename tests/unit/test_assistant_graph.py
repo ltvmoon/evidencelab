@@ -4,19 +4,33 @@ import sys
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
+# ---------------------------------------------------------------------------
 # Mock the heavy imports that assistant_graph pulls in transitively.
 # search -> search_models -> google_vertex_reranker -> google.cloud
+#
+# We temporarily install lightweight mocks into sys.modules, import the
+# modules under test (which capture direct references to our mock objects),
+# then IMMEDIATELY remove the mocks so later test modules that are
+# collected by pytest see the real modules (or get their own import errors).
+# ---------------------------------------------------------------------------
 _mock_search = ModuleType("ui.backend.services.search")
 _mock_search_fn = MagicMock(return_value=[])
 _mock_search.search_chunks = _mock_search_fn
 _mock_search.map_field_to_storage = MagicMock(side_effect=lambda f: f"map_{f}")
-sys.modules.setdefault("ui.backend.services.search", _mock_search)
+_mock_search.CORE_FIELD_MAP = {}
 
-# Mock search_models for lazy field_boost import
 _mock_search_models = ModuleType("ui.backend.services.search_models")
 _mock_apply_field_boost = MagicMock(side_effect=lambda r, *a, **kw: r)
 _mock_search_models.apply_field_boost = _mock_apply_field_boost
-sys.modules.setdefault("ui.backend.services.search_models", _mock_search_models)
+
+_MOCKED_KEYS = [
+    "ui.backend.services.search",
+    "ui.backend.services.search_models",
+]
+_saved = {k: sys.modules.get(k) for k in _MOCKED_KEYS}
+
+sys.modules["ui.backend.services.search"] = _mock_search
+sys.modules["ui.backend.services.search_models"] = _mock_search_models
 
 from ui.backend.services.assistant_graph import (  # noqa: E402
     SearchTracker,
@@ -25,6 +39,28 @@ from ui.backend.services.assistant_graph import (  # noqa: E402
     build_research_agent,
 )
 from ui.backend.services.assistant_service import _is_duplicate_or_subset  # noqa: E402
+
+# Immediately restore sys.modules so other test files are not affected.
+for _k in _MOCKED_KEYS:
+    if _saved[_k] is not None:
+        sys.modules[_k] = _saved[_k]
+    else:
+        sys.modules.pop(_k, None)
+
+# Clean up package attributes that Python's import machinery set on the
+# parent package.  Without this, later test files that do
+# ``import ui.backend.services.search`` find the stale mock via the
+# package attribute even though sys.modules no longer contains it.
+# NOTE: we only remove search/search_models — assistant_graph and
+# assistant_service must stay so that @patch() decorators in this file
+# can resolve their targets.
+import ui.backend.services as _svc_pkg  # noqa: E402
+
+for _attr in ("search", "search_models"):
+    try:
+        delattr(_svc_pkg, _attr)
+    except AttributeError:
+        pass
 
 
 class _FakeScoredPoint:
@@ -589,6 +625,10 @@ class TestFieldBoost:
         assert "field_boost_fields" not in kwargs
         assert kwargs["dense_weight"] == 0.7
 
+    @patch.dict(
+        sys.modules,
+        {"ui.backend.services.search_models": _mock_search_models},
+    )
     def test_apply_field_boost_called_when_enabled(self):
         """_apply_field_boost should call apply_field_boost with wrapped results."""
         _mock_apply_field_boost.reset_mock()
