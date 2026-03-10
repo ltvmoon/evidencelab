@@ -74,6 +74,9 @@ MIN_PASSWORD_LENGTH = int(os.environ.get("AUTH_MIN_PASSWORD_LENGTH", "12"))
 LOCKOUT_THRESHOLD = int(os.environ.get("AUTH_LOCKOUT_THRESHOLD", "5"))
 LOCKOUT_DURATION_MINUTES = int(os.environ.get("AUTH_LOCKOUT_DURATION_MINUTES", "15"))
 
+# Password history — prevent reuse of the last N passwords (ASVS V2.1.10).
+PASSWORD_HISTORY_COUNT = int(os.environ.get("AUTH_PASSWORD_HISTORY_COUNT", "5"))
+
 # Token lifetimes for password reset and email verification.
 # These are independent of the JWT access token lifetime (1 hour).
 RESET_PASSWORD_TOKEN_LIFETIME = int(
@@ -212,10 +215,27 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     # Password validation
     # ------------------------------------------------------------------
 
+    def _check_password_history(self, password: str, user: User) -> None:
+        """Raise if *password* matches any recent hash on *user* (ASVS V2.1.10)."""
+        reuse_msg = f"Cannot reuse any of your last {PASSWORD_HISTORY_COUNT} passwords."
+        # Check current password
+        if hasattr(user, "hashed_password") and user.hashed_password:
+            matched, _ = self.password_helper.verify_and_update(
+                password, user.hashed_password
+            )
+            if matched:
+                raise fu_exceptions.InvalidPasswordException(reason=reuse_msg)
+        # Check stored history
+        history = getattr(user, "password_history", None) or []
+        for old_hash in history[-PASSWORD_HISTORY_COUNT:]:
+            matched, _ = self.password_helper.verify_and_update(password, old_hash)
+            if matched:
+                raise fu_exceptions.InvalidPasswordException(reason=reuse_msg)
+
     async def validate_password(
         self, password: str, user: User  # type: ignore[override]
     ) -> None:
-        """Enforce password complexity and email domain restrictions.
+        """Enforce password length, history, and email domain restrictions.
 
         Raises:
             InvalidPasswordException: If validation fails.
@@ -225,9 +245,13 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 reason=f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
             )
 
+        # Password history — only on password change (ORM model), not registration.
+        if PASSWORD_HISTORY_COUNT > 0 and not isinstance(
+            user, fu_schemas.BaseUserCreate
+        ):
+            self._check_password_history(password, user)
+
         # Domain whitelist — only on registration (not password change).
-        # fastapi-users passes a schema object during creation and an ORM
-        # model during update; we check for the schema type.
         if ALLOWED_EMAIL_DOMAINS and isinstance(user, fu_schemas.BaseUserCreate):
             domain = user.email.rsplit("@", 1)[-1].lower()
             if domain not in ALLOWED_EMAIL_DOMAINS:
@@ -297,12 +321,29 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     async def on_after_reset_password(
         self, user: User, request: Optional[Request] = None
     ) -> None:
-        """Reset lockout counters after a successful password reset."""
+        """Reset lockout counters and record password history."""
+        # Push the old password hash into the history list (ASVS V2.1.10)
+        history = (
+            list(user.password_history or [])
+            if hasattr(user, "password_history")
+            else []
+        )
+        if user.hashed_password:
+            history.append(user.hashed_password)
+        # Keep only the last N entries
+        history = (
+            history[-PASSWORD_HISTORY_COUNT:] if PASSWORD_HISTORY_COUNT > 0 else []
+        )
+
         async for session in get_async_session():
             stmt = (
                 update(User)
                 .where(User.id == user.id)
-                .values(failed_login_attempts=0, locked_until=None)
+                .values(
+                    failed_login_attempts=0,
+                    locked_until=None,
+                    password_history=history,
+                )
             )
             await session.execute(stmt)
             await session.commit()

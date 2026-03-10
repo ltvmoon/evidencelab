@@ -68,6 +68,9 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Password history — hashes of previous passwords (ASVS V2.1.10)
+    password_history: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
     oauth_accounts: Mapped[list[OAuthAccount]] = relationship(
         "OAuthAccount", lazy="joined"
     )

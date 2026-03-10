@@ -20,6 +20,7 @@ def _make_user(
     hashed_password="hashed",  # pragma: allowlist secret
     failed_login_attempts=0,
     locked_until=None,
+    password_history=None,
 ):
     """Create a mock User object for testing."""
     user = MagicMock()
@@ -28,6 +29,7 @@ def _make_user(
     user.hashed_password = hashed_password
     user.failed_login_attempts = failed_login_attempts
     user.locked_until = locked_until
+    user.password_history = password_history
     return user
 
 
@@ -46,8 +48,9 @@ def _make_manager():
     """Create a UserManager with a mock user_db."""
     user_db = AsyncMock()
     manager = UserManager(user_db)
-    # Mock the password helper
+    # Mock the password helper — default: password does not match any hash
     manager.password_helper = MagicMock()
+    manager.password_helper.verify_and_update = MagicMock(return_value=(False, None))
     return manager
 
 
@@ -625,3 +628,157 @@ class TestTokenLifetimeConfiguration:
             == RESET_PASSWORD_TOKEN_LIFETIME
         )
         assert manager.verification_token_lifetime_seconds == VERIFY_TOKEN_LIFETIME
+
+
+# ---------------------------------------------------------------------------
+# Password history tests (ASVS V2.1.10)
+# ---------------------------------------------------------------------------
+
+
+class TestPasswordHistory:
+    """Tests for password reuse prevention via password_history."""
+
+    @pytest.mark.asyncio
+    async def test_password_reuse_rejected_from_history(self):
+        """Reusing a password from history should raise InvalidPasswordException."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=["old_hash_1", "old_hash_2"],
+        )
+        manager = _make_manager()
+        # First call: current hash doesn't match
+        # Second call: old_hash_1 matches
+        manager.password_helper.verify_and_update = MagicMock(
+            side_effect=[
+                (False, None),  # current hash check
+                (True, None),  # old_hash_1 matches
+            ]
+        )
+        with pytest.raises(fu_exceptions.InvalidPasswordException):
+            await manager.validate_password("ReusedPass12345", user)
+
+    @pytest.mark.asyncio
+    async def test_current_password_reuse_rejected(self):
+        """Reusing the current password should raise InvalidPasswordException."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=None,
+        )
+        manager = _make_manager()
+        manager.password_helper.verify_and_update = MagicMock(return_value=(True, None))
+        with pytest.raises(fu_exceptions.InvalidPasswordException):
+            await manager.validate_password("SamePassword123", user)
+
+    @pytest.mark.asyncio
+    async def test_new_password_accepted(self):
+        """A genuinely new password should pass validation."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=["old_hash_1", "old_hash_2"],
+        )
+        manager = _make_manager()
+        # All checks return False — no match
+        manager.password_helper.verify_and_update = MagicMock(
+            return_value=(False, None)
+        )
+        # Should not raise
+        await manager.validate_password("BrandNewPass12345", user)
+
+    @pytest.mark.asyncio
+    async def test_history_not_checked_on_registration(self):
+        """Password history should not be checked during registration."""
+        from fastapi_users import schemas as fu_schemas
+
+        schema_user = MagicMock(spec=fu_schemas.BaseUserCreate)
+        schema_user.email = "new@example.com"
+        manager = _make_manager()
+        # verify_and_update should not be called at all for registration
+        manager.password_helper.verify_and_update = MagicMock()
+        await manager.validate_password("ValidPass12345!!", schema_user)
+        manager.password_helper.verify_and_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_history_check_skipped_when_empty(self):
+        """Empty or None password_history should not cause errors."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=None,
+        )
+        manager = _make_manager()
+        manager.password_helper.verify_and_update = MagicMock(
+            return_value=(False, None)
+        )
+        # Should not raise
+        await manager.validate_password("NewPassword12345", user)
+
+    @pytest.mark.asyncio
+    async def test_history_check_skipped_when_count_is_zero(self):
+        """With PASSWORD_HISTORY_COUNT=0, no history check should occur."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=["should_not_be_checked"],
+        )
+        manager = _make_manager()
+        manager.password_helper.verify_and_update = MagicMock()
+        with patch("ui.backend.auth.users.PASSWORD_HISTORY_COUNT", 0):
+            await manager.validate_password("AnyPassword12345", user)
+        manager.password_helper.verify_and_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_old_hash_stored_on_reset(self):
+        """on_after_reset_password should append the old hash to history."""
+        user = _make_user(
+            hashed_password="old_hash_value",  # pragma: allowlist secret
+            password_history=["older_hash"],
+        )
+        manager = _make_manager()
+
+        mock_session = AsyncMock()
+        mock_request = MagicMock()
+        mock_request.client.host = "127.0.0.1"
+
+        with (
+            patch("ui.backend.auth.users.get_async_session") as mock_get_session,
+            patch("ui.backend.auth.users.write_audit_event", new_callable=AsyncMock),
+        ):
+
+            async def _session_gen():
+                yield mock_session
+
+            mock_get_session.return_value = _session_gen()
+            await manager.on_after_reset_password(user, mock_request)
+
+        # Verify execute was called with the password_history update
+        call_args = mock_session.execute.call_args
+        assert call_args is not None
+
+    @pytest.mark.asyncio
+    async def test_history_truncated_to_max_count(self):
+        """Password history should be truncated to PASSWORD_HISTORY_COUNT."""
+        user = _make_user(
+            hashed_password="newest_hash",  # pragma: allowlist secret
+            password_history=["h1", "h2", "h3", "h4", "h5"],
+        )
+        manager = _make_manager()
+
+        mock_session = AsyncMock()
+        mock_request = MagicMock()
+        mock_request.client.host = "127.0.0.1"
+
+        with patch("ui.backend.auth.users.PASSWORD_HISTORY_COUNT", 3):
+            with (
+                patch("ui.backend.auth.users.get_async_session") as mock_get_session,
+                patch(
+                    "ui.backend.auth.users.write_audit_event", new_callable=AsyncMock
+                ),
+            ):
+
+                async def _session_gen():
+                    yield mock_session
+
+                mock_get_session.return_value = _session_gen()
+                await manager.on_after_reset_password(user, mock_request)
+
+        # Verify execute was called
+        call_args = mock_session.execute.call_args
+        assert call_args is not None

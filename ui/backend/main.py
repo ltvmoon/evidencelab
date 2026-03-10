@@ -3,6 +3,7 @@ Search API Backend
 FastAPI server that provides semantic search over indexed documents in Qdrant.
 """
 
+import logging
 import os
 import secrets
 import signal
@@ -16,6 +17,7 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from pipeline.db import (
     DB_VECTORS,
@@ -156,17 +158,83 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.highlight_cache = highlight_routes._highlight_cache
 
 
-# Custom exception handler for validation errors (e.g., invalid data_source)
+# ---------------------------------------------------------------------------
+# Request body size limit (ASVS V13.1.3)
+# ---------------------------------------------------------------------------
+MAX_REQUEST_BODY_BYTES = int(
+    os.environ.get("MAX_REQUEST_BODY_BYTES", str(2 * 1024 * 1024))  # 2 MB
+)
+
+_main_logger = logging.getLogger(__name__)
+
+# Debug flag — when true, exception handlers return full error details.
+API_DEBUG = os.environ.get("API_DEBUG", "false").lower() in ("1", "true", "yes")
+
+
+class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests whose Content-Length exceeds the configured limit."""
+
+    async def dispatch(self, request, call_next):  # type: ignore[override]
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > MAX_REQUEST_BODY_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Request body too large"},
+            )
+        return await call_next(request)
+
+
+# Safe ValueError prefixes whose details can be shown to clients.
+_SAFE_VALUE_ERROR_PREFIXES = ("Invalid data_source:",)
+
+
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
-    """Convert ValueError to HTTP 400 Bad Request."""
-    return JSONResponse(status_code=400, content={"detail": str(exc)})
+    """Convert ValueError to HTTP 400 — sanitise detail in production."""
+    msg = str(exc)
+    if API_DEBUG or any(msg.startswith(p) for p in _SAFE_VALUE_ERROR_PREFIXES):
+        return JSONResponse(status_code=400, content={"detail": msg})
+    _main_logger.warning(
+        "ValueError on %s %s: %s", request.method, request.url.path, msg
+    )
+    return JSONResponse(
+        status_code=400, content={"detail": "Invalid request parameters"}
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    """Return a generic 500 — never expose internals in production."""
+    _main_logger.exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
+    )
+    detail = str(exc) if API_DEBUG else "Internal server error"
+    return JSONResponse(status_code=500, content={"detail": detail})
 
 
 @app.on_event("startup")
 async def startup_event():
     """Preload embedding models and pipeline data on API startup."""
     logger.info("API startup (pid=%s)", os.getpid())
+
+    # Block insecure auth secrets in production (ASVS V14.1.2)
+    if USER_MODULE:
+        raw_secret = os.environ.get("AUTH_SECRET_KEY", "")
+        _insecure_values = {
+            "CHANGE-ME-IN-PRODUCTION",
+            "changeme-generate-a-real-secret",
+            "changeme",
+            "secret",
+            "",
+        }
+        if raw_secret in _insecure_values or len(raw_secret) < 32:
+            logger.critical(
+                "AUTH_SECRET_KEY is insecure (len=%d). An ephemeral key has "
+                "been generated, but tokens will NOT survive restarts. "
+                "Set AUTH_SECRET_KEY to a random 32+ character string "
+                "(e.g. `openssl rand -hex 32`).",
+                len(raw_secret),
+            )
     logger.info("Max concurrent searches: %s", MAX_CONCURRENT_SEARCHES)
     if not PRELOAD_EMBEDDING_MODELS:
         logger.info("⏩ Skipping model preload (PRELOAD_EMBEDDING_MODELS=false)")
@@ -574,6 +642,9 @@ app.add_middleware(
 from ui.backend.auth.security_headers import SecurityHeadersMiddleware  # noqa: E402
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Request body size limit (ASVS V13.1.3)
+app.add_middleware(RequestBodyLimitMiddleware)
 
 # CSRF protection (only when user module / cookie auth is active)
 if USER_MODULE:

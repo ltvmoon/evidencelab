@@ -147,7 +147,7 @@ class TestCSPHeader:
 
     @pytest.mark.asyncio
     async def test_csp_default_policy(self):
-        """Default CSP policy should restrict to self with safe inline styles."""
+        """Default CSP policy should restrict to self with GA allowlisted."""
         app = _make_app()
         async with _client(app) as client:
             response = await client.get("/test")
@@ -155,6 +155,65 @@ class TestCSPHeader:
         assert "default-src 'self'" in csp
         assert "script-src 'self'" in csp
         assert "frame-ancestors 'none'" in csp
+
+    @pytest.mark.asyncio
+    async def test_csp_script_src_has_no_unsafe_inline(self):
+        """script-src should NOT contain 'unsafe-inline' (ASVS V14.4.3)."""
+        app = _make_app()
+        async with _client(app) as client:
+            response = await client.get("/test")
+        csp = response.headers["Content-Security-Policy"]
+        # Extract script-src directive
+        for directive in csp.split(";"):
+            if "script-src" in directive:
+                assert "'unsafe-inline'" not in directive
+
+    @pytest.mark.asyncio
+    async def test_csp_script_src_has_hash(self):
+        """script-src should contain a sha256 hash for the inline GA script."""
+        app = _make_app()
+        async with _client(app) as client:
+            response = await client.get("/test")
+        csp = response.headers["Content-Security-Policy"]
+        assert "'sha256-" in csp
+
+    @pytest.mark.asyncio
+    async def test_csp_script_src_allows_google_analytics(self):
+        """script-src should allow Google Tag Manager and Analytics domains."""
+        app = _make_app()
+        async with _client(app) as client:
+            response = await client.get("/test")
+        csp = response.headers["Content-Security-Policy"]
+        assert "https://www.googletagmanager.com" in csp
+        assert "https://www.google-analytics.com" in csp
+
+    @pytest.mark.asyncio
+    async def test_csp_connect_src_allows_google_analytics(self):
+        """connect-src should allow GA domains for analytics data."""
+        app = _make_app()
+        async with _client(app) as client:
+            response = await client.get("/test")
+        csp = response.headers["Content-Security-Policy"]
+        for directive in csp.split(";"):
+            if "connect-src" in directive:
+                assert "https://www.google-analytics.com" in directive
+                break
+        else:
+            pytest.fail("connect-src directive not found in CSP")
+
+    @pytest.mark.asyncio
+    async def test_csp_style_src_allows_unsafe_inline(self):
+        """style-src must keep 'unsafe-inline' — React requires it."""
+        app = _make_app()
+        async with _client(app) as client:
+            response = await client.get("/test")
+        csp = response.headers["Content-Security-Policy"]
+        for directive in csp.split(";"):
+            if "style-src" in directive:
+                assert "'unsafe-inline'" in directive
+                break
+        else:
+            pytest.fail("style-src directive not found in CSP")
 
     @pytest.mark.asyncio
     async def test_csp_custom_policy_from_env(self):
