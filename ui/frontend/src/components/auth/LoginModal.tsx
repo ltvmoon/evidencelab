@@ -98,7 +98,7 @@ const ResetPasswordForm: React.FC<ResetFormProps> = ({
           onChange={(e) => setPassword(e.target.value)}
           placeholder="New password"
           required
-          minLength={8}
+          minLength={12}
           autoComplete="new-password"
         />
       </div>
@@ -111,7 +111,7 @@ const ResetPasswordForm: React.FC<ResetFormProps> = ({
           onChange={(e) => setConfirmPassword(e.target.value)}
           placeholder="Confirm new password"
           required
-          minLength={8}
+          minLength={12}
           autoComplete="new-password"
         />
       </div>
@@ -207,7 +207,7 @@ const MainAuthForm: React.FC<MainAuthFormProps> = ({
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
           required
-          minLength={8}
+          minLength={12}
           autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
         />
       </div>

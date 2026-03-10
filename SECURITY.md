@@ -12,6 +12,7 @@ This document outlines the security measures, scanning tools, and best practices
 - [Container Security](#container-security)
 - [API Security](#api-security)
 - [Development Security Practices](#development-security-practices)
+- [OWASP ASVS L2 Compliance](#owasp-asvs-l2-compliance)
 
 ## Reporting Security Vulnerabilities
 
@@ -35,6 +36,9 @@ The project implements multiple layers of security:
 3. **Dependency Monitoring**: Automated alerts for vulnerable dependencies
 4. **Container Scanning**: Vulnerability checks on Docker images
 5. **Runtime Protections**: Input validation, CORS restrictions, rate limiting
+6. **Request Size Limits**: Body size enforcement at the middleware layer
+7. **Error Sanitisation**: Internal details stripped from production responses
+8. **Structured Logging**: JSON-formatted audit trail for SIEM ingestion
 
 ## Automated Security Scanning
 
@@ -127,6 +131,32 @@ CORS is configured securely:
 - Explicit HTTP method whitelist (`GET, POST, PUT, PATCH, DELETE, OPTIONS`)
 - Credentials supported only for allowed origins
 
+### Request Body Size Limits
+
+Request body size is enforced at the middleware layer (ASVS V13.1.3):
+
+- Requests with `Content-Length` exceeding the limit are rejected with HTTP 413
+- Default limit: 2 MB; configurable via `MAX_REQUEST_BODY_BYTES` env var
+- GET and other bodyless requests are unaffected
+
+### Error Detail Sanitisation
+
+Production error responses never expose internal details (ASVS V7.1.1, V7.4.1):
+
+- `ValueError` responses return a generic message unless the error matches a known-safe prefix (e.g. `"Invalid data_source:"`)
+- Unhandled exceptions return `"Internal server error"` with no stack traces, paths, or internal state
+- Full details available when `API_DEBUG=true` (development only)
+- Full tracebacks are always logged server-side regardless of debug mode
+
+### Structured Logging
+
+JSON-structured log output for SIEM integration (ASVS V7.1.3):
+
+- `JSONLogFormatter` outputs `{timestamp, level, logger, message, module, function, line}` with UTC ISO 8601 timestamps
+- Security-relevant extra fields (`user_id`, `user_email`, `ip_address`, `event_type`, `request_id`) included when present
+- Exception tracebacks included in the `exception` field
+- Enabled via `LOG_FORMAT=json` env var; plain text remains the default
+
 ### Rate Limiting
 
 API endpoints are protected by rate limiting (slowapi):
@@ -182,6 +212,7 @@ When `USER_MODULE` is set to `on_passive` or `on_active`, fastapi-users provides
 | **Secret validation** | `AUTH_SECRET_KEY` must be 32+ chars; insecure defaults rejected |
 | **Input validation** | `display_name` max 255 chars, whitespace-stripped, blank-to-None |
 | **Password policy** | Minimum length + digit + letter (configurable via `AUTH_MIN_PASSWORD_LENGTH`) |
+| **Password history** | Prevents reuse of last N passwords; configurable via `AUTH_PASSWORD_HISTORY_COUNT` (default 5, ASVS V2.1.10) |
 | **Account lockout** | Lock after N consecutive failures for M minutes; counters reset on password reset (`AUTH_LOCKOUT_THRESHOLD`, `AUTH_LOCKOUT_DURATION_MINUTES`) |
 | **Timing-attack mitigation** | Password hash always computed even for non-existent users |
 | **Registration control** | Email domain whitelist via `AUTH_ALLOWED_EMAIL_DOMAINS` (registration only; not enforced on password change) |
@@ -253,12 +284,13 @@ The middleware provides **defense in depth** alongside existing controls:
 
 Application-level security headers middleware provides defence-in-depth:
 
-- `Content-Security-Policy` — configurable via `CSP_POLICY` env var; defaults to strict self-only policy with `frame-ancestors 'none'`
+- `Content-Security-Policy` — configurable via `CSP_POLICY` env var; defaults to strict self-only policy with `frame-ancestors 'none'`, SHA-256 hash-based inline script allowlisting (no `'unsafe-inline'` in `script-src`), and explicit `connect-src` for analytics domains
 - `X-Content-Type-Options: nosniff` — prevents MIME-sniffing
 - `X-Frame-Options: DENY` — prevents clickjacking
 - `Referrer-Policy: strict-origin-when-cross-origin` — limits referrer leakage
 - `Permissions-Policy` — restricts camera, microphone, geolocation
 - `Strict-Transport-Security` — HSTS with `preload` directive when HTTPS is configured; warning logged when `AUTH_COOKIE_SECURE=false`
+- `Cache-Control: no-store` + `Pragma: no-cache` on sensitive endpoints (`/auth/`, `/users/`, `/groups/`, `/ratings/`, `/activity/`) — prevents browsers and proxies from caching tokens or personal data (ASVS V8.1.4)
 
 Production deployments via Caddy additionally include:
 
@@ -273,6 +305,7 @@ Production deployments via Caddy additionally include:
 - Sensitive values stored in `.env` files (gitignored)
 - `.env.example` provides templates without real values
 - Secrets managed via GitHub Actions secrets for CI/CD
+- `AUTH_SECRET_KEY` is **required** in production — Docker Compose uses `:?` syntax to fail-fast if unset; startup logs a CRITICAL warning for insecure or short values (ASVS V14.1.2)
 
 ### Secret Management
 
@@ -288,6 +321,20 @@ Production deployments via Caddy additionally include:
 4. **Avoid dangerous functions** - `eval()`, `exec()`, `subprocess` with `shell=True`
 5. **Keep dependencies updated** - Review Dependabot PRs promptly
 6. **Follow least privilege** - Containers and services should have minimal permissions
+
+## OWASP ASVS L2 Compliance
+
+The project targets OWASP ASVS Level 2 compliance. Current estimated coverage is **~82%** across the 14 ASVS verification categories. Key controls mapped to ASVS requirements:
+
+| ASVS Requirement | Control | Status |
+|------------------|---------|--------|
+| V2.1.10 | Password history / reuse prevention | Done |
+| V7.1.1, V7.4.1 | Error detail sanitisation | Done |
+| V7.1.3 | Structured JSON logging | Done |
+| V8.1.4 | Sensitive endpoint cache control | Done |
+| V13.1.3 | Request body size limits | Done |
+| V14.1.2 | Startup credential validation | Done |
+| V14.4.3 | CSP with hash-based inline scripts | Done |
 
 ## Security Checklist for Contributors
 
@@ -315,6 +362,15 @@ Before submitting a PR, ensure:
 
 ## Changelog
 
+- **2026-03-10**: ASVS L2 Tier 1 + Tier 2 hardening (33 new tests)
+  - Added request body size limit middleware — rejects >2 MB with HTTP 413 (`MAX_REQUEST_BODY_BYTES`, ASVS V13.1.3)
+  - Added error detail sanitisation — production responses never expose internals (`API_DEBUG`, ASVS V7.1.1 / V7.4.1)
+  - Added startup credential validation — CRITICAL log on insecure `AUTH_SECRET_KEY`; Docker Compose fails-fast if unset (ASVS V14.1.2)
+  - Hardened CSP with SHA-256 hash for inline GA script — removed need for `'unsafe-inline'` in `script-src` (ASVS V14.4.3)
+  - Added structured JSON logging via `LOG_FORMAT=json` for SIEM ingestion (ASVS V7.1.3)
+  - Added password history — prevents reuse of last N passwords (`AUTH_PASSWORD_HISTORY_COUNT`, ASVS V2.1.10)
+  - Added Alembic migration `0016_add_password_history` (nullable JSONB column)
+  - Added `Cache-Control: no-store` on sensitive endpoint responses (ASVS V8.1.4)
 - **2026-03-03**: Active authentication enforcement middleware
   - Added `ActiveAuthMiddleware` for `on_active` mode — denies unauthenticated requests to all data endpoints
   - Middleware validates JWT cookies, Bearer tokens, and API keys at the Starlette layer (before route handlers)

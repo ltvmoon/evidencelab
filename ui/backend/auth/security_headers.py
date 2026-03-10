@@ -22,13 +22,22 @@ _COOKIE_SECURE = os.environ.get("AUTH_COOKIE_SECURE", "true").lower() != "false"
 _HSTS_VALUE = "max-age=31536000; includeSubDomains; preload" if _COOKIE_SECURE else ""
 
 # Content-Security-Policy — configurable via CSP_POLICY env var.
+# SHA-256 hash of the inline GA consent-check script in index.html.
+# If the inline script changes, regenerate with:
+#   python3 -c "import hashlib,base64; ..." (see index.html comment)
+_GA_SCRIPT_HASH = (
+    "'sha256-+j8RgTT7AgjLIJM+Zq61Yo+VpZeip3D+e9hNGrkqHvw='"  # pragma: allowlist secret
+)
+
 _CSP_DEFAULT = (
     "default-src 'self'; "
-    "script-src 'self'; "
-    "style-src 'self' 'unsafe-inline'; "
+    f"script-src 'self' {_GA_SCRIPT_HASH} "
+    "https://www.googletagmanager.com https://www.google-analytics.com; "
+    "style-src 'self' 'unsafe-inline'; "  # React style injection requires this
     "img-src 'self' data: https:; "
     "font-src 'self'; "
-    "connect-src 'self'; "
+    "connect-src 'self' https://www.google-analytics.com "
+    "https://www.googletagmanager.com; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'"
@@ -48,6 +57,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
+    # Paths whose responses must never be cached (auth, user data, etc.)
+    _SENSITIVE_PREFIXES = ("/auth/", "/users/", "/groups/", "/ratings/", "/activity/")
+
     async def dispatch(self, request, call_next):  # type: ignore[override]
         response = await call_next(request)
 
@@ -63,5 +75,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         if _HSTS_VALUE:
             response.headers["Strict-Transport-Security"] = _HSTS_VALUE
+
+        # Prevent caching of sensitive endpoints (ASVS V8.1.4)
+        path = request.url.path
+        if any(path.startswith(p) for p in self._SENSITIVE_PREFIXES):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
 
         return response

@@ -20,6 +20,7 @@ def _make_user(
     hashed_password="hashed",  # pragma: allowlist secret
     failed_login_attempts=0,
     locked_until=None,
+    password_history=None,
 ):
     """Create a mock User object for testing."""
     user = MagicMock()
@@ -28,6 +29,7 @@ def _make_user(
     user.hashed_password = hashed_password
     user.failed_login_attempts = failed_login_attempts
     user.locked_until = locked_until
+    user.password_history = password_history
     return user
 
 
@@ -46,8 +48,9 @@ def _make_manager():
     """Create a UserManager with a mock user_db."""
     user_db = AsyncMock()
     manager = UserManager(user_db)
-    # Mock the password helper
+    # Mock the password helper — default: password does not match any hash
     manager.password_helper = MagicMock()
+    manager.password_helper.verify_and_update = MagicMock(return_value=(False, None))
     return manager
 
 
@@ -69,30 +72,28 @@ class TestPasswordValidation:
         assert "at least" in str(exc.value.reason)
 
     @pytest.mark.asyncio
-    async def test_rejects_password_without_digit(self):
-        """Passwords without a digit are rejected."""
-        manager = _make_manager()
-        user = _make_user()
-        with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
-            await manager.validate_password("Abcdefgh", user)
-        assert "digit" in str(exc.value.reason)
-
-    @pytest.mark.asyncio
-    async def test_rejects_password_without_letter(self):
-        """Passwords without a letter are rejected."""
-        manager = _make_manager()
-        user = _make_user()
-        with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
-            await manager.validate_password("12345678", user)
-        assert "letter" in str(exc.value.reason)
-
-    @pytest.mark.asyncio
     async def test_accepts_valid_password(self):
-        """A password meeting all criteria should be accepted."""
+        """A password meeting minimum length should be accepted."""
         manager = _make_manager()
         user = _make_user()
-        # Should not raise
-        pw = "Secure1Pass"  # pragma: allowlist secret
+        # Should not raise — length-only validation per ASVS V2.1.9
+        pw = "a-long-enough-password"  # pragma: allowlist secret
+        await manager.validate_password(pw, user)
+
+    @pytest.mark.asyncio
+    async def test_accepts_digits_only_password(self):
+        """Digit-only passwords are allowed if they meet length requirement."""
+        manager = _make_manager()
+        user = _make_user()
+        pw = "123456789012"  # pragma: allowlist secret
+        await manager.validate_password(pw, user)
+
+    @pytest.mark.asyncio
+    async def test_accepts_letters_only_password(self):
+        """Letter-only passwords are allowed if they meet length requirement."""
+        manager = _make_manager()
+        user = _make_user()
+        pw = "abcdefghijklmnop"  # pragma: allowlist secret
         await manager.validate_password(pw, user)
 
     @pytest.mark.asyncio
@@ -104,14 +105,14 @@ class TestPasswordValidation:
         # Use a schema object (registration path) — not an ORM model
         schema_user = BaseUserCreate(
             email="user@evil.com",
-            password="Secure1Pass",  # pragma: allowlist secret
+            password="Secure1Pass!XY",  # pragma: allowlist secret
         )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset({"example.com", "corp.org"}),
         ):
             with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
-                pw = "Secure1Pass"  # pragma: allowlist secret
+                pw = "Secure1Pass!XY"  # pragma: allowlist secret
                 await manager.validate_password(pw, schema_user)
             assert "restricted" in str(exc.value.reason).lower()
 
@@ -123,13 +124,13 @@ class TestPasswordValidation:
         manager = _make_manager()
         schema_user = BaseUserCreate(
             email="user@corp.org",
-            password="Secure1Pass",  # pragma: allowlist secret
+            password="Secure1Pass!XY",  # pragma: allowlist secret
         )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset({"example.com", "corp.org"}),
         ):
-            pw = "Secure1Pass"  # pragma: allowlist secret
+            pw = "Secure1Pass!XY"  # pragma: allowlist secret
             await manager.validate_password(pw, schema_user)
 
     @pytest.mark.asyncio
@@ -140,13 +141,13 @@ class TestPasswordValidation:
         manager = _make_manager()
         schema_user = BaseUserCreate(
             email="user@anydomain.io",
-            password="Secure1Pass",  # pragma: allowlist secret
+            password="Secure1Pass!XY",  # pragma: allowlist secret
         )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset(),
         ):
-            pw = "Secure1Pass"  # pragma: allowlist secret
+            pw = "Secure1Pass!XY"  # pragma: allowlist secret
             await manager.validate_password(pw, schema_user)
 
     @pytest.mark.asyncio
@@ -155,8 +156,8 @@ class TestPasswordValidation:
         manager = _make_manager()
         user = _make_user()
         short_pw = "Abcde12345"  # pragma: allowlist secret
-        with patch("ui.backend.auth.users.MIN_PASSWORD_LENGTH", 12):
-            # 10 chars should fail with min=12
+        with patch("ui.backend.auth.users.MIN_PASSWORD_LENGTH", 16):
+            # 10 chars should fail with min=16
             with pytest.raises(fu_exceptions.InvalidPasswordException):
                 await manager.validate_password(short_pw, user)
 
@@ -523,14 +524,14 @@ class TestDomainCheckRegistrationOnly:
         manager = _make_manager()
         schema_user = BaseUserCreate(
             email="user@evil.com",
-            password="Secure1Pass",  # pragma: allowlist secret
+            password="Secure1Pass!XY",  # pragma: allowlist secret
         )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset({"example.com"}),
         ):
             with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
-                pw = "Secure1Pass"  # pragma: allowlist secret
+                pw = "Secure1Pass!XY"  # pragma: allowlist secret
                 await manager.validate_password(pw, schema_user)
             assert "restricted" in str(exc.value.reason).lower()
 
@@ -545,7 +546,7 @@ class TestDomainCheckRegistrationOnly:
             frozenset({"example.com"}),
         ):
             # Should NOT raise — domain check skipped for ORM model
-            pw = "Secure1Pass"  # pragma: allowlist secret
+            pw = "Secure1Pass!XY"  # pragma: allowlist secret
             await manager.validate_password(pw, orm_user)
 
 
@@ -585,8 +586,8 @@ class TestTokenLifetimeConfiguration:
             importlib.reload(mod)
             assert mod.VERIFY_TOKEN_LIFETIME == 172800
 
-    def test_reset_token_default_24_hours(self):
-        """Default reset token lifetime should be 86400 seconds (24 hours)."""
+    def test_reset_token_default_1_hour(self):
+        """Default reset token lifetime should be 3600 seconds (1 hour)."""
         env = {"AUTH_SECRET_KEY": "a" * 64}  # pragma: allowlist secret
         with patch.dict("os.environ", env, clear=False):
             import os
@@ -597,10 +598,10 @@ class TestTokenLifetimeConfiguration:
             import ui.backend.auth.users as mod
 
             importlib.reload(mod)
-            assert mod.RESET_PASSWORD_TOKEN_LIFETIME == 86400
+            assert mod.RESET_PASSWORD_TOKEN_LIFETIME == 3600
 
-    def test_verify_token_default_7_days(self):
-        """Default verify token lifetime should be 604800 seconds (7 days)."""
+    def test_verify_token_default_24_hours(self):
+        """Default verify token lifetime should be 86400 seconds (24 hours)."""
         env = {"AUTH_SECRET_KEY": "a" * 64}  # pragma: allowlist secret
         with patch.dict("os.environ", env, clear=False):
             import os
@@ -611,7 +612,7 @@ class TestTokenLifetimeConfiguration:
             import ui.backend.auth.users as mod
 
             importlib.reload(mod)
-            assert mod.VERIFY_TOKEN_LIFETIME == 604800
+            assert mod.VERIFY_TOKEN_LIFETIME == 86400
 
     def test_user_manager_uses_configured_lifetimes(self):
         """UserManager class should use the configured token lifetimes."""
@@ -627,3 +628,157 @@ class TestTokenLifetimeConfiguration:
             == RESET_PASSWORD_TOKEN_LIFETIME
         )
         assert manager.verification_token_lifetime_seconds == VERIFY_TOKEN_LIFETIME
+
+
+# ---------------------------------------------------------------------------
+# Password history tests (ASVS V2.1.10)
+# ---------------------------------------------------------------------------
+
+
+class TestPasswordHistory:
+    """Tests for password reuse prevention via password_history."""
+
+    @pytest.mark.asyncio
+    async def test_password_reuse_rejected_from_history(self):
+        """Reusing a password from history should raise InvalidPasswordException."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=["old_hash_1", "old_hash_2"],
+        )
+        manager = _make_manager()
+        # First call: current hash doesn't match
+        # Second call: old_hash_1 matches
+        manager.password_helper.verify_and_update = MagicMock(
+            side_effect=[
+                (False, None),  # current hash check
+                (True, None),  # old_hash_1 matches
+            ]
+        )
+        with pytest.raises(fu_exceptions.InvalidPasswordException):
+            await manager.validate_password("ReusedPass12345", user)
+
+    @pytest.mark.asyncio
+    async def test_current_password_reuse_rejected(self):
+        """Reusing the current password should raise InvalidPasswordException."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=None,
+        )
+        manager = _make_manager()
+        manager.password_helper.verify_and_update = MagicMock(return_value=(True, None))
+        with pytest.raises(fu_exceptions.InvalidPasswordException):
+            await manager.validate_password("SamePassword123", user)
+
+    @pytest.mark.asyncio
+    async def test_new_password_accepted(self):
+        """A genuinely new password should pass validation."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=["old_hash_1", "old_hash_2"],
+        )
+        manager = _make_manager()
+        # All checks return False — no match
+        manager.password_helper.verify_and_update = MagicMock(
+            return_value=(False, None)
+        )
+        # Should not raise
+        await manager.validate_password("BrandNewPass12345", user)
+
+    @pytest.mark.asyncio
+    async def test_history_not_checked_on_registration(self):
+        """Password history should not be checked during registration."""
+        from fastapi_users import schemas as fu_schemas
+
+        schema_user = MagicMock(spec=fu_schemas.BaseUserCreate)
+        schema_user.email = "new@example.com"
+        manager = _make_manager()
+        # verify_and_update should not be called at all for registration
+        manager.password_helper.verify_and_update = MagicMock()
+        await manager.validate_password("ValidPass12345!!", schema_user)
+        manager.password_helper.verify_and_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_history_check_skipped_when_empty(self):
+        """Empty or None password_history should not cause errors."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=None,
+        )
+        manager = _make_manager()
+        manager.password_helper.verify_and_update = MagicMock(
+            return_value=(False, None)
+        )
+        # Should not raise
+        await manager.validate_password("NewPassword12345", user)
+
+    @pytest.mark.asyncio
+    async def test_history_check_skipped_when_count_is_zero(self):
+        """With PASSWORD_HISTORY_COUNT=0, no history check should occur."""
+        user = _make_user(
+            hashed_password="current_hash",  # pragma: allowlist secret
+            password_history=["should_not_be_checked"],
+        )
+        manager = _make_manager()
+        manager.password_helper.verify_and_update = MagicMock()
+        with patch("ui.backend.auth.users.PASSWORD_HISTORY_COUNT", 0):
+            await manager.validate_password("AnyPassword12345", user)
+        manager.password_helper.verify_and_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_old_hash_stored_on_reset(self):
+        """on_after_reset_password should append the old hash to history."""
+        user = _make_user(
+            hashed_password="old_hash_value",  # pragma: allowlist secret
+            password_history=["older_hash"],
+        )
+        manager = _make_manager()
+
+        mock_session = AsyncMock()
+        mock_request = MagicMock()
+        mock_request.client.host = "127.0.0.1"
+
+        with (
+            patch("ui.backend.auth.users.get_async_session") as mock_get_session,
+            patch("ui.backend.auth.users.write_audit_event", new_callable=AsyncMock),
+        ):
+
+            async def _session_gen():
+                yield mock_session
+
+            mock_get_session.return_value = _session_gen()
+            await manager.on_after_reset_password(user, mock_request)
+
+        # Verify execute was called with the password_history update
+        call_args = mock_session.execute.call_args
+        assert call_args is not None
+
+    @pytest.mark.asyncio
+    async def test_history_truncated_to_max_count(self):
+        """Password history should be truncated to PASSWORD_HISTORY_COUNT."""
+        user = _make_user(
+            hashed_password="newest_hash",  # pragma: allowlist secret
+            password_history=["h1", "h2", "h3", "h4", "h5"],
+        )
+        manager = _make_manager()
+
+        mock_session = AsyncMock()
+        mock_request = MagicMock()
+        mock_request.client.host = "127.0.0.1"
+
+        with patch("ui.backend.auth.users.PASSWORD_HISTORY_COUNT", 3):
+            with (
+                patch("ui.backend.auth.users.get_async_session") as mock_get_session,
+                patch(
+                    "ui.backend.auth.users.write_audit_event", new_callable=AsyncMock
+                ),
+            ):
+
+                async def _session_gen():
+                    yield mock_session
+
+                mock_get_session.return_value = _session_gen()
+                await manager.on_after_reset_password(user, mock_request)
+
+        # Verify execute was called
+        call_args = mock_session.execute.call_args
+        assert call_args is not None
