@@ -44,8 +44,13 @@ class SearchTracker:
 
     MAX_SEARCHES = 4  # Hard limit — after this, searches return a stop message
 
-    def __init__(self, data_source: Optional[str] = None):
+    def __init__(
+        self,
+        data_source: Optional[str] = None,
+        reranker_model: Optional[str] = None,
+    ):
         self.data_source = data_source
+        self.reranker_model = reranker_model
         self.per_query: List[Dict[str, Any]] = []
         self.all_results: List[Dict[str, Any]] = []
         self._seen_ids: set = set()
@@ -72,7 +77,8 @@ class SearchTracker:
                 query=query,
                 limit=20,
                 data_source=self.data_source,
-                rerank=True,
+                rerank=bool(self.reranker_model),
+                rerank_model=self.reranker_model,
             )
             formatted = [_format_search_result(r) for r in raw]
         except Exception as exc:
@@ -174,6 +180,7 @@ def _load_system_prompt(data_source: Optional[str] = None) -> str:
 def build_research_agent(
     llm,
     data_source: Optional[str] = None,
+    reranker_model: Optional[str] = None,
 ) -> tuple:
     """
     Build a deep research agent.
@@ -181,11 +188,12 @@ def build_research_agent(
     Args:
         llm: LangChain chat model instance
         data_source: Optional data source to restrict search
+        reranker_model: Optional reranker model key from UI model combo
 
     Returns:
         Tuple of (compiled_agent, search_tracker)
     """
-    tracker = SearchTracker(data_source=data_source)
+    tracker = SearchTracker(data_source=data_source, reranker_model=reranker_model)
     search_tool = _build_search_tool(tracker)
     system_prompt = _load_system_prompt(data_source)
 

@@ -154,6 +154,7 @@ async def stream_assistant_chat(
                 max_tokens=max_tokens,
                 max_iterations=3,
                 conversation_messages=conversation_messages,
+                reranker_model=body.reranker_model,
             ).__aiter__()
 
             async for event in _stream_with_heartbeat(ait):

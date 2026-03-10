@@ -16,6 +16,14 @@ Usage:
   docker compose exec api python scripts/performance/test_assistant_agent.py \
       --model gpt-4.1-mini
 
+  # With a specific model combo (LLM + reranker):
+  docker compose exec api python scripts/performance/test_assistant_agent.py \
+      --model gpt-4.1-mini --reranker Cohere-rerank-v4.0-fast
+
+  # Without reranking (faster, no reranker overhead):
+  docker compose exec api python scripts/performance/test_assistant_agent.py \
+      --model gpt-4.1-mini --no-rerank
+
   # Token-level streaming (shows tokens as they arrive):
   docker compose exec api python scripts/performance/test_assistant_agent.py \
       --stream-tokens
@@ -68,10 +76,10 @@ def get_llm(model_key=None):
     return factory_get_llm(model=model_key, temperature=0.2, max_tokens=2000)
 
 
-def build_agent(llm, data_source=None):
+def build_agent(llm, data_source=None, reranker_model=None):
     from ui.backend.services.assistant_graph import build_research_agent
 
-    return build_research_agent(llm, data_source)
+    return build_research_agent(llm, data_source, reranker_model)
 
 
 # ── Mode 1: step-level streaming (same as UI) ───────────────────────────
@@ -372,6 +380,18 @@ def main():
         help="Data source to search",
     )
     parser.add_argument(
+        "--reranker",
+        "-r",
+        default=None,
+        help="Reranker model key (e.g. Cohere-rerank-v4.0-fast). "
+        "Omit to skip reranking entirely.",
+    )
+    parser.add_argument(
+        "--no-rerank",
+        action="store_true",
+        help="Explicitly disable reranking (default when --reranker is omitted)",
+    )
+    parser.add_argument(
         "--stream-tokens",
         action="store_true",
         help="Use messages mode for token-level streaming",
@@ -383,10 +403,13 @@ def main():
     )
     args = parser.parse_args()
 
+    reranker = None if args.no_rerank else args.reranker
+
     print(f"\n{C.BOLD}Research Assistant Performance Test{C.RESET}")
     print(f"{'─' * 70}")
     print(f"  Query:       {args.query}")
     print(f"  Model:       {args.model or '(default from config)'}")
+    print(f"  Reranker:    {reranker or '(disabled)'}")
     print(f"  Data source: {args.data_source or '(all)'}")
     print("  Max searches: 4 (hard limit)")
     print("  Recursion:   12")
@@ -395,8 +418,12 @@ def main():
     # Build LLM and agent
     print("\n  Building agent...", end=" ", flush=True)
     llm = get_llm(args.model)
-    agent, tracker = build_agent(llm, args.data_source)
+    agent, tracker = build_agent(llm, args.data_source, reranker)
     print(f"done ({type(llm).__name__})")
+    if reranker:
+        print(f"  Reranker: {reranker}")
+    else:
+        print("  Reranker: disabled (no reranking)")
 
     _t0 = time.time()
 

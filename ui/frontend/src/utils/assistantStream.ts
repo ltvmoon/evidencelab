@@ -22,6 +22,7 @@ interface AssistantStreamOptions {
   dataSource?: string;
   threadId?: string | null;
   assistantModelConfig?: SummaryModelConfig | null;
+  rerankerModel?: string | null;
   handlers: AssistantStreamHandlers;
   signal?: AbortSignal;
 }
@@ -161,6 +162,7 @@ export const streamAssistantChat = async ({
   dataSource,
   threadId,
   assistantModelConfig,
+  rerankerModel,
   handlers,
   signal,
 }: AssistantStreamOptions): Promise<void> => {
@@ -173,6 +175,7 @@ export const streamAssistantChat = async ({
       thread_id: threadId || undefined,
       data_source: dataSource || undefined,
       assistant_model_config: assistantModelConfig || undefined,
+      reranker_model: rerankerModel || undefined,
     }),
     signal,
   });

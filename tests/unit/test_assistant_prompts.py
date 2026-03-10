@@ -55,12 +55,12 @@ class TestAssistantSystemPrompt:
         assert "plan" in result.lower()
         assert "sub-quer" in result.lower()
 
-    def test_reflection_instructions(self, jinja_env):
-        """System prompt should instruct the agent to reflect on gaps."""
+    def test_synthesis_instructions(self, jinja_env):
+        """System prompt should instruct the agent to synthesize after searching."""
         template = jinja_env.get_template("assistant_system.j2")
         result = template.render()
-        assert "reflect" in result.lower()
-        assert "gaps" in result.lower()
+        assert "synthesize" in result.lower()
+        assert "stop searching" in result.lower()
 
     def test_no_references_section(self, jinja_env):
         """System prompt should tell the model not to include references."""

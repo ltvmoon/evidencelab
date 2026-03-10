@@ -10,6 +10,7 @@ import { ThreadSidebar } from './ThreadSidebar';
 interface AssistantTabProps {
   dataSource: string;
   assistantModelConfig?: SummaryModelConfig | null;
+  rerankerModel?: string | null;
   exampleQueries?: string[];
   onResultClick?: (result: SearchResult) => void;
 }
@@ -20,6 +21,7 @@ const nextMessageId = () => `local-${++messageIdCounter}`;
 export const AssistantTab: React.FC<AssistantTabProps> = ({
   dataSource,
   assistantModelConfig,
+  rerankerModel,
   exampleQueries,
   onResultClick,
 }) => {
@@ -222,6 +224,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
       dataSource,
       threadId: activeThreadId,
       assistantModelConfig: assistantModelConfig,
+      rerankerModel: rerankerModel,
       handlers,
       signal: controller.signal,
     });
@@ -255,7 +258,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     setIsStreaming(false);
     setStreamingPhase('');
     abortRef.current = null;
-  }, [isStreaming, dataSource, activeThreadId, assistantModelConfig, isAuthenticated, loadThreads]);
+  }, [isStreaming, dataSource, activeThreadId, assistantModelConfig, rerankerModel, isAuthenticated, loadThreads]);
 
   const handleSubmit = useCallback(() => {
     submitQuery(inputValue);

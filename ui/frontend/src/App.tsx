@@ -2820,6 +2820,7 @@ function App() {
           <AssistantTab
             dataSource={dataSource}
             assistantModelConfig={assistantModelConfig}
+            rerankerModel={rerankModel}
             exampleQueries={currentDataSourceConfig?.example_queries}
             onResultClick={handleResultClick}
           />

@@ -427,6 +427,7 @@ class AssistantChatRequest(BaseModel):
     thread_id: Optional[str] = None
     data_source: Optional[str] = Field(None, max_length=255)
     assistant_model_config: Optional[AssistantModelConfig] = None
+    reranker_model: Optional[str] = None
 
 
 class ConversationMessageRead(BaseModel):
