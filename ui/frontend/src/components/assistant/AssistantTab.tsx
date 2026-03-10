@@ -125,6 +125,10 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
   }, [activeThreadId]);
 
   const handleNewChat = useCallback(() => {
+    // Stop any in-progress stream
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsStreaming(false);
     setActiveThreadId(null);
     setMessages([]);
     setStreamingContent('');
@@ -327,6 +331,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             </p>
             {hasExamples && (
               <div className="assistant-welcome-examples">
+                <span className="assistant-examples-label">Try:</span>
                 {exampleQueries.map((q) => (
                   <button
                     key={q}

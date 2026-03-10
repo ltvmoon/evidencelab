@@ -24,11 +24,13 @@ export const AgentStatus: React.FC<AgentStatusProps> = ({ phase, searchQueries, 
     <div className="agent-status">
       <div className="agent-status-indicator">
         <span className="agent-status-label">{label}</span>
-        <span className="agent-status-dots">
-          <span className="dot">.</span>
-          <span className="dot">.</span>
-          <span className="dot">.</span>
-        </span>
+        {!hasSearchDetail && (
+          <span className="agent-status-dots">
+            <span className="dot">.</span>
+            <span className="dot">.</span>
+            <span className="dot">.</span>
+          </span>
+        )}
       </div>
       {hasSearchDetail && (
         <div className="agent-status-detail">
@@ -43,7 +45,9 @@ export const AgentStatus: React.FC<AgentStatusProps> = ({ phase, searchQueries, 
             .map((q, i) => (
               <div key={`sq-${i}`} className="agent-status-query agent-status-query-pending">
                 <span className="agent-status-query-text">{q}</span>
-                <span className="agent-status-query-count">searching</span>
+                <span className="agent-status-query-count agent-status-pending-dots">
+                  <span className="dot">.</span><span className="dot">.</span><span className="dot">.</span>
+                </span>
               </div>
             ))}
         </div>

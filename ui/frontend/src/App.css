@@ -9750,6 +9750,12 @@ a.admin-citation-clickable:hover {
   width: 100%;
 }
 
+.assistant-examples-label {
+  font-size: 0.8rem;
+  color: var(--brand-text-tertiary);
+  margin-bottom: -0.15rem;
+}
+
 .assistant-example-btn {
   padding: 0.75rem 1rem;
   border: 1px solid var(--brand-border-light);
@@ -10249,7 +10255,19 @@ a.admin-citation-clickable:hover {
 
 .agent-status-query-pending .agent-status-query-count {
   color: var(--brand-primary);
-  font-style: italic;
+}
+
+.agent-status-pending-dots .dot {
+  animation: dotPulse 1.2s infinite;
+  font-weight: bold;
+}
+
+.agent-status-pending-dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.agent-status-pending-dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
 }
 
 @keyframes dotPulse {

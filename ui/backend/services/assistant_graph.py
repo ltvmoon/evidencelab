@@ -42,6 +42,8 @@ def _format_search_result(r: Any) -> Dict[str, Any]:
 class SearchTracker:
     """Track search calls and accumulate results for source extraction."""
 
+    MAX_SEARCHES = 4  # Hard limit — after this, searches return a stop message
+
     def __init__(self, data_source: Optional[str] = None):
         self.data_source = data_source
         self.per_query: List[Dict[str, Any]] = []
@@ -55,7 +57,16 @@ class SearchTracker:
 
         Each result is assigned a global index that persists across
         multiple search calls so the LLM can cite results unambiguously.
+        Enforces a hard search limit to prevent slow runaway loops.
         """
+        if len(self.per_query) >= self.MAX_SEARCHES:
+            logger.warning(
+                "Search limit reached (%d). Refusing query: %s",
+                self.MAX_SEARCHES,
+                query,
+            )
+            return []
+
         try:
             raw = search_chunks(
                 query=query,
@@ -130,6 +141,13 @@ def _build_search_tool(tracker: SearchTracker):
         Args:
             query: The search query — be specific and focused for best results.
         """
+        if len(tracker.per_query) >= tracker.MAX_SEARCHES:
+            return (
+                "SEARCH LIMIT REACHED. You have already searched "
+                f"{len(tracker.per_query)} times. Stop searching and "
+                "write your answer now using the results you already have."
+            )
+
         results = tracker.search(query)
 
         if not results:
