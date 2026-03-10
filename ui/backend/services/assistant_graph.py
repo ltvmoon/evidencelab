@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from deepagents import create_deep_agent
 from deepagents.graph import create_agent
 from jinja2 import Environment, FileSystemLoader
 from langchain_core.tools import tool
@@ -301,4 +302,79 @@ def build_research_agent(
     )
 
     logger.info("Built research agent for data_source=%s", data_source)
+    return agent, tracker
+
+
+def _load_deep_research_prompt(data_source: Optional[str] = None) -> str:
+    """Load and render the deep research coordinator prompt."""
+    template = _jinja_env.get_template("assistant_deep_research.j2")
+    return template.render(data_source=data_source)
+
+
+def _load_researcher_prompt(data_source: Optional[str] = None) -> str:
+    """Load and render the researcher sub-agent prompt."""
+    template = _jinja_env.get_template("assistant_researcher.j2")
+    return template.render(data_source=data_source)
+
+
+def build_deep_research_agent(
+    llm,
+    data_source: Optional[str] = None,
+    reranker_model: Optional[str] = None,
+    search_settings: Optional[Dict[str, Any]] = None,
+    system_prompt_override: Optional[str] = None,
+) -> tuple:
+    """Build a deep research agent with sub-agent delegation.
+
+    Uses create_deep_agent with a researcher sub-agent that has access
+    to the search_documents tool.  The coordinator plans and synthesizes
+    while the researcher executes searches.
+
+    Returns:
+        Tuple of (compiled_agent, search_tracker)
+    """
+    tracker = SearchTracker(
+        data_source=data_source,
+        reranker_model=reranker_model,
+        search_settings=search_settings,
+    )
+    # Allow more searches in deep mode
+    tracker.MAX_SEARCHES = 12
+
+    search_tool = _build_search_tool(tracker)
+
+    coordinator_prompt = _load_deep_research_prompt(data_source)
+    researcher_prompt = _load_researcher_prompt(data_source)
+
+    if system_prompt_override:
+        coordinator_prompt = (
+            coordinator_prompt
+            + "\n\n## Additional Instructions\n\n"
+            + system_prompt_override
+        )
+        logger.info(
+            "Appended group prompt override (%d chars) to deep "
+            "research coordinator prompt",
+            len(system_prompt_override),
+        )
+
+    researcher_subagent: Dict[str, Any] = {
+        "name": "researcher",
+        "description": (
+            "Searches the document database for evidence on a "
+            "specific topic or question. Give it a focused research "
+            "task and it will return findings with citation numbers."
+        ),
+        "system_prompt": researcher_prompt,
+        "tools": [search_tool],
+    }
+
+    agent = create_deep_agent(
+        model=llm,
+        tools=[],
+        system_prompt=coordinator_prompt,
+        subagents=[researcher_subagent],
+    )
+
+    logger.info("Built deep research agent for data_source=%s", data_source)
     return agent, tracker

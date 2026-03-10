@@ -444,6 +444,7 @@ class AssistantChatRequest(BaseModel):
     assistant_model_config: Optional[AssistantModelConfig] = None
     reranker_model: Optional[str] = None
     search_settings: Optional[AssistantSearchSettings] = None
+    deep_research: bool = False
 
 
 class ThreadRenameRequest(BaseModel):

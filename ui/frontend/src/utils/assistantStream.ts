@@ -25,6 +25,7 @@ interface AssistantStreamOptions {
   assistantModelConfig?: SummaryModelConfig | null;
   rerankerModel?: string | null;
   searchSettings?: Partial<SearchSettings> | null;
+  deepResearch?: boolean;
   handlers: AssistantStreamHandlers;
   signal?: AbortSignal;
 }
@@ -186,6 +187,7 @@ export const streamAssistantChat = async ({
   assistantModelConfig,
   rerankerModel,
   searchSettings,
+  deepResearch,
   handlers,
   signal,
 }: AssistantStreamOptions): Promise<void> => {
@@ -200,6 +202,7 @@ export const streamAssistantChat = async ({
       assistant_model_config: assistantModelConfig || undefined,
       reranker_model: rerankerModel || undefined,
       search_settings: buildSearchSettingsPayload(searchSettings),
+      deep_research: deepResearch || undefined,
     }),
     signal,
   });

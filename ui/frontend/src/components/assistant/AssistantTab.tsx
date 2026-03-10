@@ -37,6 +37,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [deepResearch, setDeepResearch] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingPhase, setStreamingPhase] = useState<string>('');
   const [streamingContent, setStreamingContent] = useState('');
@@ -286,6 +287,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
       assistantModelConfig: assistantModelConfig,
       rerankerModel: rerankerModel,
       searchSettings: searchSettings,
+      deepResearch,
       handlers,
       signal: controller.signal,
     });
@@ -319,7 +321,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     setIsStreaming(false);
     setStreamingPhase('');
     abortRef.current = null;
-  }, [isStreaming, dataSource, activeThreadId, assistantModelConfig, rerankerModel, searchSettings, isAuthenticated, loadThreads]);
+  }, [isStreaming, dataSource, activeThreadId, assistantModelConfig, rerankerModel, searchSettings, deepResearch, isAuthenticated, loadThreads]);
 
   const handleSubmit = useCallback(() => {
     submitQuery(inputValue);
@@ -336,8 +338,21 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
 
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+  const deepResearchToggle = (
+    <label className="deep-research-toggle">
+      <input
+        type="checkbox"
+        checked={deepResearch}
+        onChange={(e) => setDeepResearch(e.target.checked)}
+        disabled={isStreaming}
+      />
+      <span>Deep research</span>
+    </label>
+  );
+
   const chatFooterLinks = isAuthenticated ? (
     <span className="chat-footer-links">
+      {deepResearchToggle}
       <button
         className="chat-history-toggle"
         onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -357,7 +372,11 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
         </button>
       )}
     </span>
-  ) : undefined;
+  ) : (
+    <span className="chat-footer-links">
+      {deepResearchToggle}
+    </span>
+  );
 
   return (
     <div className="assistant-container">

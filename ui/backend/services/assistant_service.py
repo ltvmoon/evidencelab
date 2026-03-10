@@ -13,7 +13,10 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from ui.backend.services.assistant_graph import build_research_agent
+from ui.backend.services.assistant_graph import (
+    build_deep_research_agent,
+    build_research_agent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +162,7 @@ async def stream_research_response(
     reranker_model: Optional[str] = None,
     search_settings: Optional[Dict[str, Any]] = None,
     system_prompt_override: Optional[str] = None,
+    deep_research: bool = False,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Stream a research response via SSE events.
@@ -180,7 +184,8 @@ async def stream_research_response(
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        agent, tracker = build_research_agent(
+        builder = build_deep_research_agent if deep_research else build_research_agent
+        agent, tracker = builder(
             llm,
             data_source,
             reranker_model,
@@ -188,13 +193,14 @@ async def stream_research_response(
             system_prompt_override=system_prompt_override,
         )
         messages = _build_conversation_messages(query, conversation_messages)
+        recursion_limit = 100 if deep_research else 12
 
         yield {"type": "phase", "phase": "planning"}
 
         token_buffer = ""
         async for step_output in agent.astream(
             {"messages": messages},
-            config={"run_id": str(run_id), "recursion_limit": 12},
+            config={"run_id": str(run_id), "recursion_limit": recursion_limit},
             stream_mode="updates",
         ):
             for event in _events_from_step(step_output, tracker):

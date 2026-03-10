@@ -10517,6 +10517,28 @@ a.admin-citation-clickable:hover {
   background: rgba(91, 143, 168, 0.06);
 }
 
+.deep-research-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--brand-text-tertiary);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.deep-research-toggle input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.deep-research-toggle input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* Status container for streaming phases */
 .assistant-status-container {
   padding: 0.5rem 0;
