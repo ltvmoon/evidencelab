@@ -420,6 +420,18 @@ class AssistantModelConfig(BaseModel):
     chunk_tokens_ratio: float = 0.5
 
 
+class AssistantSearchSettings(BaseModel):
+    """Search settings passed from frontend for assistant searches."""
+
+    dense_weight: Optional[float] = None
+    recency_boost: Optional[bool] = None
+    recency_weight: Optional[float] = None
+    recency_scale_days: Optional[int] = None
+    section_types: Optional[list[str]] = None
+    keyword_boost_short_queries: Optional[bool] = None
+    min_chunk_size: Optional[int] = None
+
+
 class AssistantChatRequest(BaseModel):
     """Request payload for assistant chat streaming endpoint."""
 
@@ -428,6 +440,7 @@ class AssistantChatRequest(BaseModel):
     data_source: Optional[str] = Field(None, max_length=255)
     assistant_model_config: Optional[AssistantModelConfig] = None
     reranker_model: Optional[str] = None
+    search_settings: Optional[AssistantSearchSettings] = None
 
 
 class ConversationMessageRead(BaseModel):

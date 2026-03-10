@@ -1,4 +1,5 @@
 import { SummaryModelConfig, SourceReference, SearchToolCall } from '../types/api';
+import { SearchSettings } from '../types/auth';
 
 interface AssistantDoneData {
   threadId?: string;
@@ -23,6 +24,7 @@ interface AssistantStreamOptions {
   threadId?: string | null;
   assistantModelConfig?: SummaryModelConfig | null;
   rerankerModel?: string | null;
+  searchSettings?: Partial<SearchSettings> | null;
   handlers: AssistantStreamHandlers;
   signal?: AbortSignal;
 }
@@ -156,6 +158,22 @@ const readStream = async (
   }
 };
 
+/** Convert frontend SearchSettings to backend search_settings format. */
+const buildSearchSettingsPayload = (
+  settings?: Partial<SearchSettings> | null,
+): Record<string, unknown> | undefined => {
+  if (!settings) return undefined;
+  const payload: Record<string, unknown> = {};
+  if (settings.denseWeight != null) payload.dense_weight = settings.denseWeight;
+  if (settings.recencyBoost != null) payload.recency_boost = settings.recencyBoost;
+  if (settings.recencyWeight != null) payload.recency_weight = settings.recencyWeight;
+  if (settings.recencyScaleDays != null) payload.recency_scale_days = settings.recencyScaleDays;
+  if (settings.sectionTypes != null) payload.section_types = settings.sectionTypes;
+  if (settings.keywordBoostShortQueries != null) payload.keyword_boost_short_queries = settings.keywordBoostShortQueries;
+  if (settings.minChunkSize != null) payload.min_chunk_size = settings.minChunkSize;
+  return Object.keys(payload).length > 0 ? payload : undefined;
+};
+
 export const streamAssistantChat = async ({
   apiBaseUrl,
   query,
@@ -163,6 +181,7 @@ export const streamAssistantChat = async ({
   threadId,
   assistantModelConfig,
   rerankerModel,
+  searchSettings,
   handlers,
   signal,
 }: AssistantStreamOptions): Promise<void> => {
@@ -176,6 +195,7 @@ export const streamAssistantChat = async ({
       data_source: dataSource || undefined,
       assistant_model_config: assistantModelConfig || undefined,
       reranker_model: rerankerModel || undefined,
+      search_settings: buildSearchSettingsPayload(searchSettings),
     }),
     signal,
   });

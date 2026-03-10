@@ -2,11 +2,14 @@ import React, { useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatMessage as ChatMessageType, SourceReference } from '../../types/api';
+import { SearchSettings } from '../../types/auth';
 import { ToolCallPanel } from './ToolCallPanel';
 
 interface ChatMessageProps {
   message: ChatMessageType;
   onSourceClick?: (source: SourceReference) => void;
+  searchSettings?: Partial<SearchSettings> | null;
+  rerankerModel?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +259,12 @@ const AssistantReferences: React.FC<{
 // Main component
 // ---------------------------------------------------------------------------
 
-export const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onSourceClick }) => {
+export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
+  message,
+  onSourceClick,
+  searchSettings,
+  rerankerModel,
+}) => {
   const isUser = message.role === 'user';
   const hasSources = !isUser && message.sources && message.sources.length > 0;
   const hasIndexedSources = hasSources && message.sources!.some((s) => s.index != null);
@@ -264,7 +272,11 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onSo
   return (
     <div className={`chat-message ${isUser ? 'chat-message-user' : 'chat-message-assistant'}`}>
       {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
-        <ToolCallPanel toolCalls={message.toolCalls} />
+        <ToolCallPanel
+          toolCalls={message.toolCalls}
+          searchSettings={searchSettings}
+          rerankerModel={rerankerModel}
+        />
       )}
 
       {isUser ? (

@@ -146,6 +146,11 @@ async def stream_assistant_chat(
         last_synthesis = ""
         last_sources = None
         try:
+            search_kwargs = (
+                body.search_settings.model_dump(exclude_none=True)
+                if body.search_settings
+                else None
+            )
             ait = stream_research_response(
                 query=body.query,
                 data_source=body.data_source,
@@ -155,6 +160,7 @@ async def stream_assistant_chat(
                 max_iterations=3,
                 conversation_messages=conversation_messages,
                 reranker_model=body.reranker_model,
+                search_settings=search_kwargs,
             ).__aiter__()
 
             async for event in _stream_with_heartbeat(ait):

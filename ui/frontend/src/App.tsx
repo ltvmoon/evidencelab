@@ -2821,6 +2821,15 @@ function App() {
             dataSource={dataSource}
             assistantModelConfig={assistantModelConfig}
             rerankerModel={rerankModel}
+            searchSettings={{
+              denseWeight: searchDenseWeight,
+              recencyBoost: recencyBoostEnabled,
+              recencyWeight,
+              recencyScaleDays,
+              sectionTypes,
+              keywordBoostShortQueries,
+              minChunkSize,
+            }}
             exampleQueries={currentDataSourceConfig?.example_queries}
             onResultClick={handleResultClick}
           />

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ChatMessage, SearchToolCall, SourceReference } from '../../types/api';
+import { SearchSettings } from '../../types/auth';
 import { ChatMessageComponent } from './ChatMessage';
 import { AgentStatus } from './AgentStatus';
 import { ToolCallPanel } from './ToolCallPanel';
@@ -13,6 +14,8 @@ interface ChatMessageListProps {
   streamingSources?: SourceReference[];
   isStreaming?: boolean;
   onSourceClick?: (source: SourceReference) => void;
+  searchSettings?: Partial<SearchSettings> | null;
+  rerankerModel?: string | null;
 }
 
 export const ChatMessageList: React.FC<ChatMessageListProps> = ({
@@ -24,6 +27,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   streamingSources,
   isStreaming = false,
   onSourceClick,
+  searchSettings,
+  rerankerModel,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -64,6 +69,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           key={msg.id}
           message={msg}
           onSourceClick={onSourceClick}
+          searchSettings={searchSettings}
+          rerankerModel={rerankerModel}
         />
       ))}
 
@@ -80,7 +87,11 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
         <>
           {streamingToolCalls && streamingToolCalls.length > 0 && (
             <div className="chat-message chat-message-assistant">
-              <ToolCallPanel toolCalls={streamingToolCalls} />
+              <ToolCallPanel
+                toolCalls={streamingToolCalls}
+                searchSettings={searchSettings}
+                rerankerModel={rerankerModel}
+              />
             </div>
           )}
           <ChatMessageComponent

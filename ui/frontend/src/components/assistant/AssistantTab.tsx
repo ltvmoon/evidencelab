@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import API_BASE_URL, { USER_MODULE } from '../../config';
 import { useAuth } from '../../hooks/useAuth';
 import { ChatMessage, SearchResult, SearchToolCall, SourceReference, SummaryModelConfig, ThreadListItem } from '../../types/api';
+import { SearchSettings } from '../../types/auth';
 import { streamAssistantChat, AssistantStreamHandlers } from '../../utils/assistantStream';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
@@ -11,6 +12,7 @@ interface AssistantTabProps {
   dataSource: string;
   assistantModelConfig?: SummaryModelConfig | null;
   rerankerModel?: string | null;
+  searchSettings?: Partial<SearchSettings> | null;
   exampleQueries?: string[];
   onResultClick?: (result: SearchResult) => void;
 }
@@ -22,6 +24,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
   dataSource,
   assistantModelConfig,
   rerankerModel,
+  searchSettings,
   exampleQueries,
   onResultClick,
 }) => {
@@ -225,6 +228,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
       threadId: activeThreadId,
       assistantModelConfig: assistantModelConfig,
       rerankerModel: rerankerModel,
+      searchSettings: searchSettings,
       handlers,
       signal: controller.signal,
     });
@@ -258,7 +262,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     setIsStreaming(false);
     setStreamingPhase('');
     abortRef.current = null;
-  }, [isStreaming, dataSource, activeThreadId, assistantModelConfig, rerankerModel, isAuthenticated, loadThreads]);
+  }, [isStreaming, dataSource, activeThreadId, assistantModelConfig, rerankerModel, searchSettings, isAuthenticated, loadThreads]);
 
   const handleSubmit = useCallback(() => {
     submitQuery(inputValue);
@@ -357,6 +361,8 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
             streamingSources={streamingSources}
             isStreaming={isStreaming}
             onSourceClick={handleSourceClick}
+            searchSettings={searchSettings}
+            rerankerModel={rerankerModel}
           />
         )}
 

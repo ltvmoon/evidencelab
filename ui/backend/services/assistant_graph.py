@@ -48,14 +48,36 @@ class SearchTracker:
         self,
         data_source: Optional[str] = None,
         reranker_model: Optional[str] = None,
+        search_settings: Optional[Dict[str, Any]] = None,
     ):
         self.data_source = data_source
         self.reranker_model = reranker_model
+        self.search_settings = search_settings or {}
         self.per_query: List[Dict[str, Any]] = []
         self.all_results: List[Dict[str, Any]] = []
         self._seen_ids: set = set()
         self._emitted_query_count: int = 0
         self._global_result_count: int = 0
+
+    def _build_search_kwargs(self) -> Dict[str, Any]:
+        """Build kwargs for search_chunks from search settings."""
+        kwargs: Dict[str, Any] = {}
+        s = self.search_settings
+        if s.get("dense_weight") is not None:
+            kwargs["dense_weight"] = s["dense_weight"]
+        if s.get("recency_boost") is not None:
+            kwargs["recency_boost"] = s["recency_boost"]
+        if s.get("recency_weight") is not None:
+            kwargs["recency_weight"] = s["recency_weight"]
+        if s.get("recency_scale_days") is not None:
+            kwargs["recency_scale_days"] = s["recency_scale_days"]
+        if s.get("section_types") is not None:
+            kwargs["section_types"] = s["section_types"]
+        if s.get("keyword_boost_short_queries") is not None:
+            kwargs["keyword_boost_short_queries"] = s["keyword_boost_short_queries"]
+        if s.get("min_chunk_size") is not None:
+            kwargs["min_chunk_size"] = s["min_chunk_size"]
+        return kwargs
 
     def search(self, query: str) -> List[Dict[str, Any]]:
         """Execute search, track results, return formatted dicts.
@@ -73,12 +95,14 @@ class SearchTracker:
             return []
 
         try:
+            extra_kwargs = self._build_search_kwargs()
             raw = search_chunks(
                 query=query,
                 limit=20,
                 data_source=self.data_source,
                 rerank=bool(self.reranker_model),
                 rerank_model=self.reranker_model,
+                **extra_kwargs,
             )
             formatted = [_format_search_result(r) for r in raw]
         except Exception as exc:
@@ -181,6 +205,7 @@ def build_research_agent(
     llm,
     data_source: Optional[str] = None,
     reranker_model: Optional[str] = None,
+    search_settings: Optional[Dict[str, Any]] = None,
 ) -> tuple:
     """
     Build a deep research agent.
@@ -189,11 +214,16 @@ def build_research_agent(
         llm: LangChain chat model instance
         data_source: Optional data source to restrict search
         reranker_model: Optional reranker model key from UI model combo
+        search_settings: Optional search parameters (dense_weight, boosts, etc.)
 
     Returns:
         Tuple of (compiled_agent, search_tracker)
     """
-    tracker = SearchTracker(data_source=data_source, reranker_model=reranker_model)
+    tracker = SearchTracker(
+        data_source=data_source,
+        reranker_model=reranker_model,
+        search_settings=search_settings,
+    )
     search_tool = _build_search_tool(tracker)
     system_prompt = _load_system_prompt(data_source)
 
