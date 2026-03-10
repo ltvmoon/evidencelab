@@ -85,6 +85,18 @@ def _extract_search_queries(msg) -> List[str]:
     return queries
 
 
+def _extract_task_delegations(msg) -> List[str]:
+    """Extract sub-agent task delegations from an AI message's tool calls."""
+    tasks: List[str] = []
+    if hasattr(msg, "tool_calls") and msg.tool_calls:
+        for tc in msg.tool_calls:
+            if tc.get("name") == "task":
+                desc = tc.get("args", {}).get("task", "")
+                if desc:
+                    tasks.append(desc)
+    return tasks
+
+
 def _has_any_tool_calls(msg) -> bool:
     """Check if an AI message has any tool calls (search, write_todos, etc)."""
     return bool(getattr(msg, "tool_calls", None))
@@ -97,9 +109,14 @@ def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
     The deepagents framework has built-in tools (write_todos, etc.) that
     produce tool calls we don't surface, but their presence means the
     model is still working, not producing the final answer.
+
+    In deep research mode, the coordinator delegates via the ``task``
+    tool.  We surface these as ``task_delegations`` so the UI can show
+    a "researching" phase.
     """
     result: Dict[str, Any] = {
         "tool_queries": [],
+        "task_delegations": [],
         "response_text": "",
     }
     messages = node_output.get("messages", [])
@@ -107,6 +124,10 @@ def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
         search_queries = _extract_search_queries(msg)
         if search_queries:
             result["tool_queries"].extend(search_queries)
+            continue
+        task_delegations = _extract_task_delegations(msg)
+        if task_delegations:
+            result["task_delegations"].extend(task_delegations)
         elif _has_any_tool_calls(msg):
             # Model called non-search tools (write_todos, etc.) — skip
             pass
@@ -248,6 +269,9 @@ def _events_from_step(
                         "queries": agent_result["tool_queries"],
                     }
                 )
+            elif agent_result["task_delegations"]:
+                # Deep research coordinator delegated to sub-agent(s)
+                events.append({"type": "phase", "phase": "searching"})
             elif agent_result["response_text"]:
                 events.append(
                     {

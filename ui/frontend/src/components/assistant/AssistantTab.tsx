@@ -210,7 +210,8 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
       text: source.text,
       page_num: source.page || 1,
       score: source.score,
-      headings: [],
+      headings: source.headings || [],
+      bbox: source.bbox,
       metadata: {},
     });
   }, [onResultClick]);

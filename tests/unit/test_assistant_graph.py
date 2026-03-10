@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 _mock_search = ModuleType("ui.backend.services.search")
 _mock_search_fn = MagicMock(return_value=[])
 _mock_search.search_chunks = _mock_search_fn
+_mock_search.map_field_to_storage = MagicMock(side_effect=lambda f: f"map_{f}")
 sys.modules.setdefault("ui.backend.services.search", _mock_search)
 
 # Mock search_models for lazy field_boost import
@@ -52,6 +53,24 @@ class TestFormatSearchResult:
         assert result["title"] == "Title"
         assert result["text"] == "Content"
         assert result["score"] == 0.85
+
+    def test_extracts_sys_page_num(self):
+        """page should come from sys_page_num (Qdrant convention)."""
+        point = _make_scored_point("c1", "d1", sys_page_num=5)
+        result = _format_search_result(point)
+        assert result["page"] == 5
+
+    def test_falls_back_to_page_num(self):
+        """page should fall back to page_num for tests/dicts."""
+        point = _make_scored_point("c1", "d1", page_num=3)
+        result = _format_search_result(point)
+        assert result["page"] == 3
+
+    def test_page_none_when_missing(self):
+        """page should be None when neither field is present."""
+        point = _make_scored_point("c1", "d1")
+        result = _format_search_result(point)
+        assert result["page"] is None
 
     def test_handles_dict_input(self):
         data = {
@@ -571,7 +590,7 @@ class TestFieldBoost:
         assert kwargs["dense_weight"] == 0.7
 
     def test_apply_field_boost_called_when_enabled(self):
-        """_apply_field_boost should call apply_field_boost when enabled."""
+        """_apply_field_boost should call apply_field_boost with wrapped results."""
         _mock_apply_field_boost.reset_mock()
         _mock_apply_field_boost.side_effect = None
         _mock_apply_field_boost.return_value = ["boosted_result"]
@@ -584,15 +603,23 @@ class TestFieldBoost:
         # Pre-populate known values to skip DB lookup
         tracker._known_values = {"country": ["Kenya", "Nigeria"]}
 
-        raw = [MagicMock()]
-        result = tracker._apply_field_boost(raw, "food security Kenya")
-
-        _mock_apply_field_boost.assert_called_once_with(
-            raw,
-            "food security Kenya",
-            {"country": 0.5},
-            {"country": ["Kenya", "Nigeria"]},
+        raw_point = _FakeScoredPoint(
+            id="c1", score=0.9, payload={"text": "hello", "map_title": "T"}
         )
+        result = tracker._apply_field_boost([raw_point], "food security Kenya")
+
+        _mock_apply_field_boost.assert_called_once()
+        call_args = _mock_apply_field_boost.call_args
+        # First arg should be wrapped results (SimpleNamespace list)
+        wrapped = call_args[0][0]
+        assert len(wrapped) == 1
+        assert wrapped[0]._original is raw_point
+        assert wrapped[0].text == "hello"
+        assert wrapped[0].title == "T"
+        # Other args should be passed through
+        assert call_args[0][1] == "food security Kenya"
+        assert call_args[0][2] == {"country": 0.5}
+        assert call_args[0][3] == {"country": ["Kenya", "Nigeria"]}
         assert result == ["boosted_result"]
 
     def test_apply_field_boost_skipped_when_disabled(self):
@@ -601,3 +628,53 @@ class TestFieldBoost:
         raw = [MagicMock()]
         result = tracker._apply_field_boost(raw, "query")
         assert result == raw
+
+
+class TestGetSourcesEnrichment:
+    """Tests for get_sources including bbox and headings from enrichment."""
+
+    def test_get_sources_includes_bbox(self):
+        """get_sources should include bbox when present in results."""
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c1", "d1", "Doc", "Text", 0.9),
+        ]
+
+        tracker = SearchTracker()
+        tracker.search("query")
+        # Simulate enrichment adding bbox (as _enrich_from_postgres does)
+        tracker.all_results[0]["bbox"] = [[5, [0.1, 0.2, 0.8, 0.9]]]
+        sources = tracker.get_sources()
+
+        assert len(sources) == 1
+        assert sources[0]["bbox"] == [[5, [0.1, 0.2, 0.8, 0.9]]]
+
+    def test_get_sources_omits_bbox_when_absent(self):
+        """get_sources should not include bbox key when not present."""
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c1", "d1", "Doc", "Text", 0.9),
+        ]
+
+        tracker = SearchTracker()
+        tracker.search("query")
+        sources = tracker.get_sources()
+
+        assert "bbox" not in sources[0]
+
+    def test_get_sources_includes_headings(self):
+        """get_sources should include headings from enrichment."""
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c1", "d1", "Doc", "Text", 0.9),
+        ]
+
+        tracker = SearchTracker()
+        tracker.search("query")
+        tracker.all_results[0]["headings"] = ["Chapter 1", "Section A"]
+        sources = tracker.get_sources()
+
+        assert sources[0]["headings"] == ["Chapter 1", "Section A"]

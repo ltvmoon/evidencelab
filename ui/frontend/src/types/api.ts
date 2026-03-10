@@ -155,6 +155,8 @@ export interface SourceReference {
   score: number;
   page?: number;
   index?: number;
+  bbox?: any;
+  headings?: string[];
 }
 
 export interface AgentState {

@@ -8,6 +8,7 @@ Uses LangChain's deepagents create_agent for a focused research loop:
 
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from deepagents import create_deep_agent
@@ -15,7 +16,7 @@ from deepagents.graph import create_agent
 from jinja2 import Environment, FileSystemLoader
 from langchain_core.tools import tool
 
-from ui.backend.services.search import search_chunks
+from ui.backend.services.search import map_field_to_storage, search_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +30,16 @@ def _format_search_result(r: Any) -> Dict[str, Any]:
     payload = r.payload if hasattr(r, "payload") else r
     # Qdrant payloads use "map_title"; fall back to "title" for tests/dicts
     title = payload.get("map_title") or payload.get("title") or "Untitled"
+    # Qdrant stores page number as "sys_page_num"; fall back to "page_num"
+    # for tests/dicts that use the shorter name.
+    page = payload.get("sys_page_num") or payload.get("page_num")
     return {
         "chunk_id": getattr(r, "id", payload.get("chunk_id", "")),
         "doc_id": payload.get("doc_id", ""),
         "title": title,
         "text": payload.get("text", ""),
         "score": getattr(r, "score", payload.get("score", 0.0)),
-        "page": payload.get("page_num", None),
+        "page": page,
         "headings": payload.get("headings", []),
     }
 
@@ -87,7 +91,12 @@ class SearchTracker:
         return kwargs
 
     def _resolve_known_values(self) -> Dict[str, List[str]]:
-        """Lazily resolve known facet values for field boost."""
+        """Lazily resolve known facet values for field boost.
+
+        Maps abstract field names (e.g. "country") to their Qdrant storage
+        names (e.g. "map_country") before querying facets — matching the
+        behaviour of the search route.
+        """
         if self._known_values is not None:
             return self._known_values
         self._known_values = {}
@@ -98,8 +107,12 @@ class SearchTracker:
 
             db = get_db_for_source(self.data_source)
             for field in self._field_boost_fields:
+                storage_field = map_field_to_storage(field)
                 raw = db.facet_documents(
-                    key=field, filter_conditions=None, limit=2000, exact=False
+                    key=storage_field,
+                    filter_conditions=None,
+                    limit=2000,
+                    exact=False,
                 )
                 vals: List[str] = []
                 for rv in raw:
@@ -118,8 +131,38 @@ class SearchTracker:
             self._field_boost_enabled = False
         return self._known_values
 
+    @staticmethod
+    def _wrap_for_field_boost(results: List) -> List:
+        """Wrap raw Qdrant ScoredPoints for ``apply_field_boost``.
+
+        ``apply_field_boost`` expects objects with ``.metadata``,
+        ``.text``, ``.title``, ``.organization``, and ``.score``
+        attributes (the ``SearchResult`` interface).  Raw Qdrant
+        ScoredPoints have ``.payload`` / ``.score`` / ``.id`` instead.
+        """
+        wrapped: List = []
+        for r in results:
+            payload = r.payload if hasattr(r, "payload") else r
+            w = SimpleNamespace(
+                _original=r,
+                payload=payload,
+                id=getattr(r, "id", None),
+                metadata=dict(payload),
+                text=payload.get("text", ""),
+                title=(payload.get("map_title") or payload.get("title") or ""),
+                organization=payload.get("map_organization", ""),
+                score=getattr(r, "score", 0.0),
+            )
+            wrapped.append(w)
+        return wrapped
+
     def _apply_field_boost(self, results: List, query: str) -> List:
-        """Apply field boost to raw search results if enabled."""
+        """Apply field boost to raw search results if enabled.
+
+        Wraps Qdrant ScoredPoints with lightweight adapters so that
+        ``apply_field_boost`` (which expects a ``SearchResult``-like
+        interface) can access ``.metadata``, ``.text``, etc.
+        """
         if not self._field_boost_enabled or not self._field_boost_fields:
             return results
         known = self._resolve_known_values()
@@ -128,10 +171,44 @@ class SearchTracker:
         try:
             from ui.backend.services.search_models import apply_field_boost
 
-            return apply_field_boost(results, query, self._field_boost_fields, known)
+            wrapped = self._wrap_for_field_boost(results)
+            boosted = apply_field_boost(wrapped, query, self._field_boost_fields, known)
+            return boosted
         except Exception as exc:
             logger.warning("Field boost failed: %s", exc)
             return results
+
+    @staticmethod
+    def _enrich_from_postgres(
+        formatted: List[Dict[str, Any]], data_source: Optional[str]
+    ) -> None:
+        """Fill in page numbers, bounding boxes and headings from PostgreSQL.
+
+        Qdrant payloads don't store page numbers or bounding boxes — they
+        live in the PostgreSQL ``chunks`` table.  This mirrors what the
+        search route does via ``_build_chunk_cache``.
+        """
+        chunk_ids = [r["chunk_id"] for r in formatted if r.get("chunk_id")]
+        if not chunk_ids:
+            return
+        try:
+            from ui.backend.utils.app_state import get_pg_for_source
+
+            pg = get_pg_for_source(data_source)
+            chunk_cache = pg.fetch_chunks(chunk_ids)
+            for r in formatted:
+                cid = r["chunk_id"]
+                if cid not in chunk_cache:
+                    continue
+                pg_chunk = chunk_cache[cid]
+                if not r.get("page"):
+                    r["page"] = pg_chunk.get("sys_page_num")
+                if not r.get("bbox"):
+                    r["bbox"] = pg_chunk.get("sys_bbox")
+                if not r.get("headings"):
+                    r["headings"] = pg_chunk.get("sys_headings") or []
+        except Exception as exc:
+            logger.warning("Failed to enrich chunk data from Postgres: %s", exc)
 
     def search(self, query: str) -> List[Dict[str, Any]]:
         """Execute search, track results, return formatted dicts.
@@ -160,6 +237,7 @@ class SearchTracker:
             )
             raw = self._apply_field_boost(raw, query)
             formatted = [_format_search_result(r) for r in raw]
+            self._enrich_from_postgres(formatted, self.data_source)
         except Exception as exc:
             logger.error("Search failed for query %r: %s", query, exc)
             formatted = []
@@ -197,17 +275,19 @@ class SearchTracker:
         sources: List[Dict[str, Any]] = []
         for r in ordered:
             text = r.get("text", "")
-            sources.append(
-                {
-                    "chunkId": r.get("chunk_id", ""),
-                    "docId": r.get("doc_id", ""),
-                    "title": r.get("title", ""),
-                    "text": (text[:200] + "...") if len(text) > 200 else text,
-                    "score": r.get("score", 0.0),
-                    "page": r.get("page"),
-                    "index": r.get("global_index"),
-                }
-            )
+            entry: Dict[str, Any] = {
+                "chunkId": r.get("chunk_id", ""),
+                "docId": r.get("doc_id", ""),
+                "title": r.get("title", ""),
+                "text": (text[:200] + "...") if len(text) > 200 else text,
+                "score": r.get("score", 0.0),
+                "page": r.get("page"),
+                "index": r.get("global_index"),
+                "headings": r.get("headings", []),
+            }
+            if r.get("bbox"):
+                entry["bbox"] = r["bbox"]
+            sources.append(entry)
         return sources
 
 
@@ -307,13 +387,13 @@ def build_research_agent(
 
 def _load_deep_research_prompt(data_source: Optional[str] = None) -> str:
     """Load and render the deep research coordinator prompt."""
-    template = _jinja_env.get_template("assistant_deep_research.j2")
+    template = _jinja_env.get_template("assistant_deep_research_coordinator.j2")
     return template.render(data_source=data_source)
 
 
 def _load_researcher_prompt(data_source: Optional[str] = None) -> str:
-    """Load and render the researcher sub-agent prompt."""
-    template = _jinja_env.get_template("assistant_researcher.j2")
+    """Load and render the deep research researcher sub-agent prompt."""
+    template = _jinja_env.get_template("assistant_deep_research_researcher.j2")
     return template.render(data_source=data_source)
 
 
