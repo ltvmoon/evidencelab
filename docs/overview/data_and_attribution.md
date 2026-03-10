@@ -1,4 +1,4 @@
-# Data Sources & Attribution
+## Data Sources & Attribution
 
 Evidence Lab includes publicly available documents sourced from third parties for the purpose of testing document ingestion, search, and AI-assisted analysis at scale.
 

@@ -4461,6 +4461,286 @@ li.ai-fact-active::before {
   margin: 0;
 }
 
+/* Documentation Page — lock viewport so docs columns fill remaining space exactly */
+.app:has(.docs-page) {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main-content:has(.docs-page) {
+  padding: var(--spacing-xl);
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.docs-page {
+  display: flex;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  gap: var(--spacing-lg);
+  height: 100%;
+}
+
+/* Subtle scrollbars for docs columns */
+.docs-sidebar,
+.docs-content,
+.docs-toc,
+.docs-nav-tree {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+
+.docs-sidebar::-webkit-scrollbar,
+.docs-content::-webkit-scrollbar,
+.docs-toc::-webkit-scrollbar,
+.docs-nav-tree::-webkit-scrollbar {
+  width: 6px;
+}
+
+.docs-sidebar::-webkit-scrollbar-track,
+.docs-content::-webkit-scrollbar-track,
+.docs-toc::-webkit-scrollbar-track,
+.docs-nav-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.docs-sidebar::-webkit-scrollbar-thumb,
+.docs-content::-webkit-scrollbar-thumb,
+.docs-toc::-webkit-scrollbar-thumb,
+.docs-nav-tree::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: 3px;
+}
+
+.docs-sidebar::-webkit-scrollbar-thumb:hover,
+.docs-content::-webkit-scrollbar-thumb:hover,
+.docs-toc::-webkit-scrollbar-thumb:hover,
+.docs-nav-tree::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-400);
+}
+
+.docs-sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 1.25rem 0 1rem;
+}
+
+.docs-search {
+  padding: 0 1rem 1rem;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.docs-search-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: var(--gray-700);
+  background: var(--gray-50);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.docs-search-input:focus {
+  border-color: var(--brand-primary);
+  background: var(--white);
+}
+
+.docs-search-input::placeholder {
+  color: var(--gray-400);
+}
+
+.docs-nav-tree {
+  padding: 0.5rem 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.docs-nav-folder {
+  margin-bottom: 0.25rem;
+}
+
+.docs-nav-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gray-600);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  text-align: left;
+}
+
+.docs-nav-folder-header:hover {
+  color: var(--gray-800);
+}
+
+.docs-nav-folder-arrow {
+  font-size: 0.7rem;
+  width: 1rem;
+  text-align: center;
+  color: var(--gray-400);
+}
+
+.docs-nav-folder-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.docs-nav-item {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 1rem 0.4rem 2.25rem;
+  border: none;
+  background: none;
+  font-size: 0.875rem;
+  color: var(--gray-600);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s, background-color 0.15s;
+  line-height: 1.4;
+}
+
+.docs-nav-item:hover {
+  color: var(--brand-primary-dark);
+  background: var(--gray-50);
+}
+
+.docs-nav-item.active {
+  color: #fff;
+  background: var(--brand-primary);
+  font-weight: 500;
+  border-right: 3px solid var(--brand-primary-dark);
+}
+
+.docs-content {
+  flex: 1;
+  padding: 2rem;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* Table of Contents - right sidebar (stays on gray background) */
+.docs-toc {
+  width: 200px;
+  min-width: 200px;
+  overflow-y: auto;
+  padding: 1rem 0.75rem 1.5rem;
+}
+
+.docs-toc-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+  padding-left: 0.5rem;
+}
+
+.docs-toc-item {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: none;
+  font-size: 0.8rem;
+  color: var(--gray-500);
+  cursor: pointer;
+  text-align: left;
+  line-height: 1.4;
+  border-left: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.docs-toc-item:hover {
+  color: var(--gray-700);
+}
+
+.docs-toc-item.active {
+  color: var(--brand-primary);
+  border-left-color: var(--brand-primary);
+  font-weight: 500;
+}
+
+.docs-toc-indent {
+  padding-left: 1.25rem;
+}
+
+@media (max-width: 1100px) {
+  .docs-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .app:has(.docs-page) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .main-content:has(.docs-page) {
+    overflow: visible;
+  }
+
+  .docs-page {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .docs-sidebar {
+    width: 100%;
+    min-width: unset;
+    height: auto;
+    max-height: 50vh;
+    border-radius: 0;
+    box-shadow: none;
+    border: none;
+    border-bottom: 1px solid var(--gray-200);
+  }
+
+  .docs-content {
+    padding: 1rem;
+  }
+}
+
+.docs-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  color: var(--gray-500);
+  font-size: 0.95rem;
+}
+
+.docs-no-results {
+  padding: 1rem;
+  color: var(--gray-400);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
 /* About Modal Content */
 .about-page-container {
   max-width: 1200px;
@@ -4475,6 +4755,21 @@ li.ai-fact-active::before {
 .about-content {
   line-height: 1.8;
   color: var(--gray-700);
+}
+
+.about-content h2 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.about-content h3 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.about-content h4 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .about-content p {
@@ -4502,10 +4797,23 @@ li.ai-fact-active::before {
 
 .about-content code {
   font-size: 0.9em;
+  background: var(--gray-100);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
 }
 
 .about-content pre {
   font-size: 0.9em;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  background: var(--gray-50);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+.about-content pre code {
+  background: none;
+  padding: 0;
 }
 
 .about-content table {
