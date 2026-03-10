@@ -69,30 +69,28 @@ class TestPasswordValidation:
         assert "at least" in str(exc.value.reason)
 
     @pytest.mark.asyncio
-    async def test_rejects_password_without_digit(self):
-        """Passwords without a digit are rejected."""
-        manager = _make_manager()
-        user = _make_user()
-        with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
-            await manager.validate_password("Abcdefgh", user)
-        assert "digit" in str(exc.value.reason)
-
-    @pytest.mark.asyncio
-    async def test_rejects_password_without_letter(self):
-        """Passwords without a letter are rejected."""
-        manager = _make_manager()
-        user = _make_user()
-        with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
-            await manager.validate_password("12345678", user)
-        assert "letter" in str(exc.value.reason)
-
-    @pytest.mark.asyncio
     async def test_accepts_valid_password(self):
-        """A password meeting all criteria should be accepted."""
+        """A password meeting minimum length should be accepted."""
         manager = _make_manager()
         user = _make_user()
-        # Should not raise
-        pw = "Secure1Pass"  # pragma: allowlist secret
+        # Should not raise — length-only validation per ASVS V2.1.9
+        pw = "a-long-enough-password"  # pragma: allowlist secret
+        await manager.validate_password(pw, user)
+
+    @pytest.mark.asyncio
+    async def test_accepts_digits_only_password(self):
+        """Digit-only passwords are allowed if they meet length requirement."""
+        manager = _make_manager()
+        user = _make_user()
+        pw = "123456789012"  # pragma: allowlist secret
+        await manager.validate_password(pw, user)
+
+    @pytest.mark.asyncio
+    async def test_accepts_letters_only_password(self):
+        """Letter-only passwords are allowed if they meet length requirement."""
+        manager = _make_manager()
+        user = _make_user()
+        pw = "abcdefghijklmnop"  # pragma: allowlist secret
         await manager.validate_password(pw, user)
 
     @pytest.mark.asyncio
@@ -104,14 +102,14 @@ class TestPasswordValidation:
         # Use a schema object (registration path) — not an ORM model
         schema_user = BaseUserCreate(
             email="user@evil.com",
-            password="Secure1Pass",  # pragma: allowlist secret
+            password="Secure1Pass!XY",  # pragma: allowlist secret
         )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset({"example.com", "corp.org"}),
         ):
             with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
-                pw = "Secure1Pass"  # pragma: allowlist secret
+                pw = "Secure1Pass!XY"  # pragma: allowlist secret
                 await manager.validate_password(pw, schema_user)
             assert "restricted" in str(exc.value.reason).lower()
 
@@ -123,13 +121,13 @@ class TestPasswordValidation:
         manager = _make_manager()
         schema_user = BaseUserCreate(
             email="user@corp.org",
-            password="Secure1Pass",  # pragma: allowlist secret
+            password="Secure1Pass!XY",  # pragma: allowlist secret
         )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset({"example.com", "corp.org"}),
         ):
-            pw = "Secure1Pass"  # pragma: allowlist secret
+            pw = "Secure1Pass!XY"  # pragma: allowlist secret
             await manager.validate_password(pw, schema_user)
 
     @pytest.mark.asyncio
@@ -140,13 +138,13 @@ class TestPasswordValidation:
         manager = _make_manager()
         schema_user = BaseUserCreate(
             email="user@anydomain.io",
-            password="Secure1Pass",  # pragma: allowlist secret
+            password="Secure1Pass!XY",  # pragma: allowlist secret
         )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset(),
         ):
-            pw = "Secure1Pass"  # pragma: allowlist secret
+            pw = "Secure1Pass!XY"  # pragma: allowlist secret
             await manager.validate_password(pw, schema_user)
 
     @pytest.mark.asyncio
@@ -155,8 +153,8 @@ class TestPasswordValidation:
         manager = _make_manager()
         user = _make_user()
         short_pw = "Abcde12345"  # pragma: allowlist secret
-        with patch("ui.backend.auth.users.MIN_PASSWORD_LENGTH", 12):
-            # 10 chars should fail with min=12
+        with patch("ui.backend.auth.users.MIN_PASSWORD_LENGTH", 16):
+            # 10 chars should fail with min=16
             with pytest.raises(fu_exceptions.InvalidPasswordException):
                 await manager.validate_password(short_pw, user)
 
@@ -523,14 +521,14 @@ class TestDomainCheckRegistrationOnly:
         manager = _make_manager()
         schema_user = BaseUserCreate(
             email="user@evil.com",
-            password="Secure1Pass",  # pragma: allowlist secret
+            password="Secure1Pass!XY",  # pragma: allowlist secret
         )
         with patch(
             "ui.backend.auth.users.ALLOWED_EMAIL_DOMAINS",
             frozenset({"example.com"}),
         ):
             with pytest.raises(fu_exceptions.InvalidPasswordException) as exc:
-                pw = "Secure1Pass"  # pragma: allowlist secret
+                pw = "Secure1Pass!XY"  # pragma: allowlist secret
                 await manager.validate_password(pw, schema_user)
             assert "restricted" in str(exc.value.reason).lower()
 
@@ -545,7 +543,7 @@ class TestDomainCheckRegistrationOnly:
             frozenset({"example.com"}),
         ):
             # Should NOT raise — domain check skipped for ORM model
-            pw = "Secure1Pass"  # pragma: allowlist secret
+            pw = "Secure1Pass!XY"  # pragma: allowlist secret
             await manager.validate_password(pw, orm_user)
 
 
@@ -585,8 +583,8 @@ class TestTokenLifetimeConfiguration:
             importlib.reload(mod)
             assert mod.VERIFY_TOKEN_LIFETIME == 172800
 
-    def test_reset_token_default_24_hours(self):
-        """Default reset token lifetime should be 86400 seconds (24 hours)."""
+    def test_reset_token_default_1_hour(self):
+        """Default reset token lifetime should be 3600 seconds (1 hour)."""
         env = {"AUTH_SECRET_KEY": "a" * 64}  # pragma: allowlist secret
         with patch.dict("os.environ", env, clear=False):
             import os
@@ -597,10 +595,10 @@ class TestTokenLifetimeConfiguration:
             import ui.backend.auth.users as mod
 
             importlib.reload(mod)
-            assert mod.RESET_PASSWORD_TOKEN_LIFETIME == 86400
+            assert mod.RESET_PASSWORD_TOKEN_LIFETIME == 3600
 
-    def test_verify_token_default_7_days(self):
-        """Default verify token lifetime should be 604800 seconds (7 days)."""
+    def test_verify_token_default_24_hours(self):
+        """Default verify token lifetime should be 86400 seconds (24 hours)."""
         env = {"AUTH_SECRET_KEY": "a" * 64}  # pragma: allowlist secret
         with patch.dict("os.environ", env, clear=False):
             import os
@@ -611,7 +609,7 @@ class TestTokenLifetimeConfiguration:
             import ui.backend.auth.users as mod
 
             importlib.reload(mod)
-            assert mod.VERIFY_TOKEN_LIFETIME == 604800
+            assert mod.VERIFY_TOKEN_LIFETIME == 86400
 
     def test_user_manager_uses_configured_lifetimes(self):
         """UserManager class should use the configured token lifetimes."""

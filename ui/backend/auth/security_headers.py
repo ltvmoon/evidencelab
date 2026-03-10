@@ -48,6 +48,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
+    # Paths whose responses must never be cached (auth, user data, etc.)
+    _SENSITIVE_PREFIXES = ("/auth/", "/users/", "/groups/", "/ratings/", "/activity/")
+
     async def dispatch(self, request, call_next):  # type: ignore[override]
         response = await call_next(request)
 
@@ -63,5 +66,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         if _HSTS_VALUE:
             response.headers["Strict-Transport-Security"] = _HSTS_VALUE
+
+        # Prevent caching of sensitive endpoints (ASVS V8.1.4)
+        path = request.url.path
+        if any(path.startswith(p) for p in self._SENSITIVE_PREFIXES):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
 
         return response

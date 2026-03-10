@@ -181,3 +181,74 @@ class TestCSPHeader:
         async with _client(app) as client:
             response = await client.post("/submit")
         assert "Content-Security-Policy" in response.headers
+
+
+class TestCacheControlHeaders:
+    """Test Cache-Control: no-store on sensitive endpoints (ASVS V8.1.4)."""
+
+    @staticmethod
+    def _make_app_with_sensitive_routes():
+        """Create an app with sensitive path endpoints."""
+        from fastapi import FastAPI
+
+        app = FastAPI()
+
+        @app.get("/test")
+        async def public_endpoint():
+            return {"status": "ok"}
+
+        @app.get("/auth/login")
+        async def auth_endpoint():
+            return {"status": "ok"}
+
+        @app.get("/users/me")
+        async def users_endpoint():
+            return {"status": "ok"}
+
+        @app.get("/groups/list")
+        async def groups_endpoint():
+            return {"status": "ok"}
+
+        @app.get("/ratings/summary")
+        async def ratings_endpoint():
+            return {"status": "ok"}
+
+        @app.get("/activity/recent")
+        async def activity_endpoint():
+            return {"status": "ok"}
+
+        app.add_middleware(SecurityHeadersMiddleware)
+        return app
+
+    @pytest.mark.asyncio
+    async def test_cache_control_on_auth_endpoint(self):
+        """Auth endpoints should have Cache-Control: no-store."""
+        app = self._make_app_with_sensitive_routes()
+        async with _client(app) as client:
+            response = await client.get("/auth/login")
+        assert response.headers.get("Cache-Control") == "no-store"
+        assert response.headers.get("Pragma") == "no-cache"
+
+    @pytest.mark.asyncio
+    async def test_cache_control_on_users_endpoint(self):
+        """User endpoints should have Cache-Control: no-store."""
+        app = self._make_app_with_sensitive_routes()
+        async with _client(app) as client:
+            response = await client.get("/users/me")
+        assert response.headers.get("Cache-Control") == "no-store"
+
+    @pytest.mark.asyncio
+    async def test_cache_control_on_groups_endpoint(self):
+        """Group endpoints should have Cache-Control: no-store."""
+        app = self._make_app_with_sensitive_routes()
+        async with _client(app) as client:
+            response = await client.get("/groups/list")
+        assert response.headers.get("Cache-Control") == "no-store"
+
+    @pytest.mark.asyncio
+    async def test_no_cache_control_on_public_endpoint(self):
+        """Public endpoints should NOT have Cache-Control: no-store."""
+        app = self._make_app_with_sensitive_routes()
+        async with _client(app) as client:
+            response = await client.get("/test")
+        assert response.headers.get("Cache-Control") != "no-store"

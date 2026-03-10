@@ -68,7 +68,7 @@ ALLOWED_EMAIL_DOMAINS: frozenset[str] = frozenset(
 )
 
 # Minimum password length enforced at the backend (defence-in-depth).
-MIN_PASSWORD_LENGTH = int(os.environ.get("AUTH_MIN_PASSWORD_LENGTH", "8"))
+MIN_PASSWORD_LENGTH = int(os.environ.get("AUTH_MIN_PASSWORD_LENGTH", "12"))
 
 # Account lockout — lock after N consecutive failures for M minutes.
 LOCKOUT_THRESHOLD = int(os.environ.get("AUTH_LOCKOUT_THRESHOLD", "5"))
@@ -77,10 +77,10 @@ LOCKOUT_DURATION_MINUTES = int(os.environ.get("AUTH_LOCKOUT_DURATION_MINUTES", "
 # Token lifetimes for password reset and email verification.
 # These are independent of the JWT access token lifetime (1 hour).
 RESET_PASSWORD_TOKEN_LIFETIME = int(
-    os.environ.get("AUTH_RESET_TOKEN_LIFETIME", "86400")  # 24 hours
+    os.environ.get("AUTH_RESET_TOKEN_LIFETIME", "3600")  # 1 hour (ASVS V2.5.2)
 )
 VERIFY_TOKEN_LIFETIME = int(
-    os.environ.get("AUTH_VERIFY_TOKEN_LIFETIME", "604800")  # 7 days
+    os.environ.get("AUTH_VERIFY_TOKEN_LIFETIME", "86400")  # 24 hours (ASVS V2.3.2)
 )
 
 
@@ -223,14 +223,6 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         if len(password) < MIN_PASSWORD_LENGTH:
             raise fu_exceptions.InvalidPasswordException(
                 reason=f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
-            )
-        if not any(c.isdigit() for c in password):
-            raise fu_exceptions.InvalidPasswordException(
-                reason="Password must contain at least one digit."
-            )
-        if not any(c.isalpha() for c in password):
-            raise fu_exceptions.InvalidPasswordException(
-                reason="Password must contain at least one letter."
             )
 
         # Domain whitelist — only on registration (not password change).
