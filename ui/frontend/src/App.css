@@ -507,13 +507,14 @@ h6,
 /* Navigation Tabs */
 .nav-tabs {
   display: flex;
-  gap: 0;
+  gap: 0.5rem;
   max-width: 1400px;
   margin: 0 auto;
   padding: 0 var(--spacing-xl);
   background: transparent;
   border-bottom: none;
   align-items: center;
+  justify-content: center;
 }
 
 .nav-label {
