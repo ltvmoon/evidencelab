@@ -10299,7 +10299,22 @@ a.admin-citation-clickable:hover {
   justify-content: space-between;
   align-items: flex-start;
   gap: 0.5rem;
-  margin-top: 0.25rem;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--gray-200);
+}
+
+/* Remove duplicate border when references are inside the footer */
+.chat-message-footer .ai-summary-references {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* Align stars with the references toggle button */
+.chat-message-footer .star-rating {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
 }
 
 /* Collapsible references section */
