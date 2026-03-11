@@ -3,15 +3,15 @@
 Make user_id nullable on user_ratings so non-logged-in visitors
 can submit ratings.
 
-Revision ID: 0016_allow_anonymous_ratings
-Revises: 0015_create_conversation_tables
+Revision ID: 0017_allow_anonymous_ratings
+Revises: 0016_add_password_history
 Create Date: 2026-03-11
 """
 
 from alembic import op  # type: ignore[attr-defined]
 
-revision = "0016_allow_anonymous_ratings"
-down_revision = "0015_create_conversation_tables"
+revision = "0017_allow_anonymous_ratings"
+down_revision = "0016_add_password_history"
 branch_labels = None
 depends_on = None
 
