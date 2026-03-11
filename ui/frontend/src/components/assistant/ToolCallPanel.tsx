@@ -27,6 +27,28 @@ const formatSetting = (key: string, value: unknown): string | null => {
   }
 };
 
+/** A single result card with expandable text. */
+const ResultCard: React.FC<{ r: { title: string; text: string }; id: string }> = ({ r, id }) => {
+  const [textOpen, setTextOpen] = useState(false);
+  const isTruncated = r.text.length > 0 && r.text.endsWith('...');
+
+  return (
+    <div
+      key={id}
+      className={`tool-call-result-card${isTruncated ? ' tool-call-result-card--clickable' : ''}`}
+      onClick={isTruncated ? () => setTextOpen(!textOpen) : undefined}
+      role={isTruncated ? 'button' : undefined}
+      tabIndex={isTruncated ? 0 : undefined}
+      onKeyDown={isTruncated ? (e) => { if (e.key === 'Enter' || e.key === ' ') setTextOpen(!textOpen); } : undefined}
+    >
+      <div className="tool-call-result-title">{r.title}</div>
+      <div className={`tool-call-result-text${textOpen ? ' tool-call-result-text--expanded' : ''}`}>
+        {r.text}
+      </div>
+    </div>
+  );
+};
+
 /** A single expandable search query row with optional result cards. */
 const QueryRow: React.FC<{ tc: SearchToolCall; index: number }> = ({ tc, index }) => {
   const [open, setOpen] = useState(false);
@@ -50,10 +72,7 @@ const QueryRow: React.FC<{ tc: SearchToolCall; index: number }> = ({ tc, index }
       {open && hasResults && (
         <div className="tool-call-results-cards">
           {tc.results!.map((r, j) => (
-            <div key={`${index}-${j}`} className="tool-call-result-card">
-              <div className="tool-call-result-title">{r.title}</div>
-              <div className="tool-call-result-text">{r.text}</div>
-            </div>
+            <ResultCard key={`${index}-${j}`} r={r} id={`${index}-${j}`} />
           ))}
         </div>
       )}

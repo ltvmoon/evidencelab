@@ -266,7 +266,7 @@ class SearchTracker:
             result_cards.append(
                 {
                     "title": r.get("title", "Untitled"),
-                    "text": (text[:150] + "...") if len(text) > 150 else text,
+                    "text": (text[:500] + "...") if len(text) > 500 else text,
                 }
             )
 

@@ -10701,7 +10701,6 @@ a.admin-citation-clickable:hover {
 
 .tool-call-code-entry {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
   gap: 1rem;
 }
@@ -10776,6 +10775,16 @@ a.admin-citation-clickable:hover {
   text-overflow: ellipsis;
 }
 
+.tool-call-result-card--clickable {
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.tool-call-result-card--clickable:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: var(--brand-border);
+}
+
 .tool-call-result-text {
   font-size: 0.65rem;
   color: var(--brand-text-tertiary);
@@ -10785,6 +10794,12 @@ a.admin-citation-clickable:hover {
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-style: normal;
+}
+
+.tool-call-result-text--expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 
 /* Thread history modal */
