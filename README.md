@@ -4,9 +4,9 @@
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Introduction
+**NOTICE**: *Evidence Lab v1.1.0 is coming soon (by Mar 20th 2026). This includes user management, AI assistants, improved security compliance and better documentation. Watch this space!!*
 
-**NOTICE**: Evidence Lab v1.1.0 is coming soon. This includes user management, AI assistants, improved security compliance and better documentation. Watch this space!!
+## Introduction
 
 ![Evidence Lab](ui/frontend/public/docs/images/evidence-lab.png)
 
