@@ -234,6 +234,10 @@ The authentication module is opt-in and built on [fastapi-users](https://fastapi
   * `GET /activity/export` — admin: XLSX download
 * **Data lifecycle** — both tables use `ON DELETE CASCADE` on the `user_id` foreign key, so all ratings and activity are automatically deleted when a user account is removed.
 
+### Security
+
+For full details on security architecture, automated scanning, container security, and development practices, see [SECURITY.md](https://github.com/dividor/evidencelab/blob/main/SECURITY.md). This covers defense-in-depth measures including pre-commit hooks (Bandit, Gitleaks, Hadolint), CI/CD security jobs (pip-audit, npm audit, Trivy container scanning), CORS configuration, rate limiting, API key authentication, and the active authentication enforcement middleware.
+
 ### User self-service
 
 * **Profile management** — users can update their display name from the Profile modal.

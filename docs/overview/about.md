@@ -58,7 +58,6 @@ Evidence Lab document processing pipeline includes the following features:
 - Semantic highlighting in search results
 - Basic language translation
 - PDF preview with in-document search
-- **Configurable AI prompts** — all AI processes (summaries, tagging, research assistant) use editable Jinja2 prompt templates, with group-level overrides available via the admin panel
 - Administration views to track pipeline, documents, performance and errors
 
 ### User Authentication & Permissions (opt-in)
