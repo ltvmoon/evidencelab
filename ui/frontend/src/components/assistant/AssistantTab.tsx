@@ -287,74 +287,76 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
       },
     };
 
-    await streamAssistantChat({
-      apiBaseUrl: API_BASE_URL,
-      query: query.trim(),
-      dataSource,
-      threadId: activeThreadId,
-      assistantModelConfig: assistantModelConfig,
-      rerankerModel: rerankerModel,
-      searchSettings: searchSettings,
-      deepResearch,
-      handlers,
-      signal: controller.signal,
-    });
+    try {
+      await streamAssistantChat({
+        apiBaseUrl: API_BASE_URL,
+        query: query.trim(),
+        dataSource,
+        threadId: activeThreadId,
+        assistantModelConfig: assistantModelConfig,
+        rerankerModel: rerankerModel,
+        searchSettings: searchSettings,
+        deepResearch,
+        handlers,
+        signal: controller.signal,
+      });
 
-    // Finalize: convert streaming state into a proper message using refs
-    const finalContent = contentRef.current;
-    const finalSources = sourcesRef.current;
-    const finalToolCalls = toolCallsRef.current;
+      // Finalize: convert streaming state into a proper message using refs
+      const finalContent = contentRef.current;
+      const finalSources = sourcesRef.current;
+      const finalToolCalls = toolCallsRef.current;
 
-    if (finalContent) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: nextMessageId(),
-          role: 'assistant',
-          content: finalContent,
-          sources: finalSources.length > 0 ? finalSources : [],
-          toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      if (finalContent) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextMessageId(),
+            role: 'assistant',
+            content: finalContent,
+            sources: finalSources.length > 0 ? finalSources : [],
+            toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
 
-      // Log assistant interaction to activity
-      const activityId = crypto.randomUUID();
-      const searchResults: SearchResult[] = finalToolCalls.flatMap((tc) =>
-        (tc.results || []).map((r) => ({
-          chunk_id: '',
-          doc_id: '',
-          title: r.title || 'Untitled',
-          score: 0,
-          page_num: 0,
-          text: r.text || '',
-          headings: [],
-          metadata: {},
-        }))
-      );
-      logSearch(activityId, query.trim(), {
-        type: deepResearch ? 'assistant-deep-research' : 'assistant-basic',
-        searches: finalToolCalls.map((tc) => ({
-          query: tc.query,
-          resultCount: tc.resultCount,
-          results: (tc.results || []).map((r) => ({
+        // Log assistant interaction to activity
+        const activityId = crypto.randomUUID();
+        const searchResults: SearchResult[] = finalToolCalls.flatMap((tc) =>
+          (tc.results || []).map((r) => ({
+            chunk_id: '',
+            doc_id: '',
             title: r.title || 'Untitled',
+            score: 0,
+            page_num: 0,
             text: r.text || '',
+            headings: [],
+            metadata: {},
+          }))
+        );
+        logSearch(activityId, query.trim(), {
+          type: deepResearch ? 'assistant-deep-research' : 'assistant-basic',
+          searches: finalToolCalls.map((tc) => ({
+            query: tc.query,
+            resultCount: tc.resultCount,
+            results: (tc.results || []).map((r) => ({
+              title: r.title || 'Untitled',
+              text: r.text || '',
+            })),
           })),
-        })),
-      }, searchResults, undefined, finalContent);
+        }, searchResults, undefined, finalContent);
+      }
+    } finally {
+      // Always clear streaming state, even on error/abort
+      contentRef.current = '';
+      sourcesRef.current = [];
+      toolCallsRef.current = [];
+      setStreamingContent('');
+      setStreamingSources([]);
+      setToolCalls([]);
+      setIsStreaming(false);
+      setStreamingPhase('');
+      abortRef.current = null;
     }
-
-    // Clear streaming state
-    contentRef.current = '';
-    sourcesRef.current = [];
-    toolCallsRef.current = [];
-    setStreamingContent('');
-    setStreamingSources([]);
-    setToolCalls([]);
-    setIsStreaming(false);
-    setStreamingPhase('');
-    abortRef.current = null;
   }, [isStreaming, dataSource, activeThreadId, assistantModelConfig, rerankerModel, searchSettings, deepResearch, isAuthenticated, loadThreads]);
 
   const handleSubmit = useCallback(() => {

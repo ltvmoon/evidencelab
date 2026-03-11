@@ -23,14 +23,30 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize textarea
-  useEffect(() => {
+  // Auto-resize textarea (also triggers when becoming visible after display:none)
+  const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = 'auto';
       textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
     }
-  }, [value]);
+  }, []);
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [value, resizeTextarea]);
+
+  // Re-measure when the component becomes visible (e.g. tab switch from display:none)
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const observer = new ResizeObserver(() => {
+      // Defer to next frame to avoid ResizeObserver loop errors
+      requestAnimationFrame(resizeTextarea);
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, [resizeTextarea]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
