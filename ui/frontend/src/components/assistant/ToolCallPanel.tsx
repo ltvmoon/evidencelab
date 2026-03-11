@@ -30,16 +30,16 @@ const formatSetting = (key: string, value: unknown): string | null => {
 /** A single result card with expandable text. */
 const ResultCard: React.FC<{ r: { title: string; text: string }; id: string }> = ({ r, id }) => {
   const [textOpen, setTextOpen] = useState(false);
-  const isTruncated = r.text.length > 0 && r.text.endsWith('...');
+  const hasText = r.text.length > 0;
 
   return (
     <div
       key={id}
-      className={`tool-call-result-card${isTruncated ? ' tool-call-result-card--clickable' : ''}`}
-      onClick={isTruncated ? () => setTextOpen(!textOpen) : undefined}
-      role={isTruncated ? 'button' : undefined}
-      tabIndex={isTruncated ? 0 : undefined}
-      onKeyDown={isTruncated ? (e) => { if (e.key === 'Enter' || e.key === ' ') setTextOpen(!textOpen); } : undefined}
+      className={`tool-call-result-card${hasText ? ' tool-call-result-card--clickable' : ''}`}
+      onClick={hasText ? () => setTextOpen(!textOpen) : undefined}
+      role={hasText ? 'button' : undefined}
+      tabIndex={hasText ? 0 : undefined}
+      onKeyDown={hasText ? (e) => { if (e.key === 'Enter' || e.key === ' ') setTextOpen(!textOpen); } : undefined}
     >
       <div className="tool-call-result-title">{r.title}</div>
       <div className={`tool-call-result-text${textOpen ? ' tool-call-result-text--expanded' : ''}`}>
