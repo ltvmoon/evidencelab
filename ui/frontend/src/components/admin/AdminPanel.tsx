@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { USER_MODULE } from '../../config';
 import { useAuth } from '../../hooks/useAuth';
 import ActivityManager from './ActivityManager';
+import ApiKeyManager from './ApiKeyManager';
 import GroupManager from './GroupManager';
 import GroupSettingsManager from './GroupSettingsManager';
 import RatingsManager from './RatingsManager';
@@ -11,13 +12,14 @@ interface AdminPanelProps {
   isActive: boolean;
 }
 
-type AdminTab = 'users' | 'groups' | 'group-settings' | 'ratings' | 'activity';
+type AdminTab = 'users' | 'groups' | 'group-settings' | 'ratings' | 'activity' | 'api-keys';
 
 const TAB_USERS: AdminTab = 'users';
 const TAB_GROUPS: AdminTab = 'groups';
 const TAB_GROUP_SETTINGS: AdminTab = 'group-settings';
 const TAB_RATINGS: AdminTab = 'ratings';
 const TAB_ACTIVITY: AdminTab = 'activity';
+const TAB_API_KEYS: AdminTab = 'api-keys';
 const ACTIVE_CLASS = 'admin-tab-active';
 
 const tabClass = (tab: AdminTab, current: AdminTab) =>
@@ -64,6 +66,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isActive }) => {
           >
             Activity
           </button>
+          <button
+            className={tabClass(tab, TAB_API_KEYS)}
+            onClick={() => setTab(TAB_API_KEYS)}
+          >
+            API Keys
+          </button>
         </div>
       </div>
       <div className="admin-tab-content">
@@ -72,6 +80,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ isActive }) => {
         {tab === TAB_GROUP_SETTINGS && <GroupSettingsManager />}
         {tab === TAB_RATINGS && <RatingsManager />}
         {tab === TAB_ACTIVITY && <ActivityManager />}
+        {tab === TAB_API_KEYS && <ApiKeyManager />}
       </div>
     </div>
   );

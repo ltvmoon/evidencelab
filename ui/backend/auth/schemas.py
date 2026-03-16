@@ -410,6 +410,37 @@ class SavedResearchListItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ---------------------------------------------------------------------------
+# API key schemas
+# ---------------------------------------------------------------------------
+
+
+class ApiKeyCreate(BaseModel):
+    """Payload for generating a new API key."""
+
+    label: str = Field("API Key", min_length=1, max_length=255)
+
+
+class ApiKeyRead(BaseModel):
+    """API key representation (never includes the full key)."""
+
+    id: uuid.UUID
+    label: str
+    key_prefix: str
+    is_active: bool
+    created_at: datetime
+    created_by_email: Optional[str] = None
+    last_used_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ApiKeyCreated(ApiKeyRead):
+    """Returned once at creation time — includes the full plaintext key."""
+
+    key: str
+
+
 # ----- Research Assistant Schemas -----
 
 

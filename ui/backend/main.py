@@ -116,6 +116,10 @@ async def verify_api_key(request: Request, api_key: str = Depends(api_key_header
     """Verify the API key from request header"""
     if request.url.path == "/health":
         return None
+    # Swagger UI and OpenAPI schema — allow unauthenticated access so users
+    # can load the docs page and then authenticate via the Authorize button.
+    if request.url.path in ("/docs", "/redoc", "/openapi.json"):
+        return None
     if request.url.path.startswith("/file/") or request.url.path.startswith("/pdf/"):
         return None
     if "/thumbnail" in request.url.path:
@@ -135,22 +139,64 @@ async def verify_api_key(request: Request, api_key: str = Depends(api_key_header
         "/activity/"
     ):
         return None
+    # API key management routes use cookie-based JWT auth (superuser).
+    if request.url.path.startswith("/api-keys"):
+        return None
     if not API_KEY:
         # If no API key configured, allow all requests (development mode)
         return None
-    if not api_key or not secrets.compare_digest(api_key, API_KEY):
+    if not api_key:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return api_key
+    # Check global env key first (fast path, timing-safe)
+    if secrets.compare_digest(api_key, API_KEY):
+        return api_key
+    # Check admin-managed keys via cached SHA-256 hashes
+    import hashlib
+
+    from ui.backend.auth.api_key_cache import get_active_key_hashes
+
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    active_hashes = await get_active_key_hashes()
+    if key_hash in active_hashes:
+        return api_key
+    raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
-# Disable docs in production (when API_KEY is set)
+# API documentation always available; endpoints still require API key.
+# Users authenticate via the Authorize button in Swagger UI.
 app = FastAPI(
-    title="Humanitarian Evaluation Search API",
+    title="Evidence Lab API",
     dependencies=[Depends(verify_api_key)],
-    docs_url=None if API_KEY else "/docs",
-    redoc_url=None if API_KEY else "/redoc",
-    openapi_url=None if API_KEY else "/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    swagger_ui_parameters={"persistAuthorization": True},
 )
+
+
+def _custom_openapi():
+    """Strip OAuth2/Cookie schemes so Swagger Authorize only shows API key."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+    )
+    schemes = schema.get("components", {}).get("securitySchemes", {})
+    # Keep only the API key header scheme
+    for name in list(schemes):
+        if schemes[name].get("type") != "apiKey" or schemes[name].get("in") != "header":
+            del schemes[name]
+    # Update global security to reference only the remaining scheme
+    schema["security"] = [{name: []} for name in schemes]
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _custom_openapi  # type: ignore[method-assign]
 
 # Add rate limiter to app
 app.state.limiter = limiter
@@ -235,6 +281,11 @@ async def startup_event():
                 "(e.g. `openssl rand -hex 32`).",
                 len(raw_secret),
             )
+    if not API_KEY:
+        logger.warning(
+            "API_SECRET_KEY is not set -- API endpoints are NOT protected. "
+            "Set API_SECRET_KEY in .env (e.g. openssl rand -hex 32)."
+        )
     logger.info("Max concurrent searches: %s", MAX_CONCURRENT_SEARCHES)
     if not PRELOAD_EMBEDDING_MODELS:
         logger.info("⏩ Skipping model preload (PRELOAD_EMBEDDING_MODELS=false)")
@@ -815,12 +866,14 @@ if USER_MODULE:
     app.include_router(groups_routes.router, prefix="/groups", tags=["groups"])
 
     from ui.backend.routes import activity as activity_routes
+    from ui.backend.routes import api_keys as api_keys_routes
     from ui.backend.routes import ratings as ratings_routes
     from ui.backend.routes import research as research_routes
 
     app.include_router(ratings_routes.router, prefix="/ratings", tags=["ratings"])
     app.include_router(activity_routes.router, prefix="/activity", tags=["activity"])
     app.include_router(research_routes.router, prefix="/research", tags=["research"])
+    app.include_router(api_keys_routes.router, prefix="/api-keys", tags=["api-keys"])
     logger.info("User module enabled (USER_MODULE=%s)", USER_MODULE_MODE)
 
     # Auto-promote first superuser on startup (if configured)
