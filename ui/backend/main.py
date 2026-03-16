@@ -113,7 +113,7 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 async def verify_api_key(request: Request, api_key: str = Depends(api_key_header)):
-    """Verify the API key from request header"""
+    """Verify the API key from request header, or valid session cookie."""
     if request.url.path == "/health":
         return None
     # Swagger UI and OpenAPI schema — allow unauthenticated access so users
@@ -145,20 +145,26 @@ async def verify_api_key(request: Request, api_key: str = Depends(api_key_header
     if not API_KEY:
         # If no API key configured, allow all requests (development mode)
         return None
-    if not api_key:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    # Check global env key first (fast path, timing-safe)
-    if secrets.compare_digest(api_key, API_KEY):
-        return api_key
-    # Check admin-managed keys via cached SHA-256 hashes
-    import hashlib
+    # Check API key first (external / Swagger users)
+    if api_key:
+        # Check global env key (fast path, timing-safe)
+        if secrets.compare_digest(api_key, API_KEY):
+            return api_key
+        # Check admin-managed keys via cached SHA-256 hashes
+        import hashlib
 
-    from ui.backend.auth.api_key_cache import get_active_key_hashes
+        from ui.backend.auth.api_key_cache import get_active_key_hashes
 
-    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    active_hashes = await get_active_key_hashes()
-    if key_hash in active_hashes:
-        return api_key
+        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        active_hashes = await get_active_key_hashes()
+        if key_hash in active_hashes:
+            return api_key
+    # Allow authenticated UI users through (session cookie / Bearer JWT).
+    # ActiveAuthMiddleware performs full validation; here we just check for
+    # the presence of a cookie so the dependency doesn't reject logged-in
+    # browser requests that don't carry an API key header.
+    if USER_MODULE and request.cookies.get("evidencelab_auth"):
+        return None
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
