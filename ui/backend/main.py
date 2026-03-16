@@ -139,12 +139,27 @@ async def verify_api_key(request: Request, api_key: str = Depends(api_key_header
         "/activity/"
     ):
         return None
+    # API key management routes use cookie-based JWT auth (superuser).
+    if request.url.path.startswith("/api-keys"):
+        return None
     if not API_KEY:
         # If no API key configured, allow all requests (development mode)
         return None
-    if not api_key or not secrets.compare_digest(api_key, API_KEY):
+    if not api_key:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return api_key
+    # Check global env key first (fast path, timing-safe)
+    if secrets.compare_digest(api_key, API_KEY):
+        return api_key
+    # Check admin-managed keys via cached SHA-256 hashes
+    import hashlib
+
+    from ui.backend.auth.api_key_cache import get_active_key_hashes
+
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    active_hashes = await get_active_key_hashes()
+    if key_hash in active_hashes:
+        return api_key
+    raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 # API documentation always available; endpoints still require API key.
@@ -851,12 +866,14 @@ if USER_MODULE:
     app.include_router(groups_routes.router, prefix="/groups", tags=["groups"])
 
     from ui.backend.routes import activity as activity_routes
+    from ui.backend.routes import api_keys as api_keys_routes
     from ui.backend.routes import ratings as ratings_routes
     from ui.backend.routes import research as research_routes
 
     app.include_router(ratings_routes.router, prefix="/ratings", tags=["ratings"])
     app.include_router(activity_routes.router, prefix="/activity", tags=["activity"])
     app.include_router(research_routes.router, prefix="/research", tags=["research"])
+    app.include_router(api_keys_routes.router, prefix="/api-keys", tags=["api-keys"])
     logger.info("User module enabled (USER_MODULE=%s)", USER_MODULE_MODE)
 
     # Auto-promote first superuser on startup (if configured)

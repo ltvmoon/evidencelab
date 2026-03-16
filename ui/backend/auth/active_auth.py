@@ -8,6 +8,7 @@ Routes that handle their own authentication (``/auth/*``, ``/users/*``, etc.)
 are exempt.
 """
 
+import hashlib
 import logging
 import secrets as _secrets
 
@@ -34,6 +35,7 @@ EXEMPT_PATH_PREFIXES = (
     "/groups/",
     "/ratings/",
     "/activity/",
+    "/api-keys",
     "/docs",
     "/redoc",
     "/openapi.json",
@@ -66,7 +68,7 @@ class ActiveAuthMiddleware(BaseHTTPMiddleware):
         # --- Authentication checks (any one is sufficient) ---
 
         # 1. Valid API key header
-        if self._has_valid_api_key(request):
+        if await self._has_valid_api_key_async(request):
             return await call_next(request)
 
         # 2. Valid Authorization: Bearer <jwt>
@@ -106,11 +108,17 @@ class ActiveAuthMiddleware(BaseHTTPMiddleware):
         except jwt.PyJWTError:
             return False
 
-    def _has_valid_api_key(self, request: Request) -> bool:
-        """Return True if the request carries the correct API key header."""
-        if not self._api_key:
-            return False
+    async def _has_valid_api_key_async(self, request: Request) -> bool:
+        """Return True if the request carries a valid API key header."""
         header_key = request.headers.get("x-api-key", "")
         if not header_key:
             return False
-        return _secrets.compare_digest(header_key, self._api_key)
+        # Check global env key first (timing-safe)
+        if self._api_key and _secrets.compare_digest(header_key, self._api_key):
+            return True
+        # Check admin-managed keys via cached hashes
+        from ui.backend.auth.api_key_cache import get_active_key_hashes
+
+        key_hash = hashlib.sha256(header_key.encode()).hexdigest()
+        active_hashes = await get_active_key_hashes()
+        return key_hash in active_hashes
