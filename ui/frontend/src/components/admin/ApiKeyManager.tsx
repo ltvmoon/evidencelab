@@ -17,7 +17,7 @@ interface CreatedKey extends ApiKeyItem {
   key: string;
 }
 
-const MASK = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
+const MASK = '**************************************';
 
 const ApiKeyManager: React.FC = () => {
   const [currentKey, setCurrentKey] = useState<ApiKeyItem | null>(null);
@@ -84,7 +84,7 @@ const ApiKeyManager: React.FC = () => {
 
   if (loading) return <p>Loading...</p>;
 
-  const displayValue = revealedKey || (currentKey ? `${currentKey.key_prefix}${MASK}` : '');
+  const displayValue = revealedKey || (currentKey ? MASK : '');
 
   return (
     <div className="admin-section">

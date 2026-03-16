@@ -53,7 +53,7 @@ describe('ApiKeyManager', () => {
     await waitFor(() => {
       expect(screen.getByText('Regenerate')).toBeInTheDocument();
     });
-    const input = screen.getByDisplayValue(/el_abc12ab/);
+    const input = screen.getByDisplayValue(/\*{6,}/);
     expect(input).toBeInTheDocument();
   });
 
