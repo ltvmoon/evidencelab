@@ -2608,8 +2608,56 @@ function App() {
   const activeFiltersCount = Object.values(filters).filter(Boolean).length;
   const heatmapActiveFiltersCount = Object.values(heatmapFilters).filter(Boolean).length;
 
-  const displayFacets =
-    allFacetsDataSource === dataSource && allFacets ? allFacets : facets;
+  // When a search query is active, merge allFacets (all DB values) with
+  // query-aware facets (counts from search results).  Show every value from
+  // the full DB but use the query-derived count; values not in the search
+  // results get count 0 (the UI hides the number for those).
+  const displayFacets = React.useMemo(() => {
+    const all = allFacetsDataSource === dataSource ? allFacets : null;
+    const queryAware = facets;
+
+    // No allFacets yet — fall back to whatever we have
+    if (!all) return queryAware;
+
+    // No query-aware facets (no search active) — show full DB facets
+    if (!queryAware || !hasSearchRun || !query?.trim()) return all;
+
+    // Merge: all values from allFacets, counts from queryAware facets
+    const mergedFacetEntries: Record<string, FacetValue[]> = {};
+    for (const [field, allValues] of Object.entries(all.facets)) {
+      const queryValues = queryAware.facets[field] || [];
+      const queryCountMap = new Map(queryValues.map(v => [v.value, v.count]));
+
+      // Start with all DB values, using query count (or 0)
+      const seen = new Set<string>();
+      const merged: FacetValue[] = allValues.map(v => {
+        seen.add(v.value);
+        return { ...v, count: queryCountMap.get(v.value) ?? 0 };
+      });
+
+      // Add any query-result values not in allFacets (shouldn't happen, but safe)
+      for (const qv of queryValues) {
+        if (!seen.has(qv.value)) {
+          merged.push(qv);
+        }
+      }
+
+      // Sort: items with counts first (descending), then zero-count alphabetically
+      merged.sort((a, b) => {
+        if (a.count > 0 && b.count === 0) return -1;
+        if (a.count === 0 && b.count > 0) return 1;
+        if (a.count !== b.count) return b.count - a.count;
+        return a.value.localeCompare(b.value);
+      });
+
+      mergedFacetEntries[field] = merged;
+    }
+
+    return {
+      ...all,
+      facets: mergedFacetEntries,
+    } as Facets;
+  }, [allFacets, allFacetsDataSource, facets, dataSource, hasSearchRun, query]);
 
   const requestHighlightHandler = resolveRequestHighlightHandler(
     SEARCH_SEMANTIC_HIGHLIGHTS,
