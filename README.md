@@ -83,6 +83,35 @@ More features will be added soon, focused on document evidence analysis and MCP 
 
 You can explore the hosted version at [evidencelab.ai](https://evidencelab.ai).
 
+### Demo (quickest way to try it)
+
+To get up and running in minutes with a few sample documents:
+
+```bash
+# Start all services
+docker compose up -d --build
+
+# Run the demo (downloads 3 World Bank documents and processes them)
+python scripts/demo/run_demo.py
+```
+
+This will automatically add a "Demo" datasource to `config.json`, download 3
+documents from the World Bank API, and run the full pipeline. Once complete,
+open http://localhost:3000 and select the **Demo** data source.
+
+Options:
+
+```bash
+# Download more documents
+python scripts/demo/run_demo.py --num-docs 10
+
+# Re-run pipeline on previously downloaded documents
+python scripts/demo/run_demo.py --skip-download
+
+# Only download documents (skip pipeline)
+python scripts/demo/run_demo.py --skip-pipeline
+```
+
 ### Quick Start
 
 1. **Configure data sources**
