@@ -821,13 +821,20 @@ def _count_list_values(counter: Counter, val: List) -> None:
             counter[item] += 1
 
 
-def _split_multivalue_inline(val: str) -> List[str]:
-    """Split a multi-value string on '; ' or ' | ' separators."""
-    if "; " in val:
-        return [p.strip() for p in val.split("; ") if p.strip()]
-    if " | " in val:
-        return [p.strip() for p in val.split(" | ") if p.strip()]
-    return []
+def _count_string_value(counter: Counter, val: str) -> None:
+    """Split a string value on known separators and add clean parts to *counter*."""
+    from ui.backend.utils.facet_helpers import (  # noqa: PLC0415
+        _looks_like_concatenated,
+        _split_multivalue,
+    )
+
+    parts = _split_multivalue(val)
+    if parts:
+        for item in parts:
+            if not _looks_like_concatenated(item):
+                counter[item] += 1
+    elif not _looks_like_concatenated(val):
+        counter[val] += 1
 
 
 def _accumulate_facet_counts(
@@ -846,12 +853,7 @@ def _accumulate_facet_counts(
         elif isinstance(val, list):
             _count_list_values(counter, val)
         elif isinstance(val, str):
-            parts = _split_multivalue_inline(val)
-            if parts:
-                for item in parts:
-                    counter[item] += 1
-            else:
-                counter[val] += 1
+            _count_string_value(counter, val)
         else:
             counter[val] += 1
     return counter

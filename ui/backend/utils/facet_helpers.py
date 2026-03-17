@@ -1,6 +1,7 @@
 """Helpers for building facet results from Qdrant and PostgreSQL."""
 
 import logging
+import re
 from collections import Counter
 from typing import Any, Dict, List, Tuple
 
@@ -45,6 +46,18 @@ def build_year_facets(raw_counts: Dict[Any, int]) -> List[FacetValue]:
     return [FacetValue(value=value, count=count) for value, count in year_items]
 
 
+def _looks_like_concatenated(value: str) -> bool:
+    """Return True if a value appears to be multiple items joined without a separator.
+
+    Detects patterns like ``"BangladeshCambodiaIndia"`` where a lowercase
+    letter is immediately followed by an uppercase letter (indicating two
+    words were concatenated without any delimiter).  Requires at least two
+    such transitions to avoid false positives on legitimate values like
+    ``"McDonald's"``.
+    """
+    return len(re.findall(r"[a-z][A-Z]", value)) >= 2
+
+
 def _split_multivalue(raw_value: str) -> List[str]:
     """Split a multi-value string on '; ' or ' | ' separators.
 
@@ -58,18 +71,26 @@ def _split_multivalue(raw_value: str) -> List[str]:
     return []
 
 
+def _accumulate_raw_value(counter: Counter, raw_value: Any, count: int) -> None:
+    """Add a single raw facet value (possibly multi-valued) to *counter*."""
+    if raw_value is None or raw_value == "":
+        return
+    if isinstance(raw_value, str):
+        parts = _split_multivalue(raw_value)
+        if parts:
+            for item in parts:
+                if not _looks_like_concatenated(item):
+                    counter[item] += count
+            return
+        if _looks_like_concatenated(raw_value):
+            return
+    counter[str(raw_value)] += count
+
+
 def build_generic_facets(raw_counts: Dict[Any, int]) -> List[FacetValue]:
     counter: Counter[str] = Counter()
     for raw_value, count in raw_counts.items():
-        if raw_value is None or raw_value == "":
-            continue
-        if isinstance(raw_value, str):
-            parts = _split_multivalue(raw_value)
-            if parts:
-                for item in parts:
-                    counter[item] += count
-                continue
-        counter[str(raw_value)] += count
+        _accumulate_raw_value(counter, raw_value, count)
     return [
         FacetValue(value=value, count=count) for value, count in counter.most_common()
     ]
