@@ -41,13 +41,11 @@ export const AgentStatus: React.FC<AgentStatusProps> = ({ phase, searchQueries, 
         <>
           <div className="agent-status-indicator">
             <span className="agent-status-label">{PHASE_CONFIG.searching}</span>
-            {!hasAnyQueries && (
-              <span className="agent-status-dots">
-                <span className="dot">.</span>
-                <span className="dot">.</span>
-                <span className="dot">.</span>
-              </span>
-            )}
+            <span className="agent-status-dots">
+              <span className="dot">.</span>
+              <span className="dot">.</span>
+              <span className="dot">.</span>
+            </span>
           </div>
           {hasAnyQueries && (
             <div className="agent-status-detail">
