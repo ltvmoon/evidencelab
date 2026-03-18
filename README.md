@@ -6,6 +6,8 @@
 
 ## Introduction
 
+![Evidence Lab](docs/images/evidence-lab.png)
+
 Evidence Lab is a free open source platform that provides a document pipeline, search, and AI-powered information discovery tools. The aim is to provide a quick start for those looking to use AI with their documents and a place where new ideas can be tested.
 
 You can run the code yourself, or explore the online version at [evidencelab.ai](https://evidencelab.ai) which has so far been populated with about 20,000 United Nations humanitarian evaluation reports sourced from the [United Nations Evaluation Group](https://www.un.org/evaluations). See [Data](ui/frontend/public/docs/data.md) for more information on these amazing documents.
@@ -41,9 +43,11 @@ Evidence Lab document processing pipeline includes the following features:
 
 2. User interface
 
+[![Evidence Lab Overview](https://cdn.loom.com/sessions/thumbnails/b3043d80834e44b3b935b7db7a086a1d-with-play.gif)](https://www.loom.com/share/b3043d80834e44b3b935b7db7a086a1d)
+
 | Search | Research Assistant | Heatmapper | Pipeline |
 |:---:|:---:|:---:|:---:|
-| <img src="ui/frontend/public/docs/images/search-guide/search-results-full.png" alt="Search" height="200"> | <img src="ui/frontend/public/docs/images/assistant/assistant-response.png" alt="Research Assistant" height="200"> | <img src="ui/frontend/public/docs/images/heatmapper-overview.png" alt="Heatmapper" height="200"> | <img src="ui/frontend/public/docs/images/monitor/pipeline-view.png" alt="Pipeline" height="200"> |
+| <img src="docs/images/search-guide/search-results-full.png" alt="Search" height="200"> | <img src="docs/images/assistant/assistant-response.png" alt="Research Assistant" height="200"> | <img src="docs/images/heatmapper-overview.png" alt="Heatmapper" height="200"> | <img src="docs/images/monitor/pipeline-view.png" alt="Pipeline" height="200"> |
 
 - Hybrid search with AI summary and reranking
 - **Research Assistant** — chat-based AI agent that searches, analyzes, and synthesizes findings with inline citations and multi-turn conversations with thread history
