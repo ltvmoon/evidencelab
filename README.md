@@ -43,7 +43,7 @@ Evidence Lab document processing pipeline includes the following features:
 
 2. User interface
 
-[![Evidence Lab Overview](https://cdn.loom.com/sessions/thumbnails/b3043d80834e44b3b935b7db7a086a1d-with-play.gif)](https://www.loom.com/share/b3043d80834e44b3b935b7db7a086a1d)
+[![Evidence Lab Overview](https://cdn.loom.com/sessions/thumbnails/b3043d80834e44b3b935b7db7a086a1d-04eb569ecf17a386.jpg)](https://www.loom.com/share/b3043d80834e44b3b935b7db7a086a1d)
 
 | Search | Research Assistant | Heatmapper | Pipeline |
 |:---:|:---:|:---:|:---:|
