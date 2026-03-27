@@ -671,6 +671,16 @@ h6,
   padding-right: 9rem;
 }
 
+/* Mobile: icon only, shorter padding */
+@media (max-width: 768px) {
+  .search-input-filters .search-input-filters-label {
+    display: none;
+  }
+  .search-input-wrapper .search-input {
+    padding-right: 3.5rem;
+  }
+}
+
 .search-container.search-container-landing .search-input {
   font-size: 1.25rem;
   padding: 0 1.75rem;
@@ -1346,10 +1356,6 @@ h6,
   width: 180px;
 }
 
-.documents-table col.col-ocr {
-  width: 100px;
-}
-
 .documents-table col.col-chunks {
   width: 120px;
 }
@@ -1511,6 +1517,8 @@ h6,
 
 .filter-popover-content {
   padding: 12px;
+  overflow-y: auto;
+  max-height: 340px;
 }
 
 /* Text filter input */
