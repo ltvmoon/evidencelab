@@ -135,6 +135,7 @@ async def verify_api_key(request: Request, api_key: str = Depends(api_key_header
 # root_path lets Swagger UI find /openapi.json when behind a reverse proxy
 # that strips a path prefix (e.g. nginx /api/ → /).
 ROOT_PATH = os.environ.get("API_ROOT_PATH", "")
+
 app = FastAPI(
     title="Evidence Lab API",
     dependencies=[Depends(verify_api_key)],
