@@ -4,6 +4,8 @@
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+> 📖 **Comprehensive documentation** is available at [evidencelab.ai/docs](https://evidencelab.ai/docs), sourced from the [`docs/`](docs/) folder in this repository.
+
 ## Introduction
 
 ![Evidence Lab](docs/images/evidence-lab.png)
@@ -66,7 +68,15 @@ Evidence Lab document processing pipeline includes the following features:
 - Built-in searchable documentation area with sidebar navigation
 - Administration views to track pipeline, documents, performance and errors
 
-3. User authentication & permissions (opt-in)
+3. AI platform integrations
+
+- **REST API** — full programmatic access to search, documents, and admin functions. Protected by API key authentication. Interactive docs at `/api/docs` (Swagger UI). See [API docs](docs/admin/api-keys.md)
+- **MCP Server** — [Model Context Protocol](https://modelcontextprotocol.io/) server allowing Claude, ChatGPT, and other AI assistants to search Evidence Lab documents as tools. Connect via `+ > Connectors` in Claude or `+ > More Add Sources` in ChatGPT. Tools: `search` (semantic search with filters, facets, and citations) and `get_document` (full document metadata)
+- **A2A Agent** — [Agent-to-Agent protocol](https://google.github.io/A2A/) server for AI agent frameworks (Google ADK, CrewAI, LangGraph, etc.). Exposes a `research` skill (full assistant synthesis with streaming) and `search` skill. Runs on the same service as MCP. Agent Card at `/.well-known/agent.json`
+- Both protocols share OAuth 2.0 authentication (or `X-API-Key` header), rate limiting, and audit logging
+- API keys are managed via Admin → API Keys. After generating a new key, allow up to 60 seconds before using it with MCP or A2A (key hashes are cached per-process on a 60-second TTL). The `API_SECRET_KEY` env var takes effect immediately.
+
+4. User authentication & permissions (opt-in)
 
 - Email/password registration with email verification, or OAuth single sign-on (Google, Microsoft)
 - Cookie-based sessions with CSRF protection — no tokens in localStorage
@@ -79,7 +89,7 @@ Evidence Lab document processing pipeline includes the following features:
 - Built on [fastapi-users](https://fastapi-users.github.io/fastapi-users/) with future MFA support in mind
 - Three modes via `USER_MODULE` in `.env`: `off` (default), `on_passive` (optional login), `on_active` (login required)
 
-More features will be added soon, focused on document evidence analysis and MCP (Model Context Protocol) support. See the [CHANGELOG](CHANGELOG.md) for the full list of recent additions.
+See the [CHANGELOG](CHANGELOG.md) for the full list of recent additions.
 
 ## Getting started
 

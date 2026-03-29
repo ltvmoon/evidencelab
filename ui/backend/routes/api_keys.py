@@ -27,6 +27,7 @@ def _key_to_read(key: ApiKey, email: str | None = None) -> ApiKeyRead:
         id=key.id,
         label=key.label,
         key_prefix=key.key_prefix,
+        key_value=key.key_value,
         is_active=key.is_active,
         created_at=key.created_at,
         created_by_email=email,
@@ -64,6 +65,7 @@ async def create_api_key(
         label=body.label,
         key_hash=key_hash,
         key_prefix=key_prefix,
+        key_value=raw_key,
         created_by_user_id=admin.id,
     )
     session.add(api_key)
@@ -88,6 +90,22 @@ async def create_api_key(
         last_used_at=None,
         key=raw_key,
     )
+
+
+@router.get("/legacy")
+async def get_legacy_key(
+    admin: User = Depends(current_superuser),
+) -> dict:
+    """Return the legacy API_KEY env-var value (admin only).
+
+    This key is stored in plaintext in the environment and is safe to
+    expose to superusers for copy-paste convenience.
+    """
+    from ui.backend.auth.api_key_verify import API_KEY
+
+    if not API_KEY:
+        return {"key": None}
+    return {"key": API_KEY}
 
 
 @router.delete("/{key_id}")
