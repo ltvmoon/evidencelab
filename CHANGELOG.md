@@ -53,7 +53,34 @@ Evidence Lab v1.2.0 introduces native integration with external AI systems via t
 - `0024_mcp_audit_protocol` / `0025_merge_0024_heads` — protocol column and branch merge migration
 
 ### Dependency Updates
-FastAPI, Docling, PyMuPDF, RapidOCR, LangChain Core, Uvicorn, Selenium, and frontend TypeScript tooling.
+FastAPI, Docling, PyMuPDF, RapidOCR, LangChain Core, Uvicorn, Selenium, and frontend TypeScript tooling (#206–#219).
+
+### What's Changed
+- feat: A2A agent server with research and search skills (#240)
+- feat(admin): MCP/A2A audit log tab with protocol distinction (#243)
+- feat: Add MCP server with search, document, and assistant tools (#236)
+- feat: add UN Mandates Registry data source configuration (#226)
+- feat: Add --ocr-fallback for scanned PDF support (#227)
+- feat(demo): CI mode, e2e smoke tests, and demo-e2e workflow (#242)
+- fix(security): harden auth, API keys, MCP/A2A, nginx — full audit remediation (#241)
+- fix(auth): add credentials and API key to all frontend fetch calls (#235)
+- fix: translate and highlight 401 errors with auth credentials (#234)
+- fix: mobile search filter overlap (#233)
+- fix(ui): remove duplicate scrollbar on document column filters (#224)
+- fix(stats): show all organizations in stats bar chart (#225)
+- fix: add Vertex AI rate limiter to prevent 429 errors (#229)
+- fix: handle brotli-compressed Qdrant snapshots in dump/restore (#228)
+- fix(ci): add Docker Hub authentication to avoid rate limiting (#230)
+- fix(db): add Alembic migration for OCR fallback columns (#231)
+- fix(docs): add MCP docs to root docs/ so they survive the build (#239)
+- fix: miscellaneous fixes and project rename (#237)
+- docs: add application architecture diagram (#221)
+- docs: add UN Mandates Registry to data source pages (#232)
+- docs: update SECURITY.md with missing CI security practices (#222)
+- docs: comprehensive CLAUDE.md with architecture, commands, and patterns (#244)
+- perf: tune Postgres autovacuum and Qdrant write performance (#223)
+
+**Full diff:** https://github.com/dividor/evidencelab/compare/v1.1.0...v1.2.0
 
 ---
 
