@@ -32,6 +32,12 @@ CHUNKS_COLLECTION = os.getenv("CHUNKS_COLLECTION", f"chunks_{DEFAULT_DATA_SOURCE
 DEFAULT_SEGMENT_NUMBER = int(os.getenv("DEFAULT_SEGMENT_NUMBER", "0"))
 MAX_SEGMENT_SIZE = int(os.getenv("MAX_SEGMENT_SIZE", "200000"))
 
+# Write-performance tuning: delay HNSW indexing and mmap conversion
+# until segments reach this many points.  Higher values speed up bulk
+# ingestion at the cost of temporarily un-indexed (brute-force) search.
+INDEXING_THRESHOLD = int(os.getenv("INDEXING_THRESHOLD", "20000"))
+MEMMAP_THRESHOLD = int(os.getenv("MEMMAP_THRESHOLD", "20000"))
+
 _datasources_config: Dict[str, Any] = {}
 
 
@@ -153,6 +159,18 @@ def _resolve_default_dense_model(
 
     # 3. Hardcoded fallback
     return "e5_large"
+
+
+def get_default_model_combo() -> str:
+    """Return the name of the default ui_model_combo.
+
+    Prefers whichever combo has ``"default": true`` in config.json;
+    falls back to the first defined combo.
+    """
+    for name, combo in UI_MODEL_COMBOS.items():
+        if combo.get("default"):
+            return name
+    return next(iter(UI_MODEL_COMBOS), "")
 
 
 def refresh_config() -> None:

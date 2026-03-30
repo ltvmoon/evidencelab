@@ -7,6 +7,7 @@ interface ApiKeyItem {
   id: string;
   label: string;
   key_prefix: string;
+  key_value: string | null;
   is_active: boolean;
   created_at: string;
   created_by_email: string | null;
@@ -17,14 +18,13 @@ interface CreatedKey extends ApiKeyItem {
   key: string;
 }
 
-const MASK = '**************************************';
+const MASK = '••••••••••••••••••••••••••••••••••••••••';
 
 const ApiKeyManager: React.FC = () => {
   const [currentKey, setCurrentKey] = useState<ApiKeyItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -49,13 +49,15 @@ const ApiKeyManager: React.FC = () => {
     setGenerating(true);
     setCopied(false);
     try {
-      // Revoke existing key first if one exists
       if (currentKey) {
         await axios.delete(`${API_BASE_URL}/api-keys/${currentKey.id}`);
       }
       const resp = await axios.post<CreatedKey>(`${API_BASE_URL}/api-keys/`, { label: 'API Key' });
-      setRevealedKey(resp.data.key);
+      // Merge the returned full key into the fetched record
       await fetchKey();
+      // key_value will now be in currentKey after fetchKey resolves,
+      // but we can also set it immediately from the creation response
+      setCurrentKey((prev) => prev ? { ...prev, key_value: resp.data.key } : prev);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to generate API key');
     } finally {
@@ -63,18 +65,11 @@ const ApiKeyManager: React.FC = () => {
     }
   };
 
-  const handleGenerate = () => {
-    if (currentKey) {
-      setShowConfirm(true);
-    } else {
-      generateKey();
-    }
-  };
-
   const handleCopy = async () => {
-    if (!revealedKey) return;
+    const value = currentKey?.key_value || '';
+    if (!value) return;
     try {
-      await navigator.clipboard.writeText(revealedKey);
+      await navigator.clipboard.writeText(value);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -84,13 +79,15 @@ const ApiKeyManager: React.FC = () => {
 
   if (loading) return <p>Loading...</p>;
 
-  const displayValue = revealedKey || (currentKey ? MASK : '');
+  const fullKey = currentKey?.key_value || null;
+  const displayValue = fullKey || (currentKey ? `${currentKey.key_prefix}${MASK}` : '');
 
   return (
     <div className="admin-section">
       <h3>API Key</h3>
       <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 16 }}>
-        Use this key to authenticate API requests via the <code>X-API-Key</code> header.
+        Use this key to authenticate API, MCP, and A2A requests via the <code>X-API-Key</code> header.
+        After generating a new key, allow up to 60 seconds before using it with MCP or A2A.
       </p>
 
       {error && (
@@ -114,13 +111,13 @@ const ApiKeyManager: React.FC = () => {
             fontSize: 14,
             fontFamily: 'monospace',
             background: '#f9fafb',
-            color: revealedKey ? '#111827' : '#6b7280',
+            color: fullKey ? '#111827' : '#6b7280',
           }}
         />
         <button
           className="btn-sm btn-primary"
           onClick={handleCopy}
-          disabled={!revealedKey}
+          disabled={!fullKey}
           title="Copy key"
           style={{ height: 36, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 4 }}
         >
@@ -128,18 +125,17 @@ const ApiKeyManager: React.FC = () => {
         </button>
         <button
           className="btn-sm btn-primary"
-          onClick={handleGenerate}
+          onClick={() => currentKey ? setShowConfirm(true) : generateKey()}
           disabled={generating}
-          title={currentKey ? 'Regenerate key' : 'Generate key'}
           style={{ height: 36, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 4 }}
         >
           {generating ? 'Generating...' : currentKey ? 'Regenerate' : 'Generate'}
         </button>
       </div>
 
-      {revealedKey && (
-        <p style={{ color: '#d97706', fontSize: 13, marginTop: 8 }}>
-          Copy this key now — it will not be shown again after you leave this page.
+      {fullKey && (
+        <p style={{ color: '#d97706', fontSize: 12, marginTop: 8 }}>
+          Copy this key now — it will not be shown again.
         </p>
       )}
 
