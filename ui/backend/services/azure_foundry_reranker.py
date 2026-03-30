@@ -119,6 +119,8 @@ def rerank_with_azure_foundry(
         "top_n": len(documents),
     }
     endpoint = _get_azure_foundry_rerank_endpoint(config, deployment)
+    if not endpoint.startswith("https://"):
+        raise ValueError(f"Azure Foundry endpoint must use HTTPS, got: {endpoint!r}")
     api_key = _get_azure_foundry_api_key()
     request = Request(
         endpoint,
