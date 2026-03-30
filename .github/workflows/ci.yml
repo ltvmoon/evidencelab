@@ -275,7 +275,16 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest tests/unit/ -v
+          pytest tests/unit/ -v \
+            --cov=pipeline --cov=mcp_server --cov=a2a_server --cov=ui/backend --cov=utils \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
 
   integration-tests:
     if: github.actor != 'dependabot[bot]'
