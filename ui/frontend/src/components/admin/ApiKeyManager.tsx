@@ -134,7 +134,7 @@ const ApiKeyManager: React.FC = () => {
       </div>
 
       {fullKey && (
-        <p style={{ color: '#f59e0b', fontSize: 12, marginTop: 4 }}>
+        <p style={{ color: '#d97706', fontSize: 12, marginTop: 8 }}>
           Copy this key now — it will not be shown again.
         </p>
       )}

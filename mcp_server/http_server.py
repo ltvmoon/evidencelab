@@ -21,6 +21,7 @@ from starlette.requests import Request
 
 from a2a_server.app import handle_a2a_request, handle_agent_card
 from mcp_server.app import mcp as mcp_server
+from mcp_server.audit import request_auth, request_client_ip
 from mcp_server.auth import verify_mcp_auth
 from mcp_server.oauth import (
     build_authorize_redirect,
@@ -395,12 +396,13 @@ class MCPApp:
 
         # A2A JSON-RPC task endpoint
         if path in ("/a2a", "/a2a/") and method == "POST":
-            principal: str | None = None
+            a2a_auth_info: dict = {}
+            a2a_principal: str | None = None
             if REQUIRE_AUTH:
                 request = Request(scope, receive)
                 try:
-                    auth_info = await verify_mcp_auth(request)
-                    principal = auth_info.get("user_id")
+                    a2a_auth_info = await verify_mcp_auth(request)
+                    a2a_principal = a2a_auth_info.get("user_id")
                 except PermissionError as exc:
                     logger.warning("A2A auth DENIED: %s", exc)
                     body = json.dumps({"detail": str(exc)}).encode()
@@ -413,7 +415,14 @@ class MCPApp:
                     )
                     await send({"type": "http.response.body", "body": body})
                     return
-            await handle_a2a_request(scope, receive, send, principal=principal)
+            await handle_a2a_request(
+                scope,
+                receive,
+                send,
+                principal=a2a_principal,
+                auth_info=a2a_auth_info,
+                client_ip=_get_client_ip(scope),
+            )
             return
 
         # MCP endpoint
@@ -437,6 +446,10 @@ class MCPApp:
                 request = Request(scope, receive)
                 try:
                     principal = await verify_mcp_auth(request)
+                    request_auth.set(
+                        principal or {"type": "unknown", "user_id": "unknown"}
+                    )
+                    request_client_ip.set(_get_client_ip(scope))
                     logger.info("MCP auth OK: %s", principal)
                 except PermissionError as exc:
                     logger.warning("MCP auth DENIED: %s", exc)

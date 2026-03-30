@@ -11,9 +11,17 @@ import asyncio
 import json
 import logging
 import os
+from contextvars import ContextVar
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# Per-request auth context — set in http_server.py after auth passes,
+# read in app.py tool handlers so audit rows carry the real auth info.
+request_auth: ContextVar[Dict[str, Any]] = ContextVar(
+    "request_auth", default={"type": "unknown", "user_id": "unknown"}
+)
+request_client_ip: ContextVar[str] = ContextVar("request_client_ip", default="unknown")
 
 # Lazy-initialised asyncpg connection pool
 _pool = None
@@ -60,6 +68,7 @@ async def _do_log(
     duration_ms: float,
     status: str,
     error_message: Optional[str] = None,
+    protocol: str = "mcp",
 ) -> None:
     """Insert a single audit row.  Meant to be run as a fire-and-forget task."""
     pool = await _get_pool()
@@ -72,8 +81,8 @@ async def _do_log(
             INSERT INTO mcp_audit_log
                 (tool_name, auth_type, user_id, key_hash,
                  client_ip, input_params, output_summary,
-                 duration_ms, status, error_message)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 duration_ms, status, error_message, protocol)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             """,
             tool_name,
             auth_info.get("type", "unknown"),
@@ -81,10 +90,11 @@ async def _do_log(
             auth_info.get("key_hash"),
             client_ip,
             json.dumps(input_params, default=str),
-            output_summary[:2000] if output_summary else "",
+            output_summary or "",
             duration_ms,
             status,
             error_message,
+            protocol,
         )
     except Exception:
         logger.warning("MCP audit log insert failed", exc_info=True)
@@ -99,6 +109,7 @@ def log_mcp_call(
     duration_ms: float,
     status: str,
     error_message: Optional[str] = None,
+    protocol: str = "mcp",
 ) -> None:
     """Schedule an audit log write as a fire-and-forget background task.
 
@@ -116,6 +127,7 @@ def log_mcp_call(
                 duration_ms,
                 status,
                 error_message,
+                protocol,
             )
         )
     except RuntimeError:
