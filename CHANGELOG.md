@@ -2,6 +2,61 @@
 
 All notable changes to Evidence Lab will be documented in this file.
 
+## [1.2.0] - 2026-03-30
+
+Evidence Lab v1.2.0 introduces native integration with external AI systems via the Model Context Protocol (MCP) and the Google Agent-to-Agent (A2A) protocol, enabling AI assistants and autonomous agents to search, retrieve, and reason over document collections directly. This release also adds a UN Mandates Registry data source, OCR support for scanned PDFs, and a range of fixes and performance improvements.
+
+### MCP Server
+- Integrated MCP server exposing document collections as tools callable by any MCP-compatible AI assistant (Claude, Cursor, etc.) (#236)
+- Tools: `search`, `get_document`, `list_documents`, `get_chunk`, `search_chunks`
+- API key authentication with full audit logging of every tool call
+- Admin UI for browsing the MCP audit log with filtering and pagination
+- OAuth 2.0 support for MCP client authentication
+
+### A2A Server
+- Google Agent-to-Agent (A2A) protocol endpoint on the same port as MCP (#240)
+- Full protocol support: `tasks/send`, `tasks/sendSubscribe` (SSE streaming), `tasks/get`, `tasks/cancel`
+- Research skill (full AI-assisted synthesis) and search skill (direct retrieval)
+- Agent Card at `/.well-known/agent.json`
+- Ownership enforcement: only the originating principal can cancel their own tasks
+
+### New Data Source
+- UN Mandates Registry data source with field mappings, filters, metadata panel, and SDG taxonomy (#226)
+
+### OCR Fallback
+- `--ocr-fallback` CLI flag and `parse.ocr_fallback` config option for scanned PDF support (#227)
+- Documents parsing to fewer than 10 words are automatically retried with OCR
+- Tracks `sys_ocr_applied` per document; re-processes previously failed documents
+
+### Admin & API Keys
+- API key values now stored encrypted with Fernet (AES-128-CBC) (#243)
+- Copy-to-clipboard for newly generated keys in the admin panel
+- `protocol` column on MCP audit log to distinguish MCP vs A2A calls
+
+### Fixes & Improvements
+- **Auth**: Added `credentials` and `X-API-Key` to all frontend fetch calls, fixing 401 errors on translate/highlight (#234, #235)
+- **UI**: Fixed mobile search filter overlap (#233); removed duplicate scrollbar on document column filters (#224)
+- **Stats**: Fixed bar chart showing only the first organisation (#225)
+- **Vertex AI**: Added rate limiter to prevent 429 errors under load (#229)
+- **Performance**: Tuned Postgres autovacuum and Qdrant write performance for large collections (#223)
+- **Backups**: Fixed brotli-compressed Qdrant snapshot handling in dump/restore (#228)
+- **CI**: Added Docker Hub authentication to prevent pull rate limiting (#230)
+- **Docs**: Architecture diagrams, MCP and A2A connection guides (#221, #239)
+- **Demo**: CI mode for automated end-to-end demo smoke tests (#242)
+
+### Database Migrations
+- `0020_add_ocr_columns` — `sys_parsed_folder` and `sys_ocr_applied` on all `docs_*` tables
+- `0021_tune_autovacuum_tables` — autovacuum tuning for large document and chunk tables
+- `0022_create_mcp_audit_log` — MCP/A2A tool call audit log table
+- `0023_add_key_value_to_api_keys` — key value column for admin copy support
+- `0024_encrypt_api_key_values` — widens key_value to 512 chars for encrypted tokens
+- `0024_mcp_audit_protocol` / `0025_merge_0024_heads` — protocol column and branch merge migration
+
+### Dependency Updates
+FastAPI, Docling, PyMuPDF, RapidOCR, LangChain Core, Uvicorn, Selenium, and frontend TypeScript tooling.
+
+---
+
 ## [1.1.0] - 2026-03-18
 
 Evidence Lab v1.1.0 brings a full user authentication and permissions system, an experimental research assistant with deep research mode, a guided interactive demo, in-system documentation, and some security hardening.
