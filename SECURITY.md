@@ -49,7 +49,7 @@ Security-focused pre-commit hooks run on every commit:
 
 | Tool | Purpose | Configuration |
 |------|---------|---------------|
-| **Bandit** | Python SAST - detects security issues like SQL injection, hardcoded passwords, unsafe deserialization | `.pre-commit-config.yaml` |
+| **Bandit** | Python SAST - detects security issues like SQL injection, hardcoded passwords, unsafe deserialization. Runs at MEDIUM+HIGH severity (`-ll`); four checks skipped with documented justifications (B310, B608, B104, B615 — see `.pre-commit-config.yaml`). | `.pre-commit-config.yaml` |
 | **Hadolint** | Dockerfile linting - checks for security misconfigurations | `.pre-commit-config.yaml` |
 | **detect-secrets** | Prevents accidental credential commits | `.secrets.baseline` |
 | **Gitleaks** | Enhanced secret detection with comprehensive regex patterns | `.pre-commit-config.yaml` |
@@ -390,6 +390,11 @@ Before submitting a PR, ensure:
 
 ## Changelog
 
+- **2026-03-30**: Bandit upgrade and severity threshold increase
+  - Upgraded Bandit from 1.7.7 to 1.9.4 (latest)
+  - Raised threshold from HIGH-only (`-lll`) to MEDIUM+HIGH (`-ll`)
+  - Fixed B310 (urlopen scheme audit): added explicit `https://` / `http://` scheme validation in `azure_foundry_reranker.py` and `search_models.py` before calling `urlopen()`
+  - Documented four globally-skipped checks with justifications in `.pre-commit-config.yaml`: B310 (scheme validated in code), B608 (table names from config, not user input), B104 (intentional 0.0.0.0 bind), B615 (model ID from operator config)
 - **2026-03-10**: ASVS L2 Tier 1 + Tier 2 hardening (33 new tests)
   - Added request body size limit middleware — rejects >2 MB with HTTP 413 (`MAX_REQUEST_BODY_BYTES`, ASVS V13.1.3)
   - Added error detail sanitisation — production responses never expose internals (`API_DEBUG`, ASVS V7.1.1 / V7.4.1)
