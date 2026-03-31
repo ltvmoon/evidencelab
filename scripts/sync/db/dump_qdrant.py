@@ -183,7 +183,9 @@ def dump_qdrant(
             if api_key:
                 headers["api-key"] = api_key
 
-            with requests.get(download_url, headers=headers, stream=True) as r:
+            with requests.get(
+                download_url, headers=headers, stream=True, timeout=300
+            ) as r:
                 r.raise_for_status()
                 # Use iter_content instead of r.raw so that
                 # content-encoding (brotli, gzip) is decoded

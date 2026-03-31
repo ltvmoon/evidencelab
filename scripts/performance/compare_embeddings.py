@@ -67,7 +67,7 @@ def call_azure_foundry_embedding(endpoint, api_key, deploy_name, texts):
         # "model": deploy_name # Often optional if deployment implies model
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
     response.raise_for_status()
     data = response.json()
 
