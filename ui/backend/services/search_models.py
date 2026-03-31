@@ -81,6 +81,9 @@ def _normalize_embedding_url(url: str) -> str:
 
 
 def _embedding_server_healthy(base_url: str) -> bool:
+    parsed = urlparse(base_url)
+    if parsed.scheme not in ("http", "https"):
+        return False
     health_paths = ("/health", "/")
     for path in health_paths:
         try:
@@ -259,7 +262,7 @@ def _init_dense_model(vector_name: str, vec_config: Dict[str, Any]) -> Any:
 
 
 def get_dense_model(
-    vector_name: str = None,
+    vector_name: Optional[str] = None,
     *,
     db_vectors: Optional[Dict[str, Any]] = None,
     cache: Optional[Dict[str, Any]] = None,
@@ -306,7 +309,7 @@ def get_sparse_model(
 
 
 def get_models(
-    dense_vector_name: str = None,
+    dense_vector_name: Optional[str] = None,
     *,
     db_vectors: Optional[Dict[str, Any]] = None,
     dense_cache: Optional[Dict[str, Any]] = None,

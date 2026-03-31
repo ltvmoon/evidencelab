@@ -95,7 +95,7 @@ class ScanProcessor(ScannerMappingMixin, BaseProcessor):
     name = "ScanProcessor"
     stage_name = "download"
 
-    def __init__(self, base_dir: str = "./data/pdfs", db: Database = None):
+    def __init__(self, base_dir: str = "./data/pdfs", db: Optional[Database] = None):
         """
         Initialize scanner configuration.
 

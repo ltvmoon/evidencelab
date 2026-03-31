@@ -733,14 +733,14 @@ class PostgresDocMixin:
             map_pdf_url,
             map_report_url,
         ) = row
-        sys_status = None
-        sys_chunk_count = None
-        sys_filepath = None
-        sys_parsed_folder = None
+        sys_status: Optional[str] = None
+        sys_chunk_count: Optional[str] = None
+        sys_filepath_val: Optional[str] = None
+        sys_parsed_folder: Optional[str] = None
         if isinstance(sys_data, dict):
             sys_status = sys_data.get("sys_status")
             sys_chunk_count = sys_data.get("sys_chunk_count")
-            sys_filepath = sys_data.get("sys_filepath")
+            sys_filepath_val = sys_data.get("sys_filepath")
             sys_parsed_folder = sys_data.get("sys_parsed_folder")
         return {
             "id": doc_id,
@@ -751,7 +751,7 @@ class PostgresDocMixin:
             "sys_data": sys_data,
             "sys_status": sys_status,
             "sys_chunk_count": sys_chunk_count,
-            "sys_filepath": sys_filepath,
+            "sys_filepath": sys_filepath_val,
             "sys_parsed_folder": sys_parsed_folder,
             "map_report_url": map_report_url,
         }

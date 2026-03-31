@@ -4,6 +4,7 @@ Thank you for your interest in contributing to Evidence Lab! This document provi
 
 ## 📋 Table of Contents
 
+- [Requirements for Acceptable Contributions](#requirements-for-acceptable-contributions)
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
@@ -19,6 +20,30 @@ Thank you for your interest in contributing to Evidence Lab! This document provi
 - [Pull Request Process](#pull-request-process)
 - [Issue Guidelines](#issue-guidelines)
 - [Code Style](#code-style)
+
+## ✅ Requirements for Acceptable Contributions
+
+All contributions must meet the following requirements before they will be accepted:
+
+1. **Pre-commit hooks pass** — install and run `pre-commit` before opening a pull request (see [Pre-commit Hooks](#pre-commit-hooks)). This is mandatory, not optional. Hooks enforce formatting, linting, type checking, complexity limits, and secret detection.
+
+2. **Coding standards** — Python code must conform to the style enforced by our toolchain:
+   - **Formatting**: `black` (line length 100)
+   - **Import order**: `isort`
+   - **Linting**: `flake8` (with `flake8-bugbear`, `flake8-comprehensions`, `pep8-naming`)
+   - **Type annotations**: `mypy` with full Optional checking enforced (no implicit Optional)
+   - **Security**: `bandit` (medium and high severity findings fail the build)
+   - **Complexity**: cyclomatic complexity ≤ 10, cognitive complexity ≤ 15, maintainability index ≥ 20 per file (enforced by `scripts/quality/code_metrics.py`)
+
+3. **Tests** — new features must include unit tests; bug fixes should include a regression test. Run `pytest tests/unit/` before submitting.
+
+4. **No secrets or credentials** — `detect-secrets` and `gitleaks` run on every commit. Never commit API keys, tokens, or passwords.
+
+5. **Commit messages** — follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `ci:`, etc.).
+
+6. **Pull request target** — open PRs against the current release candidate branch (`rc/vX.Y.Z`) or `main` for hotfixes, never directly to `main` for new features.
+
+If any of these requirements are not met, CI will fail and the PR will not be merged until the issues are resolved.
 
 ## 🤝 Code of Conduct
 
@@ -509,7 +534,7 @@ Include:
 - **Formatter**: Black (line length: 88 characters)
 - **Import Sorting**: isort (Black-compatible profile)
 - **Linting**: flake8 with extensions for complexity and security
-- **Type Checking**: mypy (strict mode)
+- **Type Checking**: mypy (Optional checking enforced; scripts/ and alembic/ excluded)
 - **Type Hints**: Use type hints for function signatures
 - **Docstrings**: Google style docstrings
 
@@ -533,7 +558,7 @@ isort pipeline/ tests/
 
 # Check code quality
 flake8 pipeline/ tests/
-mypy pipeline/
+mypy --ignore-missing-imports pipeline/
 ```
 
 ## 🚀 Adding New Features

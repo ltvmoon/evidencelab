@@ -1,11 +1,13 @@
 """Tests for _deduplicate_results in the search route."""
 
+from typing import Any, Dict
+
 from ui.backend.routes.search import _deduplicate_results
 from ui.backend.schemas import SearchResult
 
 
-def _make_result(**overrides) -> SearchResult:
-    defaults = {
+def _make_result(**overrides: Any) -> SearchResult:
+    defaults: Dict[str, Any] = {
         "chunk_id": "chunk-1",
         "doc_id": "doc-1",
         "text": "Some text",

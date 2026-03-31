@@ -308,7 +308,7 @@ class ActivityRead(BaseModel):
     search_id: uuid.UUID
     query: str
     filters: Optional[dict] = None
-    search_results: Optional[list] = None
+    search_results: Optional[Any] = None
     ai_summary: Optional[str] = None
     url: Optional[str] = None
     has_ratings: bool

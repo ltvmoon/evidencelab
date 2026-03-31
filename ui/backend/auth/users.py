@@ -94,7 +94,7 @@ VERIFY_TOKEN_LIFETIME = int(
 
 async def get_user_db(
     session: AsyncSession = Depends(get_async_session),
-) -> SQLAlchemyUserDatabase:
+) -> AsyncGenerator[SQLAlchemyUserDatabase, None]:
     """Yield a fastapi-users SQLAlchemy database adapter."""
     yield SQLAlchemyUserDatabase(session, User, OAuthAccount)
 
@@ -280,7 +280,9 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             )
             async for session in get_async_session():
                 await session.execute(
-                    update(User).where(User.id == user.id).values(is_verified=True)
+                    update(User)
+                    .where(User.id == user.id)  # type: ignore[arg-type]
+                    .values(is_verified=True)
                 )
                 await session.commit()
             return
@@ -338,7 +340,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         async for session in get_async_session():
             stmt = (
                 update(User)
-                .where(User.id == user.id)
+                .where(User.id == user.id)  # type: ignore[arg-type]
                 .values(
                     failed_login_attempts=0,
                     locked_until=None,

@@ -53,7 +53,7 @@ def _validate_data_source(data_source: Optional[str]) -> str:
     return source
 
 
-def get_db_for_source(data_source: str = None) -> Database:
+def get_db_for_source(data_source: Optional[str] = None) -> Database:
     """Get or create a Database instance for a specific data source."""
     source = _validate_data_source(data_source)
     if source not in _db_cache:
@@ -61,7 +61,7 @@ def get_db_for_source(data_source: str = None) -> Database:
     return _db_cache[source]
 
 
-def get_pg_for_source(data_source: str = None) -> PostgresClient:
+def get_pg_for_source(data_source: Optional[str] = None) -> PostgresClient:
     """Get or create a PostgresClient instance for a specific data source."""
     source = _validate_data_source(data_source)
     if source not in _pg_cache:

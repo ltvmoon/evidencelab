@@ -21,7 +21,7 @@ from pipeline.orchestrator.worker import (
 logger = logging.getLogger(__name__)
 
 
-def run_processing(orchestrator, limit: int = None) -> Dict[str, Any]:
+def run_processing(orchestrator, limit: Optional[int] = None) -> Dict[str, Any]:
     """
     Run per-document processing using ProcessPoolExecutor.
     """

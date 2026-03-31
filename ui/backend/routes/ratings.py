@@ -187,20 +187,22 @@ async def list_all_ratings(
     session: AsyncSession = Depends(get_async_session),
 ):
     """List all ratings with pagination (superuser only)."""
-    base = select(UserRating, User).outerjoin(User, UserRating.user_id == User.id)
+    base = select(UserRating, User).outerjoin(
+        User, UserRating.user_id == User.id  # type: ignore[arg-type]
+    )
 
     if rating_type and rating_type in VALID_RATING_TYPES:
-        base = base.where(UserRating.rating_type == rating_type)
+        base = base.where(UserRating.rating_type == rating_type)  # type: ignore[arg-type]
 
     if user_email:
-        base = base.where(User.email == user_email)
+        base = base.where(User.email == user_email)  # type: ignore[arg-type]
 
     if search:
         pattern = f"%{search}%"
-        base = base.where(
-            User.email.ilike(pattern)
-            | UserRating.reference_id.ilike(pattern)
-            | UserRating.comment.ilike(pattern)
+        base = base.where(  # type: ignore[arg-type]
+            User.email.ilike(pattern)  # type: ignore[attr-defined]
+            | UserRating.reference_id.ilike(pattern)  # type: ignore[attr-defined]
+            | UserRating.comment.ilike(pattern)  # type: ignore[attr-defined]
         )
 
     # Count total
@@ -217,9 +219,9 @@ async def list_all_ratings(
     }
     sort_col = sort_col_map.get(sort_by, UserRating.created_at)
     if order == "asc":
-        base = base.order_by(sort_col.asc())
+        base = base.order_by(sort_col.asc())  # type: ignore[attr-defined]
     else:
-        base = base.order_by(sort_col.desc())
+        base = base.order_by(sort_col.desc())  # type: ignore[attr-defined]
 
     # Pagination
     offset = (page - 1) * page_size
@@ -256,6 +258,7 @@ async def export_ratings(
 
     wb = openpyxl.Workbook()
     ws = wb.active
+    assert ws is not None
     ws.title = "Ratings"
     headers = [
         "Date",

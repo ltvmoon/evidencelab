@@ -68,7 +68,7 @@ pre-commit run --all-files
 black .
 isort --profile black .
 flake8 --max-line-length=100 --extend-ignore=E203,W503 .
-mypy --ignore-missing-imports --no-strict-optional .
+mypy --ignore-missing-imports .  # scripts/ and alembic/ excluded (see .pre-commit-config.yaml)
 
 # Code complexity check
 python scripts/quality/code_metrics.py --fail-on-bad --skip-js-cognitive
@@ -113,6 +113,8 @@ python scripts/sync/db/sync_backup_to_remote.py \
 
 ### Database
 - **NEVER run ad-hoc database commands** (ALTER, UPDATE, DELETE, DROP, etc.) unless explicitly requested by the user. All schema changes MUST go through Alembic migrations. All data fixes must be scripted and reviewed.
+- **NEVER manually update `alembic_version`** or any Alembic internal tables. Direct `UPDATE alembic_version ...` only masks the underlying bug — it does not fix it. If a migration state is broken, diagnose the root cause and fix it properly: create a corrective migration, or surface the problem to the user so it can be resolved correctly.
+- **NEVER rename a migration's `revision` ID after it has been applied to any environment.** Doing so breaks every existing DB that has the old ID stored. If a revision ID is wrong (e.g., too long for varchar(32)), fix it before the migration is ever run anywhere — not after.
 
 ### Code Quality
 - **NEVER use `noqa`, `type: ignore`, or similar suppressions to bypass pre-commit hooks or linters.** Fix the actual issue instead. Only use suppressions if explicitly requested by the user.

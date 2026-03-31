@@ -305,7 +305,7 @@ def init_worker(
     skip_index: bool,
     skip_tag: bool,
     save_chunks: bool = False,
-    pipeline_config: Dict[str, Any] = None,
+    pipeline_config: Optional[Dict[str, Any]] = None,
 ):
     """
     Initialize global processors for a worker process.
@@ -376,7 +376,7 @@ def _init_parser(
 
 
 def _init_summarizer(
-    pipeline_config: Dict[str, Any],
+    pipeline_config: Optional[Dict[str, Any]],
     embedding_service: Optional[EmbeddingService],
 ) -> None:
     sum_config = pipeline_config.get("summarize", {}) if pipeline_config else {}
@@ -388,7 +388,7 @@ def _init_summarizer(
 
 
 def _init_indexer(
-    pipeline_config: Dict[str, Any],
+    pipeline_config: Optional[Dict[str, Any]],
     embedding_service: Optional[EmbeddingService],
 ) -> None:
     idx_config = pipeline_config.get("index", {}) if pipeline_config else {}
@@ -402,7 +402,7 @@ def _init_indexer(
 
 def _init_tagger(
     data_source: str,
-    pipeline_config: Dict[str, Any],
+    pipeline_config: Optional[Dict[str, Any]],
     embedding_service: Optional[EmbeddingService],
 ) -> None:
     tag_config = pipeline_config.get("tag", {}) if pipeline_config else {}
@@ -438,7 +438,9 @@ def process_document_wrapper(doc: Dict[str, Any]) -> Dict[str, Any]:
     if not db:
         return {"error": "Worker not initialized"}
 
-    doc_id = doc.get("id")
+    doc_id_raw = doc.get("id")
+    assert doc_id_raw is not None, "Document must have an 'id' field"
+    doc_id: str = str(doc_id_raw)
     _log_context.doc_id = doc_id
 
     title = doc.get("map_title")

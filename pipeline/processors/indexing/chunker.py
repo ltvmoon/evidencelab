@@ -536,7 +536,7 @@ class Chunker:
         self,
         chunk: Any,
         text_map: Dict[str, str],
-        fixed_text_map: Dict[str, str] = None,
+        fixed_text_map: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         Extract basic metadata from chunk provenance.

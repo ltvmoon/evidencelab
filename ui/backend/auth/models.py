@@ -31,7 +31,8 @@ class OAuthAccount(SQLAlchemyBaseOAuthAccountTableUUID, Base):
     __tablename__ = "oauth_accounts"
 
     # Override user_id FK to point to "users" table (not default "user")
-    user_id: Mapped[GUID] = mapped_column(
+    # Mapped[uuid.UUID] matches the base class type; GUID is the column storage type.
+    user_id: Mapped[uuid.UUID] = mapped_column(
         GUID, ForeignKey("users.id", ondelete="cascade"), nullable=False
     )
 
