@@ -68,7 +68,7 @@ pre-commit run --all-files
 black .
 isort --profile black .
 flake8 --max-line-length=100 --extend-ignore=E203,W503 .
-mypy --ignore-missing-imports --no-strict-optional .
+mypy --ignore-missing-imports .  # scripts/ and alembic/ excluded (see .pre-commit-config.yaml)
 
 # Code complexity check
 python scripts/quality/code_metrics.py --fail-on-bad --skip-js-cognitive

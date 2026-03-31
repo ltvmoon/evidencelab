@@ -31,8 +31,8 @@ All contributions must meet the following requirements before they will be accep
    - **Formatting**: `black` (line length 100)
    - **Import order**: `isort`
    - **Linting**: `flake8` (with `flake8-bugbear`, `flake8-comprehensions`, `pep8-naming`)
-   - **Type annotations**: `mypy` strict mode
-   - **Security**: `bandit` (no high-severity findings)
+   - **Type annotations**: `mypy` with full Optional checking enforced (no implicit Optional)
+   - **Security**: `bandit` (medium and high severity findings fail the build)
    - **Complexity**: cyclomatic complexity ≤ 10, cognitive complexity ≤ 15, maintainability index ≥ 20 per file (enforced by `scripts/quality/code_metrics.py`)
 
 3. **Tests** — new features must include unit tests; bug fixes should include a regression test. Run `pytest tests/unit/` before submitting.
@@ -534,7 +534,7 @@ Include:
 - **Formatter**: Black (line length: 88 characters)
 - **Import Sorting**: isort (Black-compatible profile)
 - **Linting**: flake8 with extensions for complexity and security
-- **Type Checking**: mypy (strict mode)
+- **Type Checking**: mypy (Optional checking enforced; scripts/ and alembic/ excluded)
 - **Type Hints**: Use type hints for function signatures
 - **Docstrings**: Google style docstrings
 
@@ -558,7 +558,7 @@ isort pipeline/ tests/
 
 # Check code quality
 flake8 pipeline/ tests/
-mypy pipeline/
+mypy --ignore-missing-imports pipeline/
 ```
 
 ## 🚀 Adding New Features
