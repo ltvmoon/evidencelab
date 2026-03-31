@@ -24,6 +24,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.rate_limiters import InMemoryRateLimiter
+from pydantic import SecretStr
 
 from utils.langsmith_util import setup_langsmith_tracing
 
@@ -281,6 +282,7 @@ def _create_llm_for_provider(
     max_tokens: int,
     inference_provider: Optional[str],
 ) -> BaseChatModel:
+    assert model is not None, f"model must be set for provider '{provider}'"
     if provider == "huggingface":
         return _create_huggingface_llm(
             model, temperature, max_tokens, inference_provider
@@ -331,7 +333,7 @@ def _create_huggingface_inference_llm(
 
     try:
         inference_client = InferenceClient(
-            model=model, token=api_key, provider=inference_provider
+            model=model, token=api_key, provider=inference_provider  # type: ignore[arg-type]
         )
         try:
             llm = ChatHuggingFace(client=inference_client)
@@ -358,7 +360,7 @@ def _create_huggingface_endpoint_llm(
 ) -> BaseChatModel:
     from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 
-    llm_endpoint = HuggingFaceEndpoint(
+    llm_endpoint = HuggingFaceEndpoint(  # type: ignore[call-arg]
         repo_id=model,
         huggingfacehub_api_token=api_key,
         temperature=temperature,
@@ -390,9 +392,9 @@ def _create_azure_foundry_llm(
     if "/openai/deployments" not in azure_base:
         azure_base = f"{azure_base}/openai/deployments/{model}"
 
-    return ChatOpenAI(
+    return ChatOpenAI(  # type: ignore[call-arg]
         model=model,  # Deployment name
-        api_key=api_key,
+        api_key=SecretStr(api_key),
         base_url=azure_base,
         default_query={"api-version": api_version},
         temperature=temperature,
@@ -413,11 +415,11 @@ def _create_openai_llm(
             "https://platform.openai.com/api-keys"
         )
 
-    return ChatOpenAI(
+    return ChatOpenAI(  # type: ignore[call-arg]
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
-        api_key=api_key,
+        api_key=SecretStr(api_key),
     )
 
 
@@ -434,11 +436,11 @@ def _create_anthropic_llm(
             "https://console.anthropic.com/settings/keys"
         )
 
-    return ChatAnthropic(
+    return ChatAnthropic(  # type: ignore[call-arg]
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
-        api_key=api_key,
+        api_key=SecretStr(api_key),
     )
 
 
@@ -504,11 +506,11 @@ def _create_openai_compatible_llm(
             "Example: https://api.groq.com/openai/v1"
         )
 
-    return ChatOpenAI(
+    return ChatOpenAI(  # type: ignore[call-arg]
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
-        api_key=api_key,
+        api_key=SecretStr(api_key),
         base_url=base_url,
     )
 

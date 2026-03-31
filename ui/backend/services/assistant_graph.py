@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from deepagents import create_deep_agent
 from deepagents.graph import create_agent
+from deepagents.middleware.subagents import SubAgent
 from jinja2 import Environment, FileSystemLoader
 from langchain_core.tools import tool
 
@@ -517,7 +518,7 @@ def build_deep_research_agent(
             len(system_prompt_override),
         )
 
-    researcher_subagent: Dict[str, Any] = {
+    researcher_subagent: SubAgent = {
         "name": "researcher",
         "description": (
             "Conducts thorough searches of the document database "

@@ -168,7 +168,7 @@ def _resolve_optional_model_key(config_value: Any) -> Optional[str]:
 
 
 def _resolve_reranker_location(reranker_key: Optional[str]) -> str:
-    reranker_config = SUPPORTED_RERANK_MODELS.get(reranker_key, {})
+    reranker_config = SUPPORTED_RERANK_MODELS.get(reranker_key or "", {})
     reranker_provider = reranker_config.get("provider")
     reranker_source = reranker_config.get("source")
     return "API" if reranker_provider or reranker_source == "huggingface" else "Local"
@@ -176,8 +176,11 @@ def _resolve_reranker_location(reranker_key: Optional[str]) -> str:
 
 def _build_model_combo(combo_name: str, combo: Dict[str, Any]) -> Dict[str, Any]:
     embedding_key = combo.get("embedding_model")
+    assert (
+        embedding_key is not None
+    ), f"Missing 'embedding_model' in combo '{combo_name}'"
     embedding_model_id, embedding_config = _resolve_embedding_model_id(
-        combo_name, embedding_key
+        combo_name, str(embedding_key)
     )
     summarization_key = _resolve_optional_model_key(combo.get("summarization_model"))
     semantic_key = _resolve_optional_model_key(combo.get("semantic_highlighting_model"))

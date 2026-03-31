@@ -182,7 +182,7 @@ class ParseProcessor(BaseProcessor):
         self.enable_superscripts = enable_superscripts
         self.superscript_mode = superscript_mode
         self.ocr_fallback = False
-        self._converter = None
+        self._converter: Optional[DocumentConverter] = None
 
     def _init_converter(self) -> None:
         """Initialize the Docling document converter with GPU acceleration."""
@@ -215,14 +215,14 @@ class ParseProcessor(BaseProcessor):
         )
 
         self._converter = DocumentConverter(
+            allowed_formats=[InputFormat.PDF, InputFormat.DOCX],
             format_options={
                 InputFormat.PDF: PdfFormatOption(
                     pipeline_cls=StandardPdfPipeline,
                     pipeline_options=pipeline_options,
                     backend=DoclingParseV2DocumentBackend,
                 ),
-                InputFormat.DOCX: None,
-            }
+            },
         )
 
     def setup(self) -> None:
@@ -929,7 +929,7 @@ class ParseProcessor(BaseProcessor):
             doc.close()
             if not votes:
                 return "Unknown"
-            return max(votes, key=votes.get)
+            return max(votes, key=lambda lang: votes.get(lang, 0))
         except Exception:
             return "Unknown"
 

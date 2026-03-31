@@ -29,6 +29,9 @@ class SearchResult(BaseModel):
     sys_parsed_folder: Optional[str] = None
     sys_filepath: Optional[str] = None
     sys_full_summary: Optional[str] = None
+    language: Optional[str] = None
+    pdf_url: Optional[str] = None
+    report_url: Optional[str] = None
 
     class Config:
         extra = "allow"
@@ -45,6 +48,7 @@ class SearchResponse(BaseModel):
     total: int
     query: str
     filters: Optional[Dict[str, List[str]]] = None
+    facets: Optional[Any] = None
 
 
 class FacetValue(BaseModel):

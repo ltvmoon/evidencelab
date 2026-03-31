@@ -96,9 +96,10 @@ def _apply_toc(doc: Dict[str, Any], payload: Dict[str, Any]) -> None:
 
 
 def _apply_file_size(doc: Dict[str, Any], payload: Dict[str, Any]) -> None:
-    if not doc.get("sys_file_size_mb") and payload.get("src_file_size"):
+    src_file_size = payload.get("src_file_size")
+    if not doc.get("sys_file_size_mb") and src_file_size:
         try:
-            file_size_bytes = float(payload.get("src_file_size"))
+            file_size_bytes = float(src_file_size)
             if file_size_bytes > 0:
                 doc["sys_file_size_mb"] = round(file_size_bytes / (1024 * 1024), 2)
         except (TypeError, ValueError):

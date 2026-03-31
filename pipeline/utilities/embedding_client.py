@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Generator, Iterable
+from typing import Generator, Iterable, Optional
 
 import numpy as np
 import requests
@@ -22,7 +22,7 @@ class RemoteEmbeddingClient:  # pylint: disable=too-few-public-methods
         self.request_timeout = int(os.getenv("EMBEDDING_REQUEST_TIMEOUT", "120"))
 
     def embed(
-        self, documents: Iterable[str], batch_size: int = None
+        self, documents: Iterable[str], batch_size: Optional[int] = None
     ) -> Generator[np.ndarray, None, None]:
         """
         Generate embeddings using the remote Infinity server.
@@ -59,7 +59,7 @@ class RemoteEmbeddingClient:  # pylint: disable=too-few-public-methods
 
 
 def _iter_batches(
-    documents: list, batch_size: int = None
+    documents: list, batch_size: Optional[int] = None
 ) -> Generator[list, None, None]:
     if not batch_size or batch_size <= 0:
         yield documents

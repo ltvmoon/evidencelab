@@ -42,9 +42,14 @@ repos:
     rev: v1.8.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-beautifulsoup4, types-openpyxl]
-        args: [--ignore-missing-imports, --no-strict-optional]
-        exclude: ^tests/
+        additional_dependencies:
+          - types-requests
+          - types-beautifulsoup4
+          - types-openpyxl
+          - sqlalchemy[mypy]
+          - google-cloud-discoveryengine
+        args: [--ignore-missing-imports]
+        exclude: ^(tests/|scripts/|alembic/)
 
   # Python security scanning with Bandit
   # Strict: Fails on HIGH severity issues only (-lll)

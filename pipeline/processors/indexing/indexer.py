@@ -93,9 +93,9 @@ class IndexProcessor(BaseProcessor):
 
     def __init__(
         self,
-        db: Database = None,
-        index_config: Dict[str, Any] = None,
-        chunk_config: Dict[str, Any] = None,
+        db: Optional[Database] = None,
+        index_config: Optional[Dict[str, Any]] = None,
+        chunk_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize indexer configuration.
@@ -138,14 +138,14 @@ class IndexProcessor(BaseProcessor):
         )
 
         self._dense_model = None
-        self._sparse_model = None
+        self._sparse_model: Optional[SparseTextEmbedding] = None
         self._tokenizer = None
         self._chunker_instance: Optional[Chunker] = None
 
     def setup(
         self,
         dense_model=None,
-        embedding_service: EmbeddingService = None,
+        embedding_service: Optional[EmbeddingService] = None,
     ) -> None:
         """Load configuration and embedding models (slow - done once).
 
@@ -242,7 +242,7 @@ class IndexProcessor(BaseProcessor):
         if not self.tokenizer_model_id:
             raise ValueError("Indexer: 'tokenizer' missing in chunk config")
         self._tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_model_id)
-        hybrid_chunker = HybridChunker(
+        hybrid_chunker = HybridChunker(  # type: ignore[call-arg]
             tokenizer=self.tokenizer_model_id,
             max_tokens=self.max_chunk_tokens,
             merge_peers=True,

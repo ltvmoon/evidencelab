@@ -207,7 +207,9 @@ async def add_group_member(
     if g_result.scalars().first() is None:
         raise HTTPException(status_code=404, detail="Group not found")
     # Verify user exists
-    u_result = await session.execute(select(User).where(User.id == body.user_id))
+    u_result = await session.execute(
+        select(User).where(User.id == body.user_id)  # type: ignore[arg-type]
+    )
     if u_result.scalars().first() is None:
         raise HTTPException(status_code=404, detail="User not found")
     # Check if already a member
@@ -239,7 +241,7 @@ async def remove_group_member(
             UserGroupMember.group_id == group_id,
         )
     )
-    if result.rowcount == 0:
+    if result.rowcount == 0:  # type: ignore[attr-defined]
         raise HTTPException(status_code=404, detail="Membership not found")
     await session.commit()
 

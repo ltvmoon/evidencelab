@@ -537,7 +537,7 @@ class Database:
                 pass
 
         # Prepare vector dict
-        vectors = {}
+        vectors: Dict[str, Any] = {}
         if vector:
             if isinstance(vector, dict):
                 # Already a dictionary of named vectors
@@ -557,7 +557,7 @@ class Database:
             payload=qdrant_payload,
         )
 
-        last_error = None
+        last_error: Exception = RuntimeError("Upsert failed: no attempts made")
         for attempt in range(max_retries):
             try:
                 self.client.upsert(
@@ -623,7 +623,7 @@ class Database:
         return len(results[0]) > 0
 
     def get_documents_by_status(
-        self, status: str, exclude_duplicates: bool = True, year: int = None
+        self, status: str, exclude_duplicates: bool = True, year: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Retrieve documents with a specific status, including their IDs.
 
@@ -729,7 +729,7 @@ class Database:
         self, filters: Optional[Dict[str, str]]
     ) -> models.Filter:
         must_conditions: List[models.Condition] = []
-        must_not_conditions = [
+        must_not_conditions: List[models.Condition] = [
             models.FieldCondition(
                 key="is_duplicate",
                 match=models.MatchValue(value=True),
@@ -850,7 +850,7 @@ class Database:
 
         return sorted(docs, key=lambda d: _safe_value(sort_key_fn(d)), reverse=reverse)
 
-    def _search_conditions(self, value: str) -> list[models.FieldCondition]:
+    def _search_conditions(self, value: str) -> List[models.Condition]:
         return [
             models.FieldCondition(key=field, match=models.MatchText(text=value))
             for field in ["map_title", "sys_full_summary"]
@@ -932,7 +932,7 @@ class Database:
                 # If it's not a valid integer string, it might be a UUID - leave as is
                 pass
 
-        last_error = None
+        last_error: Exception = RuntimeError("Update failed: no attempts made")
         for attempt in range(max_retries):
             try:
                 self.client.set_payload(

@@ -273,7 +273,8 @@ async def get_semantic_llm_output(
             HumanMessage(content=user_prompt),
         ]
     )
-    llm_output = response.content.strip()
+    content = response.content
+    llm_output = (content if isinstance(content, str) else str(content)).strip()
     if "```json" in llm_output:
         llm_output = llm_output.split("```json")[1].split("```")[0].strip()
     elif "```" in llm_output:
@@ -332,7 +333,10 @@ def highlight_boxes_from_chunk(
     truncate: int,
 ) -> List[HighlightBox]:
     chunk_text = clean_text(payload.get("sys_text", ""))
-    chunk_page = payload.get("sys_page_num")
+    chunk_page_raw = payload.get("sys_page_num")
+    chunk_page: Optional[int] = (
+        int(chunk_page_raw) if chunk_page_raw is not None else None
+    )
     chunk_bboxes = payload.get("sys_bbox", [])
     if page and chunk_page != page:
         return []
@@ -345,7 +349,7 @@ def highlight_boxes_from_chunk(
         bbox = bbox_from_payload(bbox_data)
         if not bbox:
             continue
-        if all(k in bbox for k in ["l", "t", "r", "b"]):
+        if chunk_page is not None and all(k in bbox for k in ["l", "t", "r", "b"]):
             highlights.append(
                 HighlightBox(
                     page=chunk_page,
