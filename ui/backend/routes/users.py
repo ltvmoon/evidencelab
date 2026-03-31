@@ -3,7 +3,7 @@
 import logging
 import os
 import uuid
-from typing import List
+from typing import List, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import delete, select, update
@@ -94,7 +94,7 @@ async def admin_create_user(
 
     # Validate password (reuses the same rules as self-registration)
     try:
-        await user_manager.validate_password(body.password, user_schema)
+        await user_manager.validate_password(body.password, user_schema)  # type: ignore[arg-type]
     except fu_exceptions.InvalidPasswordException as exc:
         raise HTTPException(status_code=400, detail=exc.reason)
 
@@ -154,7 +154,7 @@ async def update_user_flags(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Update user flags (superuser only)."""
-    result = await session.execute(select(User).where(User.id == user_id))
+    result = await session.execute(select(User).where(User.id == user_id))  # type: ignore[arg-type]
     user = result.scalars().first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -183,7 +183,7 @@ async def admin_delete_user(
     """Delete a user and all associated data (superuser only)."""
     if user_id == admin.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    result = await session.execute(select(User).where(User.id == user_id))
+    result = await session.execute(select(User).where(User.id == user_id))  # type: ignore[arg-type]
     user = result.scalars().first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -195,13 +195,17 @@ async def admin_delete_user(
         delete(UserGroupMember).where(UserGroupMember.user_id == user_id)
     )
     # Remove OAuth links
-    await session.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
+    await session.execute(
+        delete(OAuthAccount).where(OAuthAccount.user_id == user_id)  # type: ignore[arg-type]
+    )
     # Anonymise audit log entries
     await session.execute(
-        update(AuditLog).where(AuditLog.user_id == user_id).values(user_id=None)
+        update(AuditLog)
+        .where(AuditLog.user_id == user_id)  # type: ignore[arg-type]
+        .values(user_id=None)
     )
     # Delete the user record
-    await session.execute(delete(User).where(User.id == user_id))
+    await session.execute(delete(User).where(User.id == user_id))  # type: ignore[arg-type]
     await session.commit()
 
     logger.info("Admin deleted user: %s (%s)", user_email, user_id)
@@ -238,7 +242,7 @@ async def get_my_groups(
     ]
 
 
-def _merge_group_settings(groups: list) -> dict:
+def _merge_group_settings(groups: Sequence) -> dict:
     """Merge search_settings from multiple groups (first non-null per key wins).
 
     Groups are expected to be ordered by name ASC so that the "Default" group
@@ -312,19 +316,23 @@ async def delete_my_account(
 
     # Anonymise audit log entries for this user
     await session.execute(
-        update(AuditLog).where(AuditLog.user_id == user_id).values(user_id=None)
+        update(AuditLog)
+        .where(AuditLog.user_id == user_id)  # type: ignore[arg-type]
+        .values(user_id=None)
     )
 
     # Remove group memberships
     await session.execute(
-        delete(UserGroupMember).where(UserGroupMember.user_id == user_id)
+        delete(UserGroupMember).where(UserGroupMember.user_id == user_id)  # type: ignore[arg-type]
     )
 
     # Remove OAuth links
-    await session.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
+    await session.execute(
+        delete(OAuthAccount).where(OAuthAccount.user_id == user_id)  # type: ignore[arg-type]
+    )
 
     # Delete the user record
-    await session.execute(delete(User).where(User.id == user_id))
+    await session.execute(delete(User).where(User.id == user_id))  # type: ignore[arg-type]
 
     await session.commit()
 

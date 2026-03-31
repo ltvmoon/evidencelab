@@ -292,9 +292,10 @@ def _build_search_results(
     filtered_results = []
     for result in results:
         doc_id_raw = result.payload.get("doc_id") or result.payload.get("sys_doc_id")
-        doc_id = str(doc_id_raw) if doc_id_raw is not None else None
+        doc_id: Optional[str] = str(doc_id_raw) if doc_id_raw is not None else None
         if doc_id not in doc_cache:
             continue
+        assert doc_id is not None
         doc = doc_cache[doc_id]
         normalized_doc = normalize_document_payload(doc)
 
@@ -360,7 +361,7 @@ def _build_search_results(
 
 def _build_facet_filter(core_filters: Dict[str, Any], data_source: Optional[str]):
     """Build a Qdrant filter from core filter fields for restricting facet counts."""
-    facet_conditions = []
+    facet_conditions: List[qmodels.Condition] = []
 
     for core_field, value in core_filters.items():
         if not value or core_field.endswith("_min") or core_field.endswith("_max"):
@@ -394,7 +395,7 @@ async def perform_title_search(
     request: Request,
     q: str = Query(..., min_length=1, description="Search query string"),
     limit: int = 50,
-    dense_weight: float = None,
+    dense_weight: Optional[float] = None,
     data_source: str = Query("uneg", description="Data source to search"),
     model: Optional[str] = Query(None, description="Embedding model to use"),
     # Accept filter params dynamically
@@ -788,7 +789,7 @@ def _build_docsearch_filters(
     q: str, core_filters: Dict[str, Any], indexed_doc_ids: List[str], db
 ) -> Optional[qmodels.Filter]:
     """Build combined Qdrant filter conditions for document search."""
-    filter_conditions = []
+    filter_conditions: List[qmodels.Condition] = []
 
     if q.strip():
         search_conditions = db._search_conditions(q.strip())
@@ -806,7 +807,9 @@ def _build_docsearch_filters(
         )
 
     filter_conditions.append(
-        qmodels.Filter(should=[qmodels.HasIdCondition(has_id=indexed_doc_ids)])
+        qmodels.Filter(  # type: ignore[arg-type]
+            should=[qmodels.HasIdCondition(has_id=list(indexed_doc_ids))]
+        )
     )
 
     return qmodels.Filter(must=filter_conditions) if filter_conditions else None
@@ -889,6 +892,8 @@ async def docsearch(
         add_dynamic_filters(core_filters, request.query_params, source)
 
         combined_filter = _build_docsearch_filters(q, core_filters, indexed_doc_ids, db)
+        if combined_filter is None:
+            return SearchResponse(results=[], total=0, query=q, filters={})
 
         results = await run_in_threadpool(
             db._scroll_documents, query_filter=combined_filter, end_idx=limit
@@ -958,12 +963,12 @@ async def search_facet_values_endpoint(
 @limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_facets(
     request: Request,
-    organization: str = None,
-    title: str = None,
-    published_year: str = None,
-    document_type: str = None,
-    country: str = None,
-    language: str = None,
+    organization: Optional[str] = None,
+    title: Optional[str] = None,
+    published_year: Optional[str] = None,
+    document_type: Optional[str] = None,
+    country: Optional[str] = None,
+    language: Optional[str] = None,
     data_source: Optional[str] = Query(
         None, description="Data source (e.g., 'uneg', 'gcf')"
     ),

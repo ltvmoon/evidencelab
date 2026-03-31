@@ -164,6 +164,7 @@ def reprocess_document_toc(self, doc_id: str, data_source: str = "uneg"):
 
         # Reload document to get updated toc_classified
         doc = db.get_document(doc_id)
+        assert doc is not None, f"Document {doc_id} not found after classification"
         doc["id"] = doc_id
         toc_classified = doc.get("sys_toc_classified", "")
 

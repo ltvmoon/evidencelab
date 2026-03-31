@@ -176,7 +176,7 @@ class SummarizeProcessor(BaseProcessor):
             return "llama"
         return "chat"
 
-    def setup(self, embedding_service: EmbeddingService = None) -> None:
+    def setup(self, embedding_service: Optional[EmbeddingService] = None) -> None:
         """
         Load embedding model via EmbeddingService and get LLM token.
 
@@ -375,8 +375,8 @@ class SummarizeProcessor(BaseProcessor):
 
         # Get most similar sentences
         similarities = util.cos_sim(centroid, embeddings)[0]
-        top_indices = similarities.argsort(descending=True)[:NUM_CENTROID_SENTENCES]
-        top_indices = sorted(top_indices)  # Keep original order
+        top_indices_raw = similarities.argsort(descending=True)[:NUM_CENTROID_SENTENCES]
+        top_indices = sorted(top_indices_raw)  # Keep original order
 
         # Join sentences
         summary_sentences = [sentences[i] for i in top_indices]

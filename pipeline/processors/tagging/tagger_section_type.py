@@ -45,7 +45,7 @@ class SectionTypeTagger(BaseTagger):
     def __init__(
         self,
         embedding_model: Optional[TextEmbedding] = None,
-        llm_config: Dict[str, Any] = None,
+        llm_config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(embedding_model)
         self.llm_config = llm_config or {}

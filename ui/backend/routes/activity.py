@@ -5,7 +5,7 @@ import io
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -87,7 +87,7 @@ def _apply_activity_sorting(stmt, sort_by: str, order: str):
     return stmt.order_by(expr)
 
 
-def _build_activity_items(rows: list, rated_ids: set[str]) -> list[dict]:
+def _build_activity_items(rows: Sequence, rated_ids: set[str]) -> list[dict]:
     """Build activity response dicts with live has_ratings enrichment."""
     items = []
     for activity, user in rows:
@@ -245,14 +245,19 @@ async def list_all_activity(
     session: AsyncSession = Depends(get_async_session),
 ):
     """List all user activity with pagination (superuser only)."""
-    base = select(UserActivity, User).outerjoin(User, UserActivity.user_id == User.id)
+    base = select(UserActivity, User).outerjoin(
+        User, UserActivity.user_id == User.id  # type: ignore[arg-type]
+    )
 
     if search:
         pattern = f"%{search}%"
-        base = base.where(User.email.ilike(pattern) | UserActivity.query.ilike(pattern))
+        base = base.where(  # type: ignore[arg-type]
+            User.email.ilike(pattern)  # type: ignore[attr-defined]
+            | UserActivity.query.ilike(pattern)  # type: ignore[attr-defined]
+        )
 
     if user_email:
-        base = base.where(User.email == user_email)
+        base = base.where(User.email == user_email)  # type: ignore[arg-type]
 
     # Count total
     count_stmt = select(func.count()).select_from(base.subquery())
@@ -282,7 +287,7 @@ async def list_all_activity(
 
 async def _get_rated_search_ids(
     session: AsyncSession,
-    rows: list,
+    rows: Sequence,
 ) -> set[str]:
     """Return set of search_id strings that have at least one rating."""
     search_ids = [str(a.search_id) for a, _u in rows]
@@ -318,6 +323,7 @@ async def export_activity(
 
     wb = openpyxl.Workbook()
     ws = wb.active
+    assert ws is not None
     ws.title = "Activity"
     headers = [
         "Date",

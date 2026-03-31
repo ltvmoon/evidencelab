@@ -45,15 +45,15 @@ class PipelineOrchestrator:
         num_records: int = 10,
         workers: int = 1,
         recent_first: bool = False,
-        partition: str = None,
-        report: str = None,
-        agency: str = None,
+        partition: Optional[str] = None,
+        report: Optional[str] = None,
+        agency: Optional[str] = None,
         clear_db: bool = False,
         model_mode: str = "remote",
-        year: int = None,
-        from_year: int = None,
-        to_year: int = None,
-        doc_id: str = None,
+        year: Optional[int] = None,
+        from_year: Optional[int] = None,
+        to_year: Optional[int] = None,
+        doc_id: Optional[str] = None,
         ocr_fallback: bool = False,
     ):
         self.data_source = data_source
@@ -289,6 +289,7 @@ class PipelineOrchestrator:
         logger.info("STEP: Scan files and sync to Qdrant")
         logger.info("=" * 60)
 
+        assert self._scanner is not None, "Scanner not initialized; call setup() first"
         try:
             _ = self._scanner.scan_and_sync()
             logger.info("✅ Scan completed successfully")
@@ -297,7 +298,9 @@ class PipelineOrchestrator:
             logger.error("❌ Scan failed: %s", exc)
             return False
 
-    def _get_documents_recent_first(self, status: str, limit: int = None) -> list:
+    def _get_documents_recent_first(
+        self, status: str, limit: Optional[int] = None
+    ) -> list:
         return get_documents_recent_first(self.db, status, limit=limit)
 
     def _get_docs_by_status(self, status: str) -> list:
@@ -328,7 +331,7 @@ class PipelineOrchestrator:
         """Apply partitioning to a document list."""
         return get_partition_slice(docs, self.partition_num, self.partition_total)
 
-    def run_processing(self, limit: int = None) -> Dict[str, Any]:
+    def run_processing(self, limit: Optional[int] = None) -> Dict[str, Any]:
         """Run the main processing pipeline for selected documents."""
         return run_processing(self, limit=limit)
 
