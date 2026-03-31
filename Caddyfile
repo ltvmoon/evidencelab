@@ -8,6 +8,14 @@
 # Protected by API key in X-API-Key header
 
 evidencelab.ai, www.evidencelab.ai {
+	# Enforce TLS 1.2+ — disables TLS 1.0/1.1 and their weak cipher suites
+	# (RC4, 3DES, etc.). Satisfies NIST SP 800-131A key-length requirements
+	# through 2030. Caddy defaults to this, but explicit config prevents
+	# regression on future Caddy upgrades.
+	tls {
+		protocols tls1.2 tls1.3
+	}
+
 	# Redirect www to bare domain
 	@www host www.evidencelab.ai
 	redir @www https://evidencelab.ai{uri} permanent
