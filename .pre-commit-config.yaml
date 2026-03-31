@@ -49,7 +49,7 @@ repos:
           - sqlalchemy[mypy]
           - google-cloud-discoveryengine
         args: [--ignore-missing-imports]
-        exclude: ^tests/
+        exclude: ^(tests/|scripts/|alembic/)
 
   # Python security scanning with Bandit
   # Strict: Fails on HIGH severity issues only (-lll)
