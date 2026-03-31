@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [ main, master, develop, rc/** ]
 
+permissions: {}
+
 jobs:
   code-quality:
     runs-on: ubuntu-latest
