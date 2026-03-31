@@ -2,6 +2,47 @@
 
 All notable changes to Evidence Lab will be documented in this file.
 
+## [1.3.0] - 2026-03-30
+
+Evidence Lab v1.3.0 is a security and code quality release focused on achieving the [OpenSSF Best Practices](https://www.bestpractices.dev/projects/12335) baseline badge. It hardens the CI pipeline, enforces stricter static analysis, documents cryptographic practices, and raises the bar on code quality tooling throughout the project.
+
+### OpenSSF Best Practices
+- Achieved OpenSSF Best Practices baseline badge (#246)
+- Added OpenSSF Best Practices badge to README
+- Added coverage reporting to CI unit test runs (#246)
+- Upgraded Bandit to 1.9.4 and raised severity threshold to MEDIUM+HIGH (#247)
+- Added explicit contribution standards section to CONTRIBUTING.md (#247)
+- Documented cryptographic algorithms in SECURITY.md — TLS, Argon2id, bcrypt, Fernet, SHA-256, HS256 (#247)
+- Updated SECURITY.md to reflect Bandit 1.9.4 and medium severity enforcement (#247)
+- Corrected mypy documentation across CLAUDE.md and CONTRIBUTING.md (#247)
+
+### Security & CI Hardening
+- Explicitly enforce TLS 1.2+ minimum in Caddyfile — rejects TLS 1.1 and below (#249)
+- Set `permissions: {}` default at workflow level in CI — all jobs now default to no GitHub token permissions; jobs requiring access declare them explicitly
+- Added request timeouts to all `requests` calls in scripts — fixes Bandit B113 (#247)
+
+### Type Safety
+- Removed `--no-strict-optional` from mypy configuration — full `Optional`/`None` checking now enforced across the entire codebase (#248)
+- Fixed all resulting mypy errors across 44 files: `ws.active` None guards, `Sequence` vs `list` annotations, implicit Optional parameters, return type mismatches (#248)
+- Extended mypy exclude to `scripts/` and `alembic/` in pre-commit config — fixes CI `--all-files` failures (#248)
+
+### What's Changed
+- feat: add coverage reporting to CI for OpenSSF badge (#246)
+- docs: add explicit contribution requirements to CONTRIBUTING.md (#247)
+- docs(security): update SECURITY.md for Bandit 1.9.4 and medium severity (#247)
+- docs(security): document cryptographic algorithms for OpenSSF compliance (#247)
+- ci: upgrade Bandit to 1.9.4, raise severity to medium+high (#247)
+- fix(ci): add request timeouts to fix Bandit B113 (#247)
+- fix(types): remove --no-strict-optional, fix all mypy strict-optional errors (#248)
+- fix(ci): exclude scripts/ and alembic/ from mypy (#248)
+- fix(tls): explicitly enforce TLS 1.2+ minimum in Caddyfile (#249)
+- ci: set default workflow permissions to none for least-privilege
+- docs: add OpenSSF Best Practices badge to README
+
+**Full diff:** https://github.com/dividor/evidencelab/compare/v1.2.0...v1.3.0
+
+---
+
 ## [1.2.0] - 2026-03-30
 
 Evidence Lab v1.2.0 introduces native integration with external AI systems via the Model Context Protocol (MCP) and the Google Agent-to-Agent (A2A) protocol, enabling AI assistants and autonomous agents to search, retrieve, and reason over document collections directly. This release also adds a UN Mandates Registry data source, OCR support for scanned PDFs, and a range of fixes and performance improvements.
