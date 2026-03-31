@@ -373,6 +373,30 @@ Before submitting a PR, ensure:
 - [ ] Sensitive operations are properly authenticated
 - [ ] File operations validate paths against allowed directories
 
+## Cryptographic Algorithms
+
+### Algorithms in Use
+
+| Mechanism | Algorithm | Notes |
+|-----------|-----------|-------|
+| Transport (HTTPS) | TLS 1.2/1.3, AEAD ciphers only (AES-GCM, ChaCha20-Poly1305) | Enforced in Caddyfile; TLS 1.0/1.1 disabled |
+| Password hashing | bcrypt (work factor 12, via fastapi-users) | Adaptive, salted |
+| JWT signing | HS256 (HMAC-SHA256) | 256-bit secret, minimum 32 chars enforced at startup |
+| API key storage | SHA-256 (first 8 hex chars stored for audit; full hash for lookup) | One-way |
+| API key encryption at rest | Fernet (AES-128-CBC + HMAC-SHA256) | See note below |
+| CSRF token comparison | `secrets.compare_digest` (constant-time) | stdlib |
+| OAuth 2.0 | Standard flows via httpx-oauth | No custom crypto |
+
+### Note on Fernet (AES-128-CBC)
+
+API key values are encrypted at rest using Python's `cryptography.fernet.Fernet`. Fernet internally uses AES-128 in CBC mode. Although CBC mode has known weaknesses in unauthenticated constructions (e.g., padding oracle attacks in older SSH and TLS implementations), Fernet is not vulnerable to these because it applies **Encrypt-then-MAC** (HMAC-SHA256 over the full ciphertext) with a fresh random 128-bit IV per message. This construction is cryptographically sound and is the pattern recommended by the Python `cryptography` library for symmetric encryption at rest.
+
+This use of CBC is distinct from the weakness cited in the OpenSSF criterion ("CBC mode in SSH"), which refers to unauthenticated CBC. The HMAC-SHA256 authentication tag in Fernet prevents all known CBC-mode attacks. No plaintext CBC is used anywhere in the project.
+
+### Algorithms Explicitly Not Used
+
+MD4, MD5 (for security purposes), RC4, single DES, 3DES, SHA-1 (for security purposes), unauthenticated CBC, ECB, Dual_EC_DRBG. MD5 and SHA-1 appear in maintenance scripts only as non-cryptographic file-change detectors, explicitly flagged `usedforsecurity=False`.
+
 ## Tools Reference
 
 | Tool | Purpose | Documentation |
@@ -390,6 +414,10 @@ Before submitting a PR, ensure:
 
 ## Changelog
 
+- **2026-03-31**: Document cryptographic algorithms (OpenSSF Best Practices)
+  - Added "Cryptographic Algorithms" section listing all algorithms in use
+  - Documented Fernet (AES-128-CBC + HMAC-SHA256) Encrypt-then-MAC construction and why it is not vulnerable to known CBC-mode attacks
+  - Documented algorithms explicitly not used (MD5, RC4, SHA-1, unauthenticated CBC, ECB, etc.)
 - **2026-03-30**: Bandit upgrade and severity threshold increase
   - Upgraded Bandit from 1.7.7 to 1.9.4 (latest)
   - Raised threshold from HIGH-only (`-lll`) to MEDIUM+HIGH (`-ll`)
