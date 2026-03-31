@@ -182,12 +182,13 @@ def _timeline_resolve_phase_times(
 ) -> tuple[Optional[str], Optional[str]]:
     if not end_stage.get("at"):
         return None, None
-    end_time_str = end_stage.get("at")
+    end_time_str: str = end_stage["at"]
     start_time = None
     end_time = None
-    if end_stage.get("elapsed_seconds"):
+    elapsed_seconds_raw = end_stage.get("elapsed_seconds")
+    if elapsed_seconds_raw is not None:
         try:
-            elapsed_ms = float(end_stage.get("elapsed_seconds")) * 1000
+            elapsed_ms = float(elapsed_seconds_raw) * 1000
             dt_end = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
             dt_start = dt_end - timedelta(milliseconds=elapsed_ms)
             start_time = dt_start.isoformat()
@@ -195,7 +196,7 @@ def _timeline_resolve_phase_times(
         except Exception:
             pass
     if not start_time and start_stage.get("at"):
-        s_time = start_stage.get("at")
+        s_time: str = start_stage["at"]
         if s_time <= end_time_str:
             start_time = s_time
             end_time = end_time_str

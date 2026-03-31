@@ -28,7 +28,9 @@ class TaggerProcessor(BaseProcessor):
     name = "TaggerProcessor"
     stage_name = "tag"
 
-    def __init__(self, data_source: str = "uneg", config: Dict[str, Any] = None):
+    def __init__(
+        self, data_source: str = "uneg", config: Optional[Dict[str, Any]] = None
+    ):
         super().__init__()
         self.data_source = data_source
         self.config = config or {}
@@ -98,7 +100,9 @@ class TaggerProcessor(BaseProcessor):
         self.ensure_setup()
         assert self._database is not None
 
-        doc_id = doc.get("id") or doc.get("node_id")
+        doc_id_raw = doc.get("id") or doc.get("node_id")
+        assert doc_id_raw is not None, "Document must have an 'id' or 'node_id'"
+        doc_id: str = str(doc_id_raw)
         chunks = self._get_document_chunks(doc_id)
 
         if not chunks:
@@ -128,6 +132,7 @@ class TaggerProcessor(BaseProcessor):
 
     def _apply_taxonomy_tags(self, doc: Dict[str, Any], doc_id: str) -> None:
         """Run taxonomy tagger and save results."""
+        assert self._pg is not None
         try:
             taxonomy_tagger = next(
                 (t for t in self._taggers if isinstance(t, TaxonomyTagger)), None
@@ -150,6 +155,7 @@ class TaggerProcessor(BaseProcessor):
 
     def _update_document_tags(self, doc: Dict[str, Any], doc_id: str) -> None:
         """Compute tags and set status."""
+        assert self._pg is not None
         self._apply_taxonomy_tags(doc, doc_id)
         try:
             self._pg.merge_doc_sys_fields(
@@ -161,6 +167,7 @@ class TaggerProcessor(BaseProcessor):
 
     def _update_qdrant_payload(self, doc_id: str, doc_tags: Dict[str, Any]) -> None:
         """Update Qdrant payload with taxonomy tags."""
+        assert self._database is not None
         qdrant_updates = {k: v for k, v in doc_tags.items() if k.startswith("tag_")}
 
         if qdrant_updates:
@@ -184,7 +191,9 @@ class TaggerProcessor(BaseProcessor):
         self.ensure_setup()
         assert self._database is not None
 
-        doc_id = doc.get("id") or doc.get("node_id")
+        doc_id_raw = doc.get("id") or doc.get("node_id")
+        assert doc_id_raw is not None, "Document must have an 'id' or 'node_id'"
+        doc_id: str = str(doc_id_raw)
 
         section_type_tagger: Optional[SectionTypeTagger] = None
         for tagger in self._taggers:
@@ -234,7 +243,9 @@ class TaggerProcessor(BaseProcessor):
         self.ensure_setup()
         assert self._database is not None
 
-        doc_id = doc.get("id") or doc.get("node_id")
+        doc_id_raw = doc.get("id") or doc.get("node_id")
+        assert doc_id_raw is not None, "Document must have an 'id' or 'node_id'"
+        doc_id: str = str(doc_id_raw)
         chunks = self._get_document_chunks(doc_id)
 
         if not chunks:

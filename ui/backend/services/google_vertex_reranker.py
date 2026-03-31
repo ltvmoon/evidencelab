@@ -10,7 +10,9 @@ def rerank_with_google_vertex(
     query: str, documents: List[str], model_id: str
 ) -> List[float]:
     """Rerank documents using the Vertex AI Ranking API (Discovery Engine)."""
-    from google.cloud import discoveryengine_v1 as discoveryengine
+    from google.cloud import (
+        discoveryengine_v1 as discoveryengine,  # type: ignore[attr-defined]
+    )
 
     from pipeline.utilities.google_vertex_client import _load_gcp_project_id
 

@@ -183,7 +183,7 @@ def _build_document_filters(
 
 async def _translate_documents(
     documents: List[Dict[str, Any]],
-    target_language: str,
+    target_language: Optional[str],
 ) -> None:
     if not target_language or target_language.lower() == "en":
         return
@@ -223,35 +223,39 @@ async def _translate_documents(
 
 @router.get("/documents")
 async def get_documents(
-    organization: str = Query(None, description="Filter by organization"),
-    document_type: str = Query(None, description="Filter by document type"),
-    published_year: str = Query(None, description="Filter by published year"),
-    language: str = Query(None, description="Filter by language"),
-    file_format: str = Query(
+    organization: Optional[str] = Query(None, description="Filter by organization"),
+    document_type: Optional[str] = Query(None, description="Filter by document type"),
+    published_year: Optional[str] = Query(None, description="Filter by published year"),
+    language: Optional[str] = Query(None, description="Filter by language"),
+    file_format: Optional[str] = Query(
         None, description="Filter by file format (e.g., pdf, docx)"
     ),
-    status: str = Query(None, description="Filter by status"),
-    title: str = Query(None, description="Filter by title (partial match)"),
-    search: str = Query(None, description="Global search across title and summary"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    title: Optional[str] = Query(None, description="Filter by title (partial match)"),
+    search: Optional[str] = Query(
+        None, description="Global search across title and summary"
+    ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
     data_source: Optional[str] = Query(
         None, description="Data source (e.g., 'uneg', 'gcf')"
     ),
-    target_language: str = Query(
+    target_language: Optional[str] = Query(
         None, description="Target language for translation (e.g., 'fr', 'es')"
     ),
     toc_approved: Optional[bool] = Query(
         None, description="Filter by TOC approval status"
     ),
-    sdg: str = Query(
+    sdg: Optional[str] = Query(
         None, description="Filter by SDG (comma-separated for multiple, e.g. sdg1,sdg5)"
     ),
-    cross_cutting_theme: str = Query(
+    cross_cutting_theme: Optional[str] = Query(
         None,
         description="Filter by cross-cutting theme (comma-separated for multiple)",
     ),
-    ocr_applied: str = Query(None, description="Filter by OCR applied (Yes/No)"),
+    ocr_applied: Optional[str] = Query(
+        None, description="Filter by OCR applied (Yes/No)"
+    ),
     sort_by: str = Query("year", description="Field to sort by"),
     order: str = Query("desc", description="Sort order (asc/desc)"),
 ):
@@ -525,7 +529,7 @@ async def get_document_chunks(
     data_source: Optional[str] = Query(
         None, description="Data source (e.g., 'uneg', 'gcf')"
     ),
-    target_language: str = Query(
+    target_language: Optional[str] = Query(
         None, description="Target language for translation (e.g., 'fr', 'es')"
     ),
 ):

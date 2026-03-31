@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from pipeline.db import SUPPORTED_LLMS
 from pipeline.processors.tagging.tagger_constants import SECTION_TYPES
@@ -206,7 +206,7 @@ def invoke_and_parse_toc(
     additional_instruction: Optional[str],
 ) -> Optional[Dict[int, str]]:
     """Invoke the LLM and parse/validate the TOC classification output."""
-    messages = [SystemMessage(content=system_prompt)]
+    messages: List[BaseMessage] = [SystemMessage(content=system_prompt)]
     if additional_instruction:
         messages.append(SystemMessage(content=additional_instruction))
     messages.append(HumanMessage(content=user_prompt))

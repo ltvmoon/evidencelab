@@ -709,11 +709,11 @@ def _apply_front_matter_boundary(
 def _find_roman_page_range(
     entries: List[Dict[str, Any]], total_pages: Optional[int] = None
 ) -> Optional[Tuple[int, int]]:
-    fm_pages = sorted(
+    fm_pages: List[int] = sorted(
         {
-            entry.get("page")
+            int(entry["page"])
             for entry in entries
-            if entry.get("fm") and entry.get("page")
+            if entry.get("fm") and entry.get("page") is not None
         }
     )
     if fm_pages:

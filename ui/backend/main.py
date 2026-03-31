@@ -177,8 +177,8 @@ app.openapi = _custom_openapi  # type: ignore[method-assign]
 
 # Add rate limiter to app
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.highlight_cache = highlight_routes._highlight_cache
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+app.state.highlight_cache = highlight_routes._highlight_cache
 
 
 # ---------------------------------------------------------------------------

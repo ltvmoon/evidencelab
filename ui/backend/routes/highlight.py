@@ -109,17 +109,17 @@ def _normalize_bbox_entry(
             return page_num, bbox
         return None
     if isinstance(bbox_data, (list, tuple)) and len(bbox_data) >= 4:
-        page_num = chunk_payload.get("sys_page_num")
+        page_num = int(chunk_payload.get("sys_page_num") or 0)
         bbox = {
-            "l": bbox_data[0],
-            "b": bbox_data[1],
-            "r": bbox_data[2],
-            "t": bbox_data[3],
+            "l": float(bbox_data[0]),
+            "b": float(bbox_data[1]),
+            "r": float(bbox_data[2]),
+            "t": float(bbox_data[3]),
         }
         return page_num, bbox
     if isinstance(bbox_data, dict):
-        page_num = chunk_payload.get("sys_page_num")
-        return page_num, bbox_data
+        page_num = int(chunk_payload.get("sys_page_num") or 0)
+        return page_num, {k: float(v) for k, v in bbox_data.items()}
     return None
 
 

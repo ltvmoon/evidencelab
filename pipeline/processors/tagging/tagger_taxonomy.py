@@ -40,7 +40,7 @@ class TaxonomyTagger(BaseTagger):
     def __init__(
         self,
         embedding_model: Optional[TextEmbedding] = None,
-        config: Dict[str, Any] = None,
+        config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(embedding_model)
         self.config = config or {}

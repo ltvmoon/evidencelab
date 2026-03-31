@@ -3,7 +3,7 @@
 import logging
 import re
 from collections import Counter
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ui.backend.schemas import FacetValue, RangeInfo
 from ui.backend.utils.language_codes import LANGUAGE_NAMES
@@ -201,8 +201,8 @@ def _facet_storage_field(
     )
 
 
-def _safe_facet_query(query_fn, core_field: str) -> Dict[Any, int]:
-    """Run a facet query, returning empty dict on failure."""
+def _safe_facet_query(query_fn, core_field: str) -> Optional[Dict[Any, int]]:
+    """Run a facet query, returning None on failure."""
     try:
         return query_fn()
     except Exception as exc:

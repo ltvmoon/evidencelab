@@ -58,8 +58,8 @@ async def list_api_keys(
 ) -> List[ApiKeyRead]:
     """List all API keys (admin only)."""
     stmt = (
-        select(ApiKey, User.email)
-        .outerjoin(User, ApiKey.created_by_user_id == User.id)
+        select(ApiKey, User.email)  # type: ignore[call-overload]
+        .outerjoin(User, ApiKey.created_by_user_id == User.id)  # type: ignore[arg-type]
         .order_by(ApiKey.created_at.desc())
     )
     result = await session.execute(stmt)

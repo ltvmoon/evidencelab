@@ -164,7 +164,7 @@ _rerank_models_cache: dict[str, Any] = {}
 _rerank_models_lock = threading.Lock()
 
 
-def get_dense_model(vector_name: str = None):
+def get_dense_model(vector_name: Optional[str] = None):
     return search_models.get_dense_model(
         vector_name,
         db_vectors=DB_VECTORS,
@@ -184,7 +184,7 @@ def get_sparse_model():
     return _sparse_model
 
 
-def get_models(dense_vector_name: str = None):
+def get_models(dense_vector_name: Optional[str] = None):
     return get_dense_model(dense_vector_name), get_sparse_model()
 
 
@@ -470,25 +470,29 @@ def _merge_hybrid_results(
     for rank, result in enumerate(dense_results, 1):
         chunk_id = str(result.id)
         chunk_scores[chunk_id]["dense_score"] = result.score  # type: ignore[assignment]
-        chunk_scores[chunk_id]["rrf_score"] += weight / (rrf_k + rank)  # type: ignore[assignment]
+        chunk_scores[chunk_id]["rrf_score"] += (  # type: ignore[assignment, operator]
+            weight / (rrf_k + rank)
+        )
         chunk_scores[chunk_id]["point"] = result
 
     sparse_weight = 1.0 - weight
     for rank, result in enumerate(sparse_results, 1):
         chunk_id = str(result.id)
         chunk_scores[chunk_id]["sparse_score"] = result.score  # type: ignore[assignment]
-        chunk_scores[chunk_id]["rrf_score"] += sparse_weight / (rrf_k + rank)  # type: ignore[assignment]  # noqa: E501
+        chunk_scores[chunk_id]["rrf_score"] += sparse_weight / (rrf_k + rank)  # type: ignore[assignment, operator]  # noqa: E501
         if chunk_scores[chunk_id]["point"] is None:
             chunk_scores[chunk_id]["point"] = result  # type: ignore[assignment]
 
     sorted_chunks = sorted(
-        chunk_scores.values(), key=lambda x: x["rrf_score"], reverse=True
+        chunk_scores.values(),
+        key=lambda x: x["rrf_score"],  # type: ignore[arg-type, return-value]
+        reverse=True,
     )[:limit]
 
     search_result = []
     for chunk_data in sorted_chunks:
         point = chunk_data["point"]
-        point.score = chunk_data["rrf_score"]  # type: ignore[attr-defined]
+        point.score = chunk_data["rrf_score"]  # type: ignore[attr-defined, union-attr]
         search_result.append(point)  # type: ignore[arg-type]
     return search_result
 
@@ -613,20 +617,20 @@ def _filter_section_types(
 def search_chunks(
     query: str,
     limit: int = 10,
-    dense_weight: float = None,
-    db: Database = None,
-    data_source: str | None = None,
-    filters: dict = None,
+    dense_weight: Optional[float] = None,
+    db: Optional[Database] = None,
+    data_source: Optional[str] = None,
+    filters: Optional[dict] = None,
     rerank: bool = False,
     rerank_model: Optional[str] = None,
     recency_boost: bool = False,
     recency_weight: float = 0.15,
     recency_scale_days: int = 365,
-    section_types: List[str] = None,
+    section_types: Optional[List[str]] = None,
     keyword_boost_short_queries: bool = True,
     min_chunk_size: int = 0,
-    dense_model: str = None,
-    payload_fields: List[str] = None,
+    dense_model: Optional[str] = None,
+    payload_fields: Optional[List[str]] = None,
     max_rerank_candidates: int = 0,
 ) -> List[Any]:
     """
@@ -775,10 +779,10 @@ def search_chunks(
 
 
 def scroll_filtered_chunks(
-    filters: dict = None,
+    filters: Optional[dict] = None,
     limit: int = 50,
-    data_source: str | None = None,
-    section_types: List[str] = None,
+    data_source: Optional[str] = None,
+    section_types: Optional[List[str]] = None,
 ) -> List[Any]:
     """Scroll chunks matching filters without a search query.
 
@@ -870,10 +874,10 @@ def _format_facet_list(core_field: str, counter: Counter) -> List[Dict[str, Any]
 
 def get_search_facets(
     query: str,
-    filters: dict = None,
+    filters: Optional[dict] = None,
     limit: int = 2000,
-    dense_weight: float = None,
-    data_source: str = None,
+    dense_weight: Optional[float] = None,
+    data_source: Optional[str] = None,
 ) -> Dict[str, List[Any]]:
     """
     Get facet counts based on a search query.
@@ -969,7 +973,10 @@ def get_search_facets(
 
 # CLI interface needs update too if used
 def search(
-    query: str, limit: int = 10, dense_weight: float = 0.8, dense_model: str = None
+    query: str,
+    limit: int = 10,
+    dense_weight: float = 0.8,
+    dense_model: Optional[str] = None,
 ):
     """
     Search the index for the query.
@@ -1083,7 +1090,13 @@ def _build_title_keyword_filter(
     filters: Optional[dict], data_source: Optional[str], keywords: List[str]
 ) -> Optional[models.Filter]:
     base_filter = _build_document_filter(filters, data_source)
-    must_conditions = list(base_filter.must or []) if base_filter else []
+    existing_must = base_filter.must if base_filter else None
+    if existing_must is None:
+        must_conditions: List[models.Condition] = []
+    elif isinstance(existing_must, list):
+        must_conditions = list(existing_must)
+    else:
+        must_conditions = [existing_must]
     for token in keywords:
         must_conditions.append(
             models.FieldCondition(key="map_title", match=models.MatchText(text=token))
@@ -1217,10 +1230,10 @@ def _run_title_sparse_search(
 def search_titles(
     query: str,
     limit: int = 50,
-    dense_weight: float = None,
-    db: Database = None,
-    filters: dict = None,
-    dense_model: str = None,
+    dense_weight: Optional[float] = None,
+    db: Optional[Database] = None,
+    filters: Optional[dict] = None,
+    dense_model: Optional[str] = None,
 ) -> List[Any]:
     """
     Hybrid search specifically for document TITLES/Metadata using the 'documents' collection.
