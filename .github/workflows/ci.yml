@@ -181,6 +181,7 @@ jobs:
         if: always()
 
   container-scan:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     needs: security-scan
     steps:
