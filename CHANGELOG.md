@@ -2,6 +2,40 @@
 
 All notable changes to Evidence Lab will be documented in this file.
 
+## [1.4.0] - 2026-04-12
+
+Evidence Lab v1.4.0 is a security and authentication release. It fixes a SQL injection vulnerability in the documents API, adds conditional OAuth login buttons, and improves deployment configuration for OAuth callbacks.
+
+### Security
+- Fixed SQL injection via `sort_by` parameter interpolated into raw SQL — replaced f-string interpolation with whitelist dictionary lookup (#264, #266)
+- Fixed SQL injection via taxonomy filter codes interpolated into `jsonb_path_exists` — replaced with parameterized `vars` argument (#264, #266)
+- Added `_ALLOWED_TAXONOMY_KEYS` frozenset to validate taxonomy keys before use in JSONB path expressions (#266)
+- Added "SQL Injection Prevention" section to SECURITY.md documenting all dynamic SQL controls (#266)
+- Updated CLAUDE.md SQL guidance to cover dynamic SQL fragments (ORDER BY, JSONB paths) (#266)
+- Added 15 regression tests for SQL injection prevention (#266)
+
+### Authentication
+- Added conditional OAuth buttons — Google and Microsoft SSO buttons only appear when the corresponding secrets are configured (#265)
+- Added `DISABLE_EMAIL_LOGIN` environment variable to hide email/password login when only OAuth is desired (#265)
+- Fixed OAuth secrets to be read solely from `.env` file in the API service (#265)
+- Pinned langgraph and langgraph-prebuilt to working versions (#265)
+
+### Documentation & CI
+- Added `OAUTH_CALLBACK_BASE_URL` to `.env.example` and auth documentation (#261)
+- Updated dependabot target-branch to `rc/v1.4.0` (#263)
+- Skipped container-scan for dependabot PRs to reduce CI costs
+
+### What's Changed
+- fix: prevent SQL injection via sort_by and taxonomy filter parameters (#266)
+- feat: conditional OAuth buttons and DISABLE_EMAIL_LOGIN (#265)
+- ci: update dependabot target-branch to rc/v1.4.0 (#263)
+- docs: add OAUTH_CALLBACK_BASE_URL to .env.example and auth docs (#261)
+- ci: skip container-scan for dependabot PRs
+
+**Full diff:** https://github.com/dividor/evidencelab/compare/v1.3.0...v1.4.0
+
+---
+
 ## [1.3.0] - 2026-03-30
 
 Evidence Lab v1.3.0 is a security and code quality release focused on achieving the [OpenSSF Best Practices](https://www.bestpractices.dev/projects/12335) baseline badge. It hardens the CI pipeline, enforces stricter static analysis, documents cryptographic practices, and raises the bar on code quality tooling throughout the project.
