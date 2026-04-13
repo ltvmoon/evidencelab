@@ -276,10 +276,26 @@ async def get_datasources_config(
 
 @router.get("/config/auth-status")
 def get_auth_status():
-    """Return the user module mode (for frontend feature flag)."""
+    """Return auth module mode and available login methods (for frontend)."""
+    email_disabled = os.environ.get("DISABLE_EMAIL_LOGIN", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    google_enabled = bool(
+        os.environ.get("OAUTH_GOOGLE_CLIENT_ID")
+        and os.environ.get("OAUTH_GOOGLE_CLIENT_SECRET")
+    )
+    microsoft_enabled = bool(
+        os.environ.get("OAUTH_MICROSOFT_CLIENT_ID")
+        and os.environ.get("OAUTH_MICROSOFT_CLIENT_SECRET")
+    )
     return {
         "user_module_enabled": _USER_MODULE,
         "user_module_mode": _USER_MODULE_MODE,
+        "email_login_disabled": email_disabled,
+        "google_oauth_enabled": google_enabled,
+        "microsoft_oauth_enabled": microsoft_enabled,
     }
 
 

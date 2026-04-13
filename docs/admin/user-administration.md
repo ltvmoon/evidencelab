@@ -85,7 +85,23 @@ The **tenant ID** controls who can sign in:
 
 Evidence Lab requests the `openid`, `email`, `profile`, and `User.Read` scopes.
 
-#### 4. Setting Up Email (SMTP)
+#### 4. Disabling Email Login (OAuth-only mode)
+
+To force all users to sign in via OAuth (Google and/or Microsoft) and remove email/password login and registration entirely:
+
+```env
+DISABLE_EMAIL_LOGIN=true
+```
+
+When this is set:
+
+- The backend does **not** mount the `/auth/login`, `/auth/cookie-login`, or `/auth/register` endpoints — direct API calls to them return 404.
+- The login modal hides the email form and the **Register** tab.
+- Only the OAuth buttons for providers with credentials configured are shown.
+
+The login modal also automatically hides any OAuth provider whose credentials are not configured. If both `OAUTH_GOOGLE_*` and `OAUTH_MICROSOFT_*` are unset, only the Google button would be missing — so ensure at least one OAuth provider is fully configured before enabling `DISABLE_EMAIL_LOGIN`, otherwise users will have no way to sign in.
+
+#### 5. Setting Up Email (SMTP)
 
 Evidence Lab sends two types of email: **account verification** (on registration) and **password reset**. Configure your SMTP server:
 
@@ -107,7 +123,7 @@ AUTH_RESET_TOKEN_LIFETIME=86400      # Password reset: 24 hours (default)
 AUTH_VERIFY_TOKEN_LIFETIME=604800    # Email verification: 7 days (default)
 ```
 
-#### 5. Testing Emails with Mailpit
+#### 6. Testing Emails with Mailpit
 
 For local development, [Mailpit](https://mailpit.axllent.org/) provides a fake SMTP server with a web inbox — no real emails are sent.
 

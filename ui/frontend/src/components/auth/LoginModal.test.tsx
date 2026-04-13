@@ -26,6 +26,33 @@ const mockAuthValue = (overrides: Partial<AuthContextValue> = {}): AuthContextVa
   ...overrides,
 });
 
+interface MockAuthStatusOverrides {
+  email_login_disabled?: boolean;
+  google_oauth_enabled?: boolean;
+  microsoft_oauth_enabled?: boolean;
+}
+
+const mockAuthStatusResponse = (overrides: MockAuthStatusOverrides = {}) => {
+  mockedAxios.get.mockImplementation((url: string) => {
+    if (url.includes('/config/auth-status')) {
+      return Promise.resolve({
+        data: {
+          email_login_disabled: overrides.email_login_disabled ?? false,
+          google_oauth_enabled: overrides.google_oauth_enabled ?? true,
+          microsoft_oauth_enabled: overrides.microsoft_oauth_enabled ?? true,
+        },
+      });
+    }
+    return Promise.reject(new Error(`Unexpected GET ${url}`));
+  });
+};
+
+beforeEach(() => {
+  mockedAxios.get.mockReset();
+  mockedAxios.post.mockReset();
+  mockAuthStatusResponse();
+});
+
 const renderModal = (
   authValue?: AuthContextValue,
   props?: Partial<React.ComponentProps<typeof LoginModal>>,
@@ -58,10 +85,39 @@ describe('LoginModal', () => {
     expect(screen.getByLabelText('Last name')).toBeInTheDocument();
   });
 
-  it('shows OAuth buttons', () => {
+  it('shows OAuth buttons when providers are enabled', async () => {
     renderModal();
-    expect(screen.getByText(/Sign in with Google/)).toBeInTheDocument();
-    expect(screen.getByText(/Sign in with Microsoft/)).toBeInTheDocument();
+    expect(await screen.findByText(/Sign in with Google/)).toBeInTheDocument();
+    expect(await screen.findByText(/Sign in with Microsoft/)).toBeInTheDocument();
+  });
+
+  it('hides Google button when google_oauth_enabled is false', async () => {
+    mockAuthStatusResponse({ google_oauth_enabled: false });
+    renderModal();
+    expect(await screen.findByText(/Sign in with Microsoft/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sign in with Google/)).not.toBeInTheDocument();
+  });
+
+  it('hides Microsoft button when microsoft_oauth_enabled is false', async () => {
+    mockAuthStatusResponse({ microsoft_oauth_enabled: false });
+    renderModal();
+    expect(await screen.findByText(/Sign in with Google/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sign in with Microsoft/)).not.toBeInTheDocument();
+  });
+
+  it('hides email form, Register tab and "or" divider when email login is disabled', async () => {
+    mockAuthStatusResponse({ email_login_disabled: true });
+    renderModal();
+    // OAuth buttons still render
+    expect(await screen.findByText(/Sign in with Google/)).toBeInTheDocument();
+    // Email form and Register tab are gone
+    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Register', { selector: 'button.login-tab' }),
+    ).not.toBeInTheDocument();
+    // "or" divider is also hidden when no email form follows
+    expect(screen.queryByText('or')).not.toBeInTheDocument();
   });
 
   it('switches to register tab', () => {
@@ -120,17 +176,19 @@ describe('LoginModal — Forgot password', () => {
     expect(screen.getByText('Back to Sign In')).toBeInTheDocument();
   });
 
-  it('returns to login mode when "Back to Sign In" is clicked', () => {
+  it('returns to login mode when "Back to Sign In" is clicked', async () => {
     renderModal();
+    // Wait for auth-status fetch to complete so OAuth buttons would appear
+    await screen.findByText(/Sign in with Google/);
     fireEvent.click(screen.getByText('Forgot password?'));
     fireEvent.click(screen.getByText('Back to Sign In'));
-    // Should be back in login mode with OAuth buttons visible
     expect(screen.getByText(/Sign in with Google/)).toBeInTheDocument();
     expect(screen.getByText('Forgot password?')).toBeInTheDocument();
   });
 
-  it('hides OAuth buttons and password field in forgot mode', () => {
+  it('hides OAuth buttons and password field in forgot mode', async () => {
     renderModal();
+    await screen.findByText(/Sign in with Google/);
     fireEvent.click(screen.getByText('Forgot password?'));
     expect(screen.queryByText(/Sign in with Google/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
@@ -269,11 +327,10 @@ describe('LoginModal — Reset password', () => {
     });
   });
 
-  it('can navigate to Sign In tab from reset mode', () => {
+  it('can navigate to Sign In tab from reset mode', async () => {
     renderModal(undefined, { resetToken: 'test-token-abc' });
     fireEvent.click(screen.getByText('Sign In', { selector: 'button.login-tab' }));
-    // Should now show login form
-    expect(screen.getByText(/Sign in with Google/)).toBeInTheDocument();
+    expect(await screen.findByText(/Sign in with Google/)).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
   });
 });
