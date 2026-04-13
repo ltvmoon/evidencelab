@@ -24,26 +24,38 @@ _OAUTH_CALLBACK_BASE = os.environ.get(
 # Where to redirect the browser after a successful OAuth login.
 _APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:3000")
 
+# When DISABLE_EMAIL_LOGIN is true, email/password login and registration
+# routes are not mounted at all — forcing users to sign in via OAuth only.
+DISABLE_EMAIL_LOGIN = os.environ.get("DISABLE_EMAIL_LOGIN", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
-# Email/password auth
+# Email/password auth — mounted only when DISABLE_EMAIL_LOGIN is not set.
+# Verify and reset-password routers remain available so OAuth users who also
+# have an email on file can still verify / reset if needed.
 # ---------------------------------------------------------------------------
 
-router.include_router(
-    fastapi_users.get_auth_router(bearer_backend),
-    prefix="/login",
-    tags=["auth"],
-)
-router.include_router(
-    fastapi_users.get_auth_router(cookie_backend),
-    prefix="/cookie-login",
-    tags=["auth"],
-)
-router.include_router(
-    fastapi_users.get_register_router(UserRead, UserCreate),
-    tags=["auth"],
-)
+if not DISABLE_EMAIL_LOGIN:
+    router.include_router(
+        fastapi_users.get_auth_router(bearer_backend),
+        prefix="/login",
+        tags=["auth"],
+    )
+    router.include_router(
+        fastapi_users.get_auth_router(cookie_backend),
+        prefix="/cookie-login",
+        tags=["auth"],
+    )
+    router.include_router(
+        fastapi_users.get_register_router(UserRead, UserCreate),
+        tags=["auth"],
+    )
+
 router.include_router(
     fastapi_users.get_verify_router(UserRead),
     tags=["auth"],
