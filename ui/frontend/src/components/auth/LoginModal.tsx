@@ -295,7 +295,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, resetToken, required, 
 
   useEffect(() => {
     let cancelled = false;
-    axios.get(`${API_BASE_URL}/config/auth-status`)
+    axios.get<Partial<AuthStatus>>(`${API_BASE_URL}/config/auth-status`)
       .then((res) => {
         if (cancelled) return;
         setAuthStatus({
