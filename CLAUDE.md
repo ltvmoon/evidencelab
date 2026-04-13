@@ -155,7 +155,7 @@ Follow `SECURITY.md` protocols. Key rules:
 - **Path traversal protection** on file-serving endpoints: double URL decoding, null byte rejection, `Path.resolve()` canonicalization, `relative_to()` containment, explicit extension whitelist.
 - **Data source validation**: always validate `data_source` against the whitelist from `config.json`. Never trust user input directly.
 - **Request body size limits**: enforced at middleware (`MAX_REQUEST_BODY_BYTES`, default 2 MB). POST/PUT/PATCH only.
-- **SQL**: always use parameterized queries. Never concatenate user input into SQL strings.
+- **SQL**: always use parameterized queries (`%s` placeholders). Never interpolate user input into SQL strings via f-strings, `.format()`, or `%`. For dynamic SQL fragments that cannot be parameterized (e.g., `ORDER BY` columns, JSONB path expressions), use **whitelist dictionary lookups** that map user input to hardcoded SQL — never interpolate the input itself. See `_get_paginated_documents_impl()` for the canonical pattern.
 
 ### Secrets & Credentials
 - **Never hardcode secrets.** Use environment variables exclusively.
