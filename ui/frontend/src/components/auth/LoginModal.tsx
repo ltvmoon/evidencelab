@@ -1,8 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../../config';
 import { useAuth } from '../../hooks/useAuth';
 import OAuthButtons from './OAuthButtons';
+
+interface AuthStatus {
+  email_login_disabled: boolean;
+  google_oauth_enabled: boolean;
+  microsoft_oauth_enabled: boolean;
+}
+
+const DEFAULT_AUTH_STATUS: AuthStatus = {
+  email_login_disabled: false,
+  google_oauth_enabled: false,
+  microsoft_oauth_enabled: false,
+};
 
 interface LoginModalProps {
   onClose: () => void;
@@ -151,6 +163,7 @@ interface MainAuthFormProps {
   setLastName: (v: string) => void;
   loading: boolean;
   displaySuccess: string | null;
+  authStatus: AuthStatus;
   onSubmit: (e: React.FormEvent) => void;
   onForgot: () => void;
 }
@@ -158,9 +171,12 @@ interface MainAuthFormProps {
 const MainAuthForm: React.FC<MainAuthFormProps> = ({
   mode, email, setEmail, password, setPassword,
   firstName, setFirstName, lastName, setLastName,
-  loading, displaySuccess,
+  loading, displaySuccess, authStatus,
   onSubmit, onForgot,
-}) => (
+}) => {
+  const showOAuth = authStatus.google_oauth_enabled || authStatus.microsoft_oauth_enabled;
+  const showEmail = !authStatus.email_login_disabled;
+  return (
   <>
     {mode === 'register' && !displaySuccess && (
       <p className="auth-callout">
@@ -168,10 +184,19 @@ const MainAuthForm: React.FC<MainAuthFormProps> = ({
       </p>
     )}
 
-    <OAuthButtons action={mode === 'login' ? 'Sign in' : 'Sign up'} />
+    {showOAuth && (
+      <OAuthButtons
+        action={mode === 'login' ? 'Sign in' : 'Sign up'}
+        googleEnabled={authStatus.google_oauth_enabled}
+        microsoftEnabled={authStatus.microsoft_oauth_enabled}
+      />
+    )}
 
-    <div className="auth-divider"><span>or</span></div>
+    {showOAuth && showEmail && (
+      <div className="auth-divider"><span>or</span></div>
+    )}
 
+    {showEmail && (
     <form onSubmit={onSubmit}>
       {mode === 'register' && (
         <div className="form-group-row">
@@ -246,8 +271,10 @@ const MainAuthForm: React.FC<MainAuthFormProps> = ({
         {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
       </button>
     </form>
+    )}
   </>
-);
+  );
+};
 
 /* ------------------------------------------------------------------ */
 /*  Main modal                                                        */
@@ -264,6 +291,28 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, resetToken, required, 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(DEFAULT_AUTH_STATUS);
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get<Partial<AuthStatus>>(`${API_BASE_URL}/config/auth-status`)
+      .then((res) => {
+        if (cancelled) return;
+        setAuthStatus({
+          email_login_disabled: !!res.data.email_login_disabled,
+          google_oauth_enabled: !!res.data.google_oauth_enabled,
+          microsoft_oauth_enabled: !!res.data.microsoft_oauth_enabled,
+        });
+      })
+      .catch(() => { /* keep defaults on failure */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (authStatus.email_login_disabled && mode === 'register') {
+      setMode('login');
+    }
+  }, [authStatus.email_login_disabled, mode]);
 
   const handleClose = () => {
     clearVerificationMessage();
@@ -371,12 +420,14 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, resetToken, required, 
             >
               Sign In
             </button>
-            <button
-              className={`login-tab ${mode === 'register' ? 'login-tab-active' : ''}`}
-              onClick={() => switchMode('register')}
-            >
-              Register
-            </button>
+            {!authStatus.email_login_disabled && (
+              <button
+                className={`login-tab ${mode === 'register' ? 'login-tab-active' : ''}`}
+                onClick={() => switchMode('register')}
+              >
+                Register
+              </button>
+            )}
           </div>
           {!required && <button className="modal-close" onClick={handleClose}>&times;</button>}
         </div>
@@ -422,6 +473,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, resetToken, required, 
               setLastName={setLastName}
               loading={loading}
               displaySuccess={displaySuccess}
+              authStatus={authStatus}
               onSubmit={mode === 'login' ? handleLogin : handleRegister}
               onForgot={() => switchMode('forgot')}
             />

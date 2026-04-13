@@ -4,9 +4,21 @@ import API_BASE_URL from '../../config';
 interface OAuthButtonsProps {
   /** Label prefix, e.g. "Sign in" or "Sign up" */
   action?: string;
+  /** Whether the Google OAuth button should be rendered. */
+  googleEnabled?: boolean;
+  /** Whether the Microsoft OAuth button should be rendered. */
+  microsoftEnabled?: boolean;
 }
 
-const OAuthButtons: React.FC<OAuthButtonsProps> = ({ action = 'Sign in' }) => {
+const OAuthButtons: React.FC<OAuthButtonsProps> = ({
+  action = 'Sign in',
+  googleEnabled = true,
+  microsoftEnabled = true,
+}) => {
+  if (!googleEnabled && !microsoftEnabled) {
+    return null;
+  }
+
   const handleOAuth = async (provider: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/auth/${provider}/authorize`, {
@@ -27,6 +39,7 @@ const OAuthButtons: React.FC<OAuthButtonsProps> = ({ action = 'Sign in' }) => {
 
   return (
     <div className="oauth-buttons">
+      {googleEnabled && (
       <button type="button" className="oauth-button oauth-google" onClick={handleGoogle}>
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
           <path
@@ -48,6 +61,8 @@ const OAuthButtons: React.FC<OAuthButtonsProps> = ({ action = 'Sign in' }) => {
         </svg>
         {action} with Google
       </button>
+      )}
+      {microsoftEnabled && (
       <button type="button" className="oauth-button oauth-microsoft" onClick={handleMicrosoft}>
         <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
           <rect x="1" y="1" width="9" height="9" fill="#f25022" />
@@ -57,6 +72,7 @@ const OAuthButtons: React.FC<OAuthButtonsProps> = ({ action = 'Sign in' }) => {
         </svg>
         {action} with Microsoft
       </button>
+      )}
     </div>
   );
 };
