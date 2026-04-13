@@ -136,6 +136,17 @@ The `/file/{file_path}` endpoint implements comprehensive path traversal protect
 - Directory containment verification using `relative_to()`
 - Explicit file extension whitelist
 
+#### SQL Injection Prevention
+
+All SQL queries use parameterized queries (`%s` placeholders) for user-supplied values. Dynamic SQL fragments that cannot be parameterized (e.g., `ORDER BY` column names, JSONB path expressions) use **whitelist dictionaries** that map user input to hardcoded SQL strings — user input is never interpolated into SQL.
+
+Specific controls:
+
+- **Sort columns**: `sort_by` API parameter is resolved via a `dict.get()` lookup against a hardcoded map; unrecognised values fall back to a safe default
+- **Sort direction**: `sort_order` is normalised to a binary `"ASC"` / `"DESC"` choice
+- **Taxonomy filters**: JSONB path expressions use `jsonb_path_exists` with the `vars` argument so taxonomy codes are bound as query parameters; the taxonomy key is validated against `_ALLOWED_TAXONOMY_KEYS`
+- **Table names**: derived from `config.json` (operator-controlled), never from user input
+
 #### Data Source Validation
 
 API endpoints validate `data_source` parameters against a whitelist loaded from `config.json`, preventing:
@@ -368,6 +379,8 @@ Before submitting a PR, ensure:
 
 - [ ] No hardcoded secrets or credentials
 - [ ] Input validation for user-provided data
+- [ ] All SQL uses parameterized queries — no f-string/format interpolation of user input
+- [ ] Dynamic SQL fragments (ORDER BY, JSONB paths) use whitelist lookups, not interpolation
 - [ ] Pre-commit hooks pass (including Bandit, Gitleaks)
 - [ ] No new security warnings in CI
 - [ ] Sensitive operations are properly authenticated
@@ -414,6 +427,12 @@ MD4, MD5 (for security purposes), RC4, single DES, 3DES, SHA-1 (for security pur
 
 ## Changelog
 
+- **2026-04-12**: Fix SQL injection via `sort_by` and taxonomy filter parameters (#264)
+  - Replaced f-string interpolation of `sort_by` in `ORDER BY` clause with a whitelist dictionary lookup (hardcoded SQL fragments only)
+  - Replaced f-string interpolation of taxonomy codes in `jsonb_path_exists` with parameterized `vars` argument (`jsonb_build_object('v', %s::text)`)
+  - Added `_ALLOWED_TAXONOMY_KEYS` frozenset to validate taxonomy keys before use in JSONB path expressions
+  - Added "SQL Injection Prevention" section to SECURITY.md documenting all controls
+  - Added 15 regression tests covering injection attempts, whitelist fallback, and parameterisation
 - **2026-03-31**: Document cryptographic algorithms (OpenSSF Best Practices)
   - Added "Cryptographic Algorithms" section listing all algorithms in use
   - Documented Fernet (AES-128-CBC + HMAC-SHA256) Encrypt-then-MAC construction and why it is not vulnerable to known CBC-mode attacks

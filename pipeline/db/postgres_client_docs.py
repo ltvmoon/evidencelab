@@ -788,16 +788,35 @@ class PostgresDocMixin:
             page, page_size, filters, filter_map, sort_by, sort_order
         )
 
+    _ALLOWED_TAXONOMY_KEYS = frozenset({"sdg", "cross_cutting_theme"})
+
     @staticmethod
-    def _taxonomy_clause(key: str, value: Any) -> Optional[str]:
-        """Build a WHERE clause for taxonomy (JSONB) filters."""
+    def _taxonomy_clause(key: str, value: Any, params: List[Any]) -> Optional[str]:
+        """Build a WHERE clause for taxonomy (JSONB) filters.
+
+        Uses jsonb_path_exists with the ``vars`` argument so that
+        taxonomy codes are passed as query parameters, not interpolated
+        into the SQL string.  ``key`` is validated against a strict
+        whitelist to prevent injection via the JSONB path.
+        """
+        if key not in PostgresDocMixin._ALLOWED_TAXONOMY_KEYS:
+            return None
+
         codes = value if isinstance(value, list) else [value]
-        conditions = [
-            f"jsonb_path_exists(sys_taxonomies, "
-            f"'$.{key}[*].code ? (@ == \"{code}\")')"
-            for code in codes
-        ]
-        return f"({' OR '.join(conditions)})" if conditions else None
+        if not codes:
+            return None
+
+        # jsonb_path_exists(col, '$.sdg[*].code ? (@ == $v)',
+        #                   jsonb_build_object('v', %s))
+        path = f"$.{key}[*].code ? (@ == $v)"
+        conditions = []
+        for code in codes:
+            conditions.append(
+                f"jsonb_path_exists(sys_taxonomies, "
+                f"'{path}', jsonb_build_object('v', %s::text))"
+            )
+            params.append(str(code))
+        return f"({' OR '.join(conditions)})"
 
     @staticmethod
     def _column_clause(col: str, value: Any, params: List[Any]) -> str:
@@ -843,7 +862,7 @@ class PostgresDocMixin:
                 else:
                     where_clauses.append(f"({col} IS NOT TRUE OR {col} IS NULL)")
             elif key in ("sdg", "cross_cutting_theme"):
-                clause = self._taxonomy_clause(key, value)
+                clause = self._taxonomy_clause(key, value, params)
                 if clause:
                     where_clauses.append(clause)
             elif key in filter_map:
@@ -869,25 +888,20 @@ class PostgresDocMixin:
         if where_sql:
             where_sql = "WHERE " + where_sql
 
-        # Sort mapping
-        sort_col = "map_published_year"  # Default
-        if sort_by == "year":
-            sort_col = "map_published_year"
-        elif sort_by == "title":
-            sort_col = "map_title"
-        elif sort_by == "last_updated":
-            # Convert sys_last_updated (epoch) to timestamp, fallback
-            sort_col = (
+        # Sort mapping — all values are hardcoded SQL fragments, never user input
+        sort_map = {
+            "year": "map_published_year",
+            "title": "map_title",
+            "last_updated": (
                 "COALESCE(to_timestamp(sys_last_updated), "
                 "sys_status_timestamp, '1970-01-01'::timestamp)"
-            )
-        elif sort_by in ("sdg", "cross_cutting_theme"):
-            # Sort by first taxonomy code in the array
-            # Extract first element's code from JSONB array: sys_taxonomies->'sdg'->0->'code'
-            sort_col = f"COALESCE(sys_taxonomies->'{sort_by}'->0->>'code', 'zzz')"
-        else:
-            # Default for unknown fields
-            sort_col = "map_published_year"
+            ),
+            "sdg": "COALESCE(sys_taxonomies->'sdg'->0->>'code', 'zzz')",
+            "cross_cutting_theme": (
+                "COALESCE(sys_taxonomies->'cross_cutting_theme'" "->0->>'code', 'zzz')"
+            ),
+        }
+        sort_col = sort_map.get(sort_by, "map_published_year")
 
         # Handle sort order
         order_direction = "DESC" if sort_order.lower() == "desc" else "ASC"
