@@ -5,11 +5,13 @@ import { AiSummaryPanel } from '../AiSummaryPanel';
 import { FiltersPanel } from '../filters/FiltersPanel';
 import { MobileFiltersToggle } from '../MobileFiltersToggle';
 import { SearchResultsList } from '../SearchResultsList';
+import { ResultsHeaderRow } from '../ResultsHeaderRow';
 import { useCarouselScroll } from '../../hooks/useCarouselScroll';
 import { useRatings } from '../../hooks/useRatings';
 import { useAuth } from '../../hooks/useAuth';
 import RatingModal from '../ratings/RatingModal';
 import { serializeDrilldownTree } from '../../utils/drilldownUtils';
+import { useDevFixtureSearch } from '../../__fixtures__/useDevFixtureSearch';
 
 interface SearchTabContentProps {
   filtersExpanded: boolean;
@@ -469,6 +471,14 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   onAddNodeClick,
   onAddNodeCancel,
 }) => {
+  // Dev-only: when REACT_APP_DEV_FIXTURES=true AND the user typed a query
+  // AND no real results came back, substitute a realistic fixture so the
+  // Search Results list, AI summary panel, and Export-to-Word button can
+  // all be exercised without a running backend. In every other case this
+  // is a no-op — isFixtureActive is false and the originals flow through.
+  const { effectiveResults, effectiveAiSummary, isFixtureActive } =
+    useDevFixtureSearch({ query, results, aiSummary, loading });
+
   const [filteredOrgs, setFilteredOrgs] = useState<string[]>(() => {
     const params = new URLSearchParams(window.location.search);
     const orgParam = params.get('carousel_org');
@@ -683,7 +693,12 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
 
   const contentGridClass = `content-grid ${filtersExpanded ? '' : 'content-grid-no-filters'}`;
   const isInitialLoading = loading && results.length === 0;
-  const aiSummaryVisible = isAiSummaryVisible(aiSummaryEnabled, results, aiSummaryLoading, aiSummary);
+  const aiSummaryVisible = isAiSummaryVisible(
+    aiSummaryEnabled,
+    effectiveResults,
+    aiSummaryLoading,
+    effectiveAiSummary,
+  );
 
   const filtersPanelNode = filtersExpanded ? (
     <div className="global-filters-column">
@@ -772,9 +787,9 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             aiSummaryCollapsed={aiSummaryCollapsed}
             aiSummaryExpanded={aiSummaryExpanded}
             aiSummaryLoading={aiSummaryLoading}
-            aiSummary={aiSummary}
+            aiSummary={effectiveAiSummary}
             minScore={hasActiveFilter ? 0 : minScore}
-            results={aiSummaryResults.length > 0 ? aiSummaryResults : results}
+            results={aiSummaryResults.length > 0 ? aiSummaryResults : effectiveResults}
             aiPrompt={aiPrompt}
             showPromptModal={showPromptModal}
             translatedSummary={aiSummaryTranslatedText}
@@ -843,7 +858,13 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             />
           )}
 
-          {results.length > 0 && <h3 className="search-results-heading">Search Results</h3>}
+          <ResultsHeaderRow
+            results={effectiveResults}
+            query={query}
+            aiSummary={effectiveAiSummary}
+            dataSource={dataSource}
+            showFixtureBadge={isFixtureActive}
+          />
           {showFilters && (
             <SearchResultFilters
               uniqueOrgs={uniqueOrgs}
@@ -863,7 +884,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             />
           )}
           <SearchResultsList
-            results={hasActiveFilter ? displayedResults : results}
+            results={hasActiveFilter && !isFixtureActive ? displayedResults : effectiveResults}
             minScore={hasActiveFilter ? 0 : minScore}
             loading={loading}
             query={query}
