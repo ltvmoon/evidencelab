@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../../config';
+import StarRating from '../ratings/StarRating';
 
 interface FeedbackModalProps {
   isOpen: boolean;
@@ -10,9 +11,19 @@ interface FeedbackModalProps {
   screenshotError: string | null;
 }
 
-// Server enforces a 200 KB cap on the JSONB `context` column. Reject early
-// so the user gets clear feedback instead of a 422 from the server.
-const MAX_SCREENSHOT_BYTES = 180_000;
+// Server enforces a 1 MB cap on the JSONB `context` column. Leave a little
+// headroom for the rest of the payload so we never trip a 422.
+const MAX_SCREENSHOT_BYTES = 950_000;
+
+const FONT_SIZE_HINT = '0.78rem';
+const FONT_SIZE_BUTTON = '0.82rem';
+const BORDER_DEFAULT = '1px solid var(--brand-border)';
+const BUTTON_PADDING = '6px 14px';
+const COLOR_TEXT_SECONDARY = 'var(--brand-text-secondary)';
+const COLOR_ERROR = 'var(--brand-error)';
+const COLOR_PRIMARY = 'var(--brand-primary)';
+const COLOR_BORDER = 'var(--brand-border)';
+const RADIUS_DEFAULT = 6;
 
 const FeedbackModal: React.FC<FeedbackModalProps> = ({
   isOpen,
@@ -21,6 +32,7 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
   screenshot,
   screenshotError,
 }) => {
+  const [score, setScore] = useState(0);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -30,21 +42,24 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
 
   const screenshotTooLarge =
     screenshot !== null && screenshot.length > MAX_SCREENSHOT_BYTES;
+  const canSubmit = score >= 1 && comment.trim().length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!comment.trim()) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const context = screenshot && !screenshotTooLarge ? { screenshot } : null;
+      const context: Record<string, unknown> = {};
+      if (screenshot && !screenshotTooLarge) context.screenshot = screenshot;
+      if (screenshotError) context.screenshot_error = screenshotError;
       await axios.post(`${API_BASE_URL}/ratings/`, {
         rating_type: 'page_feedback',
         reference_id: url.slice(0, 255),
-        score: 3,
+        score,
         comment: comment.trim(),
         url,
-        context,
+        context: Object.keys(context).length > 0 ? context : null,
       });
       setSubmitted(true);
     } catch (err: unknown) {
@@ -56,6 +71,7 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
   };
 
   const handleClose = () => {
+    setScore(0);
     setComment('');
     setSubmitError(null);
     setSubmitted(false);
@@ -79,7 +95,7 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
       <div
         className="modal-panel feedback-modal"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 520, width: '92%', maxHeight: '90vh', overflowY: 'auto' }}
+        style={{ maxWidth: 420, width: '92%' }}
       >
         <div className="modal-header">
           <h2 style={{ fontSize: '1rem', fontWeight: 600 }}>Send feedback</h2>
@@ -96,12 +112,12 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
               onClick={handleClose}
               style={{
                 marginTop: 16,
-                padding: '6px 14px',
-                fontSize: '0.82rem',
-                background: 'var(--brand-primary)',
+                padding: BUTTON_PADDING,
+                fontSize: FONT_SIZE_BUTTON,
+                background: COLOR_PRIMARY,
                 color: '#fff',
                 border: 'none',
-                borderRadius: 6,
+                borderRadius: RADIUS_DEFAULT,
                 cursor: 'pointer',
               }}
             >
@@ -111,39 +127,24 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="modal-body" style={{ padding: '16px 20px' }}>
-              <div style={{ marginBottom: 12, fontSize: '0.78rem', color: 'var(--brand-text-secondary)' }}>
-                <strong>Page:</strong>{' '}
-                <span style={{ wordBreak: 'break-all' }}>{url}</span>
-              </div>
+              <p
+                style={{
+                  margin: '0 0 14px',
+                  fontSize: FONT_SIZE_HINT,
+                  color: COLOR_TEXT_SECONDARY,
+                  lineHeight: 1.4,
+                }}
+              >
+                The page URL and a screenshot are captured automatically — no need
+                to describe what you were looking at. Just share the context: what
+                you expected, what surprised you, or what would make this better.
+              </p>
 
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--brand-text-secondary)', marginBottom: 4 }}>
-                  Screenshot
+              <div style={{ marginBottom: 16, textAlign: 'center' }}>
+                <StarRating score={score} onChange={setScore} size={28} />
+                <div style={{ marginTop: 6, fontSize: FONT_SIZE_HINT, color: COLOR_TEXT_SECONDARY }}>
+                  {score === 0 ? 'Click a star to rate' : `${score} / 5`}
                 </div>
-                {screenshot && !screenshotTooLarge && (
-                  <img
-                    src={screenshot}
-                    alt="Screenshot of current page"
-                    style={{
-                      width: '100%',
-                      border: '1px solid var(--brand-border)',
-                      borderRadius: 6,
-                      maxHeight: 220,
-                      objectFit: 'contain',
-                      background: '#f7f7f7',
-                    }}
-                  />
-                )}
-                {screenshotError && (
-                  <p style={{ margin: 0, color: 'var(--brand-error)', fontSize: '0.78rem' }}>
-                    Could not capture screenshot: {screenshotError}. Feedback will be submitted without it.
-                  </p>
-                )}
-                {screenshotTooLarge && (
-                  <p style={{ margin: 0, color: 'var(--brand-error)', fontSize: '0.78rem' }}>
-                    Screenshot too large to attach; feedback will be submitted without it.
-                  </p>
-                )}
               </div>
 
               <textarea
@@ -156,16 +157,29 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
                 style={{
                   width: '100%',
                   padding: '8px 10px',
-                  border: '1px solid var(--brand-border)',
-                  borderRadius: 6,
+                  border: BORDER_DEFAULT,
+                  borderRadius: RADIUS_DEFAULT,
                   resize: 'vertical',
                   fontSize: '0.85rem',
                   fontFamily: 'inherit',
                 }}
               />
 
+              <div
+                style={{
+                  marginTop: 10,
+                  fontSize: FONT_SIZE_HINT,
+                  color: COLOR_TEXT_SECONDARY,
+                }}
+              >
+                {screenshot && !screenshotTooLarge && '✓ Screenshot attached'}
+                {screenshotTooLarge && '⚠ Screenshot was too large to attach'}
+                {screenshotError && `⚠ Screenshot capture failed: ${screenshotError}`}
+                {!screenshot && !screenshotError && '… capturing screenshot'}
+              </div>
+
               {submitError && (
-                <p style={{ margin: '8px 0 0', color: 'var(--brand-error)', fontSize: '0.78rem' }}>
+                <p style={{ margin: '8px 0 0', color: COLOR_ERROR, fontSize: FONT_SIZE_HINT }}>
                   {submitError}
                 </p>
               )}
@@ -185,12 +199,12 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
                 onClick={handleClose}
                 disabled={submitting}
                 style={{
-                  padding: '6px 14px',
-                  fontSize: '0.82rem',
+                  padding: BUTTON_PADDING,
+                  fontSize: FONT_SIZE_BUTTON,
                   background: 'transparent',
-                  color: 'var(--brand-text-secondary)',
-                  border: '1px solid var(--brand-border)',
-                  borderRadius: 6,
+                  color: COLOR_TEXT_SECONDARY,
+                  border: BORDER_DEFAULT,
+                  borderRadius: RADIUS_DEFAULT,
                   cursor: submitting ? 'not-allowed' : 'pointer',
                 }}
               >
@@ -198,18 +212,15 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={submitting || !comment.trim()}
+                disabled={submitting || !canSubmit}
                 style={{
-                  padding: '6px 14px',
-                  fontSize: '0.82rem',
-                  background:
-                    submitting || !comment.trim()
-                      ? 'var(--brand-border)'
-                      : 'var(--brand-primary)',
+                  padding: BUTTON_PADDING,
+                  fontSize: FONT_SIZE_BUTTON,
+                  background: submitting || !canSubmit ? COLOR_BORDER : COLOR_PRIMARY,
                   color: '#fff',
                   border: 'none',
-                  borderRadius: 6,
-                  cursor: submitting || !comment.trim() ? 'not-allowed' : 'pointer',
+                  borderRadius: RADIUS_DEFAULT,
+                  cursor: submitting || !canSubmit ? 'not-allowed' : 'pointer',
                 }}
               >
                 {submitting ? 'Submitting…' : 'Submit'}

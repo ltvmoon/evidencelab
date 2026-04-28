@@ -34,10 +34,22 @@ class TestPageFeedbackRatingType:
             )
         assert "rating_type" in str(exc.value)
 
+    def test_rating_create_accepts_realistic_screenshot(self):
+        # A 700 KB base64 screenshot fits comfortably under the 1 MB JSONB cap.
+        screenshot = "data:image/jpeg;base64," + ("A" * 700_000)
+        body = RatingCreate(
+            rating_type="page_feedback",
+            reference_id="x",
+            score=4,
+            comment="Captured a busy results page.",
+            context={"screenshot": screenshot},
+        )
+        assert body.context["screenshot"].startswith("data:image/jpeg")
+
     def test_rating_create_rejects_oversized_screenshot(self):
-        # Server cap is 200_000 chars when JSONB is serialized — anything larger
-        # must be rejected before it hits Postgres.
-        oversized = "x" * 201_000
+        # Server cap is 1_000_000 chars when JSONB is serialized — anything
+        # larger must be rejected before it hits Postgres.
+        oversized = "x" * 1_001_000
         with pytest.raises(ValidationError):
             RatingCreate(
                 rating_type="page_feedback",
