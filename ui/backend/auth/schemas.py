@@ -194,6 +194,9 @@ VALID_RATING_TYPES = {
     "chat",
     "assistant-basic",
     "assistant-deep-research",
+    # Free-form page feedback submitted via the floating feedback button.
+    # Score is unused for this type; clients submit a sentinel value (3).
+    "page_feedback",
 }
 
 
