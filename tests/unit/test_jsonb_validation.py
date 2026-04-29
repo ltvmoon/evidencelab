@@ -75,13 +75,13 @@ class TestValidateJsonb:
             _validate_jsonb(deep)
 
     def test_size_exceeded_raises(self):
-        huge = {"data": "x" * 250_000}
+        huge = {"data": "x" * 1_100_000}
         with pytest.raises(ValueError, match="size"):
             _validate_jsonb(huge)
 
     def test_at_size_limit_passes(self):
         """A payload just under the size limit should pass."""
-        # 200_000 char limit — build something close but under
-        data = {"data": "x" * 199_950}
+        # 1_000_000 char limit — build something close but under
+        data = {"data": "x" * 999_950}
         result = _validate_jsonb(data)
         assert result is data
