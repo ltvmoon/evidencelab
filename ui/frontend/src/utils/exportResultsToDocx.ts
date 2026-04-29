@@ -271,13 +271,13 @@ const buildResultCard = (
   dataSource?: string,
 ): Paragraph[] => {
   const out: Paragraph[] = [];
+  const altTitle = typeof r.document_title === 'string' ? r.document_title : '';
   const title =
     (r.title && r.title.trim()) ||
-    ((r as any).document_title && (r as any).document_title.trim()) ||
-    `(untitled document)`;
+    (altTitle && altTitle.trim()) ||
+    '(untitled document)';
   const href = resolveResultLink(r, siteOrigin, dataSource);
 
-  // Title: "<n>. <Title>" as a hyperlink
   out.push(
     new Paragraph({
       heading: HeadingLevel.HEADING_3,
@@ -292,7 +292,6 @@ const buildResultCard = (
     }),
   );
 
-  // Metadata line
   const metaParts: string[] = [];
   if (r.organization) metaParts.push(String(r.organization));
   if (r.year) metaParts.push(String(r.year));
@@ -306,7 +305,6 @@ const buildResultCard = (
     }),
   );
 
-  // Headings breadcrumb (if any)
   const headings = Array.isArray(r.headings) ? r.headings.filter(Boolean) : [];
   if (headings.length) {
     out.push(
@@ -320,7 +318,6 @@ const buildResultCard = (
     );
   }
 
-  // Full excerpt — split on paragraph breaks, keep every word.
   const excerpt = normaliseExcerpt(String(r.text || ''));
   const blocks = excerpt.split(/\n{2,}/);
   for (const block of blocks) {
@@ -334,7 +331,6 @@ const buildResultCard = (
     );
   }
 
-  // "Open source →" link for easy navigation
   out.push(
     new Paragraph({
       spacing: { after: 240 },
