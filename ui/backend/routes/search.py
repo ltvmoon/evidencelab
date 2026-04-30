@@ -7,7 +7,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from qdrant_client.http import models as qmodels
 
-from pipeline.db import get_default_filter_fields, get_taxonomy_filter_fields
+from pipeline.db import (
+    get_default_filter_fields,
+    get_src_field_mapping,
+    get_taxonomy_filter_fields,
+)
 from pipeline.utilities.text_cleaning import clean_text
 from ui.backend.routes.highlight import infer_paragraphs_from_bboxes
 from ui.backend.schemas import Facets, FacetValue, SearchResponse, SearchResult
@@ -989,6 +993,7 @@ async def get_facets(
         filter_fields_config = get_default_filter_fields(source)
         taxonomy_fields = get_taxonomy_filter_fields(source)
         filter_fields_config = {**filter_fields_config, **taxonomy_fields}
+        src_field_mapping = get_src_field_mapping(source)
 
         core_filters = build_core_filters_from_params(
             organization,
@@ -1033,6 +1038,7 @@ async def get_facets(
                 facet_filter,
                 resolve_storage_field,
                 pg=pg,
+                src_field_mapping=src_field_mapping,
             )
             return Facets(
                 facets=facets_data,
@@ -1043,7 +1049,12 @@ async def get_facets(
         build_needed_fields(filter_fields_config, source)
         facet_filter = _build_facet_filter(core_filters, source)
         facets_result, range_fields = build_facets_from_db(
-            db, filter_fields_config, facet_filter, resolve_storage_field, pg=pg
+            db,
+            filter_fields_config,
+            facet_filter,
+            resolve_storage_field,
+            pg=pg,
+            src_field_mapping=src_field_mapping,
         )
         return Facets(
             facets=facets_result,

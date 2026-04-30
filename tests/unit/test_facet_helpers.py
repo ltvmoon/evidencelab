@@ -16,9 +16,56 @@ from ui.backend.utils.facet_helpers import (
     _safe_facet_query,
     _validate_and_route_field,
     build_facets_from_db,
+    build_facets_from_pg_jsonb,
     build_generic_facets,
     build_year_facets,
 )
+
+
+# ---------------------------------------------------------------------------
+# Fakes used by build_facets_from_pg_jsonb tests
+# ---------------------------------------------------------------------------
+class _FakeJsonbCursor:
+    def __init__(self, rows):
+        self._rows = rows
+        self.last_query = None
+        self.last_params = None
+
+    def execute(self, query, params=None):
+        self.last_query = query
+        self.last_params = params
+
+    def fetchall(self):
+        return self._rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        pass
+
+
+class _FakeJsonbConn:
+    def __init__(self, rows):
+        self.cursor_obj = _FakeJsonbCursor(rows)
+
+    def cursor(self):
+        return self.cursor_obj
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        pass
+
+
+class _FakeJsonbPg:
+    def __init__(self, rows):
+        self.docs_table = "docs_wfp"
+        self.conn = _FakeJsonbConn(rows)
+
+    def _get_conn(self):
+        return self.conn
 
 
 # ---------------------------------------------------------------------------
@@ -438,3 +485,131 @@ class TestBuildFacetsFromDb:
         assert "organization" in facets
         assert "tag_sdg" in facets
         assert len(facets) == 3
+
+
+# ---------------------------------------------------------------------------
+# build_facets_from_pg_jsonb
+# ---------------------------------------------------------------------------
+class TestBuildFacetsFromPgJsonb:
+    def test_returns_grouped_counts(self):
+        pg = _FakeJsonbPg([("Activity", 12), ("Country Strategic Plan", 5)])
+        result = build_facets_from_pg_jsonb(pg, "Evaluation category")
+        assert result == {"Activity": 12, "Country Strategic Plan": 5}
+
+    def test_empty_result(self):
+        pg = _FakeJsonbPg([])
+        result = build_facets_from_pg_jsonb(pg, "Evaluation category")
+        assert result == {}
+
+    def test_raw_key_passed_as_parameter_not_interpolated(self):
+        """SQL injection guard: raw_key must reach the driver as a parameter."""
+        pg = _FakeJsonbPg([("Activity", 1)])
+        build_facets_from_pg_jsonb(pg, "Evaluation category")
+        cursor = pg.conn.cursor_obj
+        assert cursor.last_params == (
+            "Evaluation category",
+            "Evaluation category",
+            "Evaluation category",
+        )
+        # The literal raw key must NOT appear in the SQL string itself.
+        assert "Evaluation category" not in cursor.last_query
+        assert "src_doc_raw_metadata->>%s" in cursor.last_query
+
+    def test_query_targets_correct_docs_table(self):
+        pg = _FakeJsonbPg([])
+        build_facets_from_pg_jsonb(pg, "Topics")
+        assert "FROM docs_wfp" in pg.conn.cursor_obj.last_query
+
+
+# ---------------------------------------------------------------------------
+# _facet_storage_field — src_* JSONB routing
+# ---------------------------------------------------------------------------
+class TestFacetStorageFieldSrcRouting:
+    def test_routes_src_to_jsonb_when_mapping_present(self):
+        db = MagicMock()
+        pg = _FakeJsonbPg([("Activity", 7), ("Decentralized", 3)])
+        mapping = {"src_evaluation_category": "Evaluation category"}
+
+        result = _facet_storage_field(
+            db,
+            pg,
+            "src_evaluation_category",
+            "src_evaluation_category",
+            None,
+            src_field_mapping=mapping,
+        )
+
+        assert result == {"Activity": 7, "Decentralized": 3}
+        db.facet_documents.assert_not_called()
+
+    def test_falls_back_to_qdrant_when_mapping_missing_for_field(self):
+        db = MagicMock()
+        db.facet_documents.return_value = {"X": 1}
+        pg = _FakeJsonbPg([])
+        mapping = {"src_other": "Other"}
+
+        result = _facet_storage_field(
+            db,
+            pg,
+            "src_evaluation_category",
+            "src_evaluation_category",
+            None,
+            src_field_mapping=mapping,
+        )
+
+        assert result == {"X": 1}
+        db.facet_documents.assert_called_once()
+
+    def test_falls_back_to_qdrant_when_pg_is_none(self):
+        db = MagicMock()
+        db.facet_documents.return_value = {"X": 1}
+        mapping = {"src_evaluation_category": "Evaluation category"}
+
+        result = _facet_storage_field(
+            db,
+            None,
+            "src_evaluation_category",
+            "src_evaluation_category",
+            None,
+            src_field_mapping=mapping,
+        )
+
+        assert result == {"X": 1}
+        db.facet_documents.assert_called_once()
+
+    def test_falls_back_to_qdrant_when_mapping_is_none(self):
+        """Backward-compat: callers that don't pass src_field_mapping still work."""
+        db = MagicMock()
+        db.facet_documents.return_value = {"X": 1}
+        pg = _FakeJsonbPg([])
+
+        result = _facet_storage_field(db, pg, "src_x", "src_x", None)
+
+        assert result == {"X": 1}
+        db.facet_documents.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# build_facets_from_db threads src_field_mapping
+# ---------------------------------------------------------------------------
+class TestBuildFacetsFromDbSrcRouting:
+    def test_src_field_with_mapping_uses_jsonb_not_qdrant(self):
+        db = MagicMock()
+        db.data_source = "wfp"
+        db.facet_documents = MagicMock(return_value={"should_not_appear": 99})
+        pg = _FakeJsonbPg([("Activity", 200), ("Country Strategic Plan", 80)])
+        config = {"src_evaluation_category": "Evaluation Category"}
+        mapping = {"src_evaluation_category": "Evaluation category"}
+
+        facets, _ = build_facets_from_db(
+            db,
+            config,
+            None,
+            lambda f, s: f,
+            pg=pg,
+            src_field_mapping=mapping,
+        )
+
+        values = {fv.value: fv.count for fv in facets["src_evaluation_category"]}
+        assert values == {"Activity": 200, "Country Strategic Plan": 80}
+        db.facet_documents.assert_not_called()
