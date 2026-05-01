@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field, computed_field, field_validator
 # ---------------------------------------------------------------------------
 
 _MAX_JSONB_DEPTH = 10
-_MAX_JSONB_SIZE = 200_000  # chars when serialised (≈200 KB)
+# Cap on JSONB-bound payloads when serialised (≈1 MB; under the 2 MB request-body cap).
+_MAX_JSONB_SIZE = 1_000_000
 
 
 def _check_jsonb_depth(
@@ -194,6 +195,9 @@ VALID_RATING_TYPES = {
     "chat",
     "assistant-basic",
     "assistant-deep-research",
+    # Free-form page feedback submitted via the floating feedback button.
+    # Score is unused for this type; clients submit a sentinel value (3).
+    "page_feedback",
 }
 
 

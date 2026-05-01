@@ -133,7 +133,7 @@ class TestRatingCreate:
 
     def test_context_jsonb_size_limit(self):
         """Extremely large context payload should be rejected."""
-        huge = {"data": "x" * 250_000}
+        huge = {"data": "x" * 1_100_000}
         with pytest.raises(ValidationError, match="size"):
             RatingCreate(
                 rating_type="search_result",
@@ -197,6 +197,7 @@ class TestValidRatingTypes:
             "chat",
             "assistant-basic",
             "assistant-deep-research",
+            "page_feedback",
         }
         assert VALID_RATING_TYPES == expected
 
