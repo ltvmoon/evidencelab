@@ -4931,6 +4931,65 @@ li.ai-fact-active::before {
   margin: 0.75rem 0 0.25rem 0;
 }
 
+/* Flex row holding the "Search Results" title and the Export-to-Word button
+ * on the same line. */
+.search-results-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin: 0.75rem 0 0.25rem 0;
+  flex-wrap: wrap;
+}
+.search-results-heading-row .search-results-heading {
+  margin: 0;
+}
+.search-results-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.export-results-button {
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--gray-300, #cbd5e1);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--gray-700, #334155);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.export-results-button:hover:not(:disabled) {
+  background: var(--gray-50, #f8fafc);
+  border-color: var(--gray-400, #94a3b8);
+  color: var(--gray-900, #0f172a);
+}
+.export-results-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.export-results-error {
+  color: #b91c1c;
+  font-size: 0.8125rem;
+  margin-left: 0.5rem;
+}
+.dev-fixture-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7c2d12;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
 .search-loading-spinner {
   display: flex;
   align-items: center;
