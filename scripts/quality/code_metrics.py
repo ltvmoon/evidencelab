@@ -8,6 +8,8 @@ Metrics:
 - Maintainability Index (radon, Python only)
 """
 
+from __future__ import annotations
+
 import argparse
 import ast
 import json
