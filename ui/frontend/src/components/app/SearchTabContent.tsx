@@ -510,7 +510,11 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
 
   const [aiRatingModalOpen, setAiRatingModalOpen] = useState(false);
   const [aiRatingModalInitialScore, setAiRatingModalInitialScore] = useState(0);
-  const aiRating = aiSummaryRatings.get('');
+  // Scope ratings to the currently-viewed summary node so each drilldown summary
+  // is rated independently. Root summary keeps item_id=null/'' for back-compat
+  // with ratings created before drilldown scoping existed.
+  const aiRatingItemId = aiDrilldownCurrentNodeId || '';
+  const aiRating = aiSummaryRatings.get(aiRatingItemId);
 
   // Score-filtered results (same threshold used throughout)
   const visibleResults = useMemo(() =>
@@ -828,6 +832,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
                 submitAiRating({
                   ratingType: 'ai_summary',
                   referenceId: searchId,
+                  itemId: aiDrilldownCurrentNodeId || undefined,
                   score,
                   comment,
                   context: {
