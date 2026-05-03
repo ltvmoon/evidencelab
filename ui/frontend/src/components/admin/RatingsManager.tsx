@@ -91,6 +91,9 @@ const ChevronIcon: React.FC<{ expanded: boolean }> = ({ expanded }) => (
 const isUrl = (val: string): boolean =>
   /^https?:\/\//i.test(val) || /^www\./i.test(val);
 
+const isImageDataUrl = (val: string): boolean =>
+  /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(val);
+
 /** Render a value as a clickable link if it looks like a URL */
 const AutoLink: React.FC<{ value: string; style?: React.CSSProperties }> = ({ value, style }) => {
   if (isUrl(value)) {
@@ -379,7 +382,26 @@ const ContextFields: React.FC<{ context: Record<string, any>; exclude?: string[]
         <React.Fragment key={key}>
           <span className="admin-context-key">{key.replace(/_/g, ' ')}:</span>
           <span className="admin-context-value">
-            {typeof val === 'string' && isUrl(val) ? (
+            {typeof val === 'string' && isImageDataUrl(val) ? (
+              <a
+                href={val}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img
+                  src={val}
+                  alt={key}
+                  style={{
+                    maxWidth: 320,
+                    maxHeight: 240,
+                    border: '1px solid #e0e0e0',
+                    borderRadius: 4,
+                    display: 'block',
+                  }}
+                />
+              </a>
+            ) : typeof val === 'string' && isUrl(val) ? (
               <AutoLink value={val} />
             ) : typeof val === 'object' ? (
               JSON.stringify(val)
