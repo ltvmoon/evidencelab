@@ -45,6 +45,18 @@ const FeedbackButton: React.FC = () => {
         logging: false,
         useCORS: true,
         backgroundColor: '#ffffff',
+        // Skip translucent overlays (loading spinners, modal backdrops, side
+        // panels) so the captured screenshot shows the underlying page rather
+        // than a faded version masked by whatever overlay was on screen.
+        ignoreElements: (el) => {
+          const cls = el.className;
+          if (typeof cls !== 'string') return false;
+          return (
+            /(?:^|\s)(?:rating-modal-overlay|modal-overlay|chunks-modal-overlay|heatmap-modal-overlay|confirm-modal-overlay|thread-modal-backdrop|table-loading-overlay)(?:\s|$)/.test(
+              cls,
+            ) || el.getAttribute('role') === 'dialog'
+          );
+        },
       });
       // Try progressively lower JPEG quality until the encoded URL fits the
       // server's JSONB budget. Big or busy pages fall back to lower quality
