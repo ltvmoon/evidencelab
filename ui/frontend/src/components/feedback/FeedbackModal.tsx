@@ -127,19 +127,6 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="modal-body" style={{ padding: '16px 20px' }}>
-              <p
-                style={{
-                  margin: '0 0 14px',
-                  fontSize: FONT_SIZE_HINT,
-                  color: COLOR_TEXT_SECONDARY,
-                  lineHeight: 1.4,
-                }}
-              >
-                The page URL and a screenshot are captured automatically — no need
-                to describe what you were looking at. Just share the context: what
-                you expected, what surprised you, or what would make this better.
-              </p>
-
               <div style={{ marginBottom: 16, textAlign: 'center' }}>
                 <StarRating score={score} onChange={setScore} size={28} />
                 <div style={{ marginTop: 6, fontSize: FONT_SIZE_HINT, color: COLOR_TEXT_SECONDARY }}>
