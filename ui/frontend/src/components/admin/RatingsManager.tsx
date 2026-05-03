@@ -365,6 +365,39 @@ const AiSummaryBlock: React.FC<{ summary: string; results?: any[] }> = ({ summar
   );
 };
 
+/** Render a base64 data URL as a thumbnail; click opens full-size in new tab. */
+const DataUrlImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span style={{ color: '#a00', fontStyle: 'italic' }}>
+        [{alt}: image failed to render ({src.length.toLocaleString()} chars)]
+      </span>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      width={320}
+      onError={() => setFailed(true)}
+      onClick={(e) => {
+        e.stopPropagation();
+        window.open(src, '_blank', 'noopener,noreferrer');
+      }}
+      style={{
+        display: 'inline-block',
+        verticalAlign: 'top',
+        maxWidth: '100%',
+        height: 'auto',
+        border: '1px solid #e0e0e0',
+        borderRadius: 4,
+        cursor: 'pointer',
+      }}
+    />
+  );
+};
+
 /** Display high-level context fields only (not chunk-level fields) */
 const ContextFields: React.FC<{ context: Record<string, any>; exclude?: string[] }> = ({
   context,
@@ -383,24 +416,7 @@ const ContextFields: React.FC<{ context: Record<string, any>; exclude?: string[]
           <span className="admin-context-key">{key.replace(/_/g, ' ')}:</span>
           <span className="admin-context-value">
             {typeof val === 'string' && isImageDataUrl(val) ? (
-              <a
-                href={val}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <img
-                  src={val}
-                  alt={key}
-                  style={{
-                    maxWidth: 320,
-                    maxHeight: 240,
-                    border: '1px solid #e0e0e0',
-                    borderRadius: 4,
-                    display: 'block',
-                  }}
-                />
-              </a>
+              <DataUrlImage src={val} alt={key} />
             ) : typeof val === 'string' && isUrl(val) ? (
               <AutoLink value={val} />
             ) : typeof val === 'object' ? (
