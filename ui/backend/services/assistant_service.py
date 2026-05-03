@@ -105,6 +105,20 @@ def _has_any_tool_calls(msg) -> bool:
     return bool(getattr(msg, "tool_calls", None))
 
 
+# Vertex / Gemini populates these keys on AIMessage.response_metadata; OpenAI
+# and Anthropic never do. Used to gate Gemini-specific message handling so
+# other providers retain their existing behavior.
+_GEMINI_METADATA_MARKERS = ("safety_ratings", "is_blocked", "prompt_feedback")
+
+
+def _is_gemini_message(msg: Any) -> bool:
+    """Detect a LangChain AIMessage produced by a Vertex / Gemini model."""
+    rmeta = getattr(msg, "response_metadata", None)
+    if not isinstance(rmeta, dict):
+        return False
+    return any(key in rmeta for key in _GEMINI_METADATA_MARKERS)
+
+
 def _extract_finish_diagnostics(msg: Any) -> Dict[str, Any]:
     """Pull finish reason / safety / usage from an AIMessage's response metadata.
 
@@ -157,14 +171,16 @@ def _summarize_message(msg: Any) -> Dict[str, Any]:
 def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
     """Process output from the model node.
 
-    Only treat a message as final response text if it has NO tool calls.
-    The deepagents framework has built-in tools (write_todos, etc.) that
-    produce tool calls we don't surface, but their presence means the
-    model is still working, not producing the final answer.
+    For OpenAI / Anthropic, a message with tool calls is never the final
+    answer — the model first emits tool calls, then later emits a separate
+    text-only message. We skip tool-call messages for those providers.
 
-    In deep research mode, the coordinator delegates via the ``task``
-    tool.  We surface these as ``task_delegations`` so the UI can show
-    a "researching" phase.
+    Gemini (Vertex) is different: it routinely emits the final synthesis
+    text alongside a closing ``write_todos`` tool call in the same message,
+    and then returns an empty message on the next iteration. If we skipped
+    that message we'd lose the answer entirely (this was the cause of the
+    blank-screen / content_len=0 bug). For Gemini we therefore pick up
+    content even when tool calls are present.
     """
     result: Dict[str, Any] = {
         "tool_queries": [],
@@ -180,10 +196,14 @@ def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
         task_delegations = _extract_task_delegations(msg)
         if task_delegations:
             result["task_delegations"].extend(task_delegations)
-        elif _has_any_tool_calls(msg):
-            # Model called non-search tools (write_todos, etc.) — skip
-            pass
-        elif hasattr(msg, "content") and msg.content:
+            continue
+        has_content = hasattr(msg, "content") and msg.content
+        if _has_any_tool_calls(msg):
+            # Gemini-only carve-out: the synthesis often rides along with
+            # a write_todos tool call in the same message.
+            if _is_gemini_message(msg) and has_content:
+                result["response_text"] = msg.content
+        elif has_content:
             result["response_text"] = msg.content
     logger.info(
         "[deepres] model-step: msgs=%d summary=%s queries=%d tasks=%d response_text_len=%d",

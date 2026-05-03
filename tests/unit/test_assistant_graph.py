@@ -41,6 +41,8 @@ from ui.backend.services.assistant_graph import (  # noqa: E402
 from ui.backend.services.assistant_service import (  # noqa: E402
     _extract_finish_diagnostics,
     _is_duplicate_or_subset,
+    _is_gemini_message,
+    _process_agent_output,
     _summarize_message,
 )
 
@@ -561,6 +563,142 @@ class TestExtractFinishDiagnostics:
         msg.response_metadata = "unexpected string"
         msg.usage_metadata = None
         assert _extract_finish_diagnostics(msg) == {}
+
+
+class TestIsGeminiMessage:
+    """Tests for the Vertex/Gemini provider-detection helper."""
+
+    def test_vertex_safety_ratings_marker(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {"safety_ratings": [], "finish_reason": "STOP"}
+        assert _is_gemini_message(msg) is True
+
+    def test_vertex_is_blocked_marker(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {"is_blocked": False}
+        assert _is_gemini_message(msg) is True
+
+    def test_vertex_prompt_feedback_marker(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {"prompt_feedback": {}}
+        assert _is_gemini_message(msg) is True
+
+    def test_openai_metadata_not_detected(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {
+            "model_name": "gpt-4o",
+            "finish_reason": "stop",
+            "system_fingerprint": "fp_abc",
+        }
+        assert _is_gemini_message(msg) is False
+
+    def test_anthropic_metadata_not_detected(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {
+            "model_name": "claude-sonnet-4",
+            "stop_reason": "end_turn",
+        }
+        assert _is_gemini_message(msg) is False
+
+    def test_missing_response_metadata(self):
+        msg = MagicMock(spec=[])
+        assert _is_gemini_message(msg) is False
+
+    def test_non_dict_response_metadata(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = "weird"
+        assert _is_gemini_message(msg) is False
+
+
+def _make_msg(content="", tool_calls=None, response_metadata=None):
+    """Build a minimal AIMessage stand-in for _process_agent_output tests."""
+    msg = MagicMock(spec=["content", "tool_calls", "response_metadata"])
+    msg.content = content
+    msg.tool_calls = tool_calls
+    msg.response_metadata = response_metadata
+    return msg
+
+
+class TestProcessAgentOutputGeminiCarveOut:
+    """Tests for the Gemini-only behavior of _process_agent_output.
+
+    Gemini emits final synthesis text alongside a write_todos tool call;
+    other providers always separate them. We must pick up content for
+    Gemini messages with tool calls but NOT for OpenAI/Anthropic ones.
+    """
+
+    _GEMINI_META = {"safety_ratings": [], "is_blocked": False, "finish_reason": "STOP"}
+    _OPENAI_META = {"model_name": "gpt-4o", "finish_reason": "stop"}
+
+    def test_gemini_message_with_content_and_write_todos_picked_up(self):
+        msg = _make_msg(
+            content="Final synthesis answer here.",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["response_text"] == "Final synthesis answer here."
+
+    def test_openai_message_with_content_and_tool_call_skipped(self):
+        msg = _make_msg(
+            content="Let me think first",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._OPENAI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["response_text"] == ""
+
+    def test_gemini_message_empty_content_with_tool_call_no_overwrite(self):
+        msg = _make_msg(
+            content="",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["response_text"] == ""
+
+    def test_search_message_still_extracted_as_query(self):
+        msg = _make_msg(
+            content="anything",
+            tool_calls=[{"name": "search_documents", "args": {"query": "food"}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["tool_queries"] == ["food"]
+        assert result["response_text"] == ""
+
+    def test_task_delegation_still_extracted(self):
+        msg = _make_msg(
+            content="anything",
+            tool_calls=[{"name": "task", "args": {"description": "research X"}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["task_delegations"] == ["research X"]
+        assert result["response_text"] == ""
+
+    def test_plain_final_message_still_picked_up(self):
+        msg = _make_msg(
+            content="answer",
+            tool_calls=None,
+            response_metadata=None,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["response_text"] == "answer"
+
+    def test_later_synthesis_message_overwrites_earlier(self):
+        early = _make_msg(
+            content="intermediate",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._GEMINI_META,
+        )
+        final = _make_msg(
+            content="FINAL",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [early, final]})
+        assert result["response_text"] == "FINAL"
 
 
 @patch("ui.backend.services.assistant_graph.search_chunks", new=_mock_search_fn)
