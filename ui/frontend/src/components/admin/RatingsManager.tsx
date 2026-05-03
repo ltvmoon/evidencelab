@@ -365,6 +365,22 @@ const AiSummaryBlock: React.FC<{ summary: string; results?: any[] }> = ({ summar
   );
 };
 
+// Modern browsers (Chrome 60+, Firefox 59+) block top-frame navigation to
+// data: URLs as a phishing mitigation, so window.open(dataUrl) opens an empty
+// tab. Convert the data URL to a Blob URL — those are allowed.
+const openDataUrlInNewTab = (dataUrl: string): void => {
+  const [header, b64] = dataUrl.split(',', 2);
+  const mimeMatch = header.match(/^data:([^;]+)/);
+  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  window.open(blobUrl, '_blank', 'noopener,noreferrer');
+  // Revoke after the new tab has had time to load the blob.
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+};
+
 /** Render a base64 data URL as a thumbnail; click opens full-size in new tab. */
 const DataUrlImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
   const [failed, setFailed] = useState(false);
@@ -383,7 +399,7 @@ const DataUrlImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
       onError={() => setFailed(true)}
       onClick={(e) => {
         e.stopPropagation();
-        window.open(src, '_blank', 'noopener,noreferrer');
+        openDataUrlInNewTab(src);
       }}
       style={{
         display: 'inline-block',
