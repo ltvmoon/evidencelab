@@ -9,6 +9,22 @@ const TOOLTIP = 'Send feedback about this page';
 const SCREENSHOT_BYTES_BUDGET = 900_000;
 const JPEG_QUALITY_LADDER = [0.6, 0.4, 0.25];
 
+const OVERLAY_CLASS_PATTERN =
+  /(overlay|backdrop|drawer|dropdown-menu|loading|spinner|tooltip|popover|toast|snackbar)/i;
+
+const shouldIgnoreForCapture = (el: Element): boolean => {
+  const cls = typeof el.className === 'string' ? el.className : '';
+  if (OVERLAY_CLASS_PATTERN.test(cls)) return true;
+  if (el.getAttribute('aria-modal') === 'true') return true;
+  const role = el.getAttribute('role');
+  if (role === 'dialog' || role === 'tooltip') return true;
+  const cs = window.getComputedStyle(el);
+  return (
+    (cs.position === 'fixed' || cs.position === 'sticky') &&
+    parseFloat(cs.opacity) < 1
+  );
+};
+
 // Speech-bubble icon — communicates "leave a comment" without needing a label.
 const FeedbackIcon: React.FC<{ size?: number }> = ({ size = 22 }) => (
   <svg
@@ -45,6 +61,28 @@ const FeedbackButton: React.FC = () => {
         logging: false,
         useCORS: true,
         backgroundColor: '#ffffff',
+        // Crop to the viewport so the screenshot shows only what the user
+        // sees, not the entire scrollable document.
+        width: window.innerWidth,
+        height: window.innerHeight,
+        x: window.scrollX,
+        y: window.scrollY,
+        // Skip translucent overlays (loading spinners, modal backdrops,
+        // side panels, dropdowns) so the captured screenshot shows the
+        // underlying page rather than a faded/tinted version masked by
+        // whatever overlay was on screen.
+        ignoreElements: shouldIgnoreForCapture,
+        // The cloned DOM is rendered fresh in an iframe, so any
+        // opacity:0 → opacity:1 fade-in animation restarts from frame 0
+        // and html2canvas snapshots elements mid-fade. Disable all
+        // animations/transitions in the clone so they render at their
+        // final state.
+        onclone: (clonedDoc) => {
+          const style = clonedDoc.createElement('style');
+          style.textContent =
+            '*,*::before,*::after{animation:none!important;transition:none!important}';
+          clonedDoc.head.appendChild(style);
+        },
       });
       // Try progressively lower JPEG quality until the encoded URL fits the
       // server's JSONB budget. Big or busy pages fall back to lower quality

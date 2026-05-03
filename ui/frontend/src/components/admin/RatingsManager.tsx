@@ -91,6 +91,9 @@ const ChevronIcon: React.FC<{ expanded: boolean }> = ({ expanded }) => (
 const isUrl = (val: string): boolean =>
   /^https?:\/\//i.test(val) || /^www\./i.test(val);
 
+const isImageDataUrl = (val: string): boolean =>
+  /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(val);
+
 /** Render a value as a clickable link if it looks like a URL */
 const AutoLink: React.FC<{ value: string; style?: React.CSSProperties }> = ({ value, style }) => {
   if (isUrl(value)) {
@@ -362,6 +365,55 @@ const AiSummaryBlock: React.FC<{ summary: string; results?: any[] }> = ({ summar
   );
 };
 
+// Modern browsers (Chrome 60+, Firefox 59+) block top-frame navigation to
+// data: URLs as a phishing mitigation, so window.open(dataUrl) opens an empty
+// tab. Convert the data URL to a Blob URL — those are allowed.
+const openDataUrlInNewTab = (dataUrl: string): void => {
+  const [header, b64] = dataUrl.split(',', 2);
+  const mimeMatch = header.match(/^data:([^;]+)/);
+  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  window.open(blobUrl, '_blank', 'noopener,noreferrer');
+  // Revoke after the new tab has had time to load the blob.
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+};
+
+/** Render a base64 data URL as a thumbnail; click opens full-size in new tab. */
+const DataUrlImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span style={{ color: '#a00', fontStyle: 'italic' }}>
+        [{alt}: image failed to render ({src.length.toLocaleString()} chars)]
+      </span>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      width={320}
+      onError={() => setFailed(true)}
+      onClick={(e) => {
+        e.stopPropagation();
+        openDataUrlInNewTab(src);
+      }}
+      style={{
+        display: 'inline-block',
+        verticalAlign: 'top',
+        maxWidth: '100%',
+        height: 'auto',
+        border: '1px solid #e0e0e0',
+        borderRadius: 4,
+        cursor: 'pointer',
+      }}
+    />
+  );
+};
+
 /** Display high-level context fields only (not chunk-level fields) */
 const ContextFields: React.FC<{ context: Record<string, any>; exclude?: string[] }> = ({
   context,
@@ -379,7 +431,9 @@ const ContextFields: React.FC<{ context: Record<string, any>; exclude?: string[]
         <React.Fragment key={key}>
           <span className="admin-context-key">{key.replace(/_/g, ' ')}:</span>
           <span className="admin-context-value">
-            {typeof val === 'string' && isUrl(val) ? (
+            {typeof val === 'string' && isImageDataUrl(val) ? (
+              <DataUrlImage src={val} alt={key} />
+            ) : typeof val === 'string' && isUrl(val) ? (
               <AutoLink value={val} />
             ) : typeof val === 'object' ? (
               JSON.stringify(val)
