@@ -105,6 +105,19 @@ def _has_any_tool_calls(msg) -> bool:
     return bool(getattr(msg, "tool_calls", None))
 
 
+def _summarize_message(msg: Any) -> Dict[str, Any]:
+    """Build a compact per-message diagnostic record for logging."""
+    tc_names: List[str] = []
+    if hasattr(msg, "tool_calls") and msg.tool_calls:
+        tc_names = [tc.get("name", "?") for tc in msg.tool_calls]
+    content = getattr(msg, "content", "") or ""
+    return {
+        "type": type(msg).__name__,
+        "tool_calls": tc_names,
+        "content_len": len(content) if isinstance(content, str) else -1,
+    }
+
+
 def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
     """Process output from the model node.
 
@@ -136,6 +149,14 @@ def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
             pass
         elif hasattr(msg, "content") and msg.content:
             result["response_text"] = msg.content
+    logger.info(
+        "[deepres] model-step: msgs=%d summary=%s queries=%d tasks=%d response_text_len=%d",
+        len(messages),
+        [_summarize_message(m) for m in messages],
+        len(result["tool_queries"]),
+        len(result["task_delegations"]),
+        len(result["response_text"]),
+    )
     return result
 
 
@@ -206,6 +227,13 @@ async def stream_research_response(
     """
     run_id = uuid_mod.uuid4()
     tracker = None
+    logger.info(
+        "[deepres] stream start: run_id=%s deep=%s model=%s data_source=%s",
+        run_id,
+        deep_research,
+        model_key,
+        data_source,
+    )
 
     try:
         llm = _get_llm(
@@ -324,6 +352,7 @@ async def _stream_deep_research(
     agent_task = asyncio.create_task(_run_agent())
 
     token_buffer = ""
+    token_event_count = 0
     try:
         while True:
             event = await event_queue.get()
@@ -332,6 +361,7 @@ async def _stream_deep_research(
             etype = event.get("type")
             if etype == "token":
                 new_text = event["token"]
+                token_event_count += 1
                 if not _is_duplicate_or_subset(new_text, token_buffer):
                     token_buffer = new_text
             else:
@@ -344,6 +374,16 @@ async def _stream_deep_research(
 
     if token_buffer:
         yield {"type": "token", "token": token_buffer}
+
+    logger.info(
+        "[deepres] stream end: run_id=%s token_events=%d final_buffer_len=%d "
+        "sources=%d agent_error=%s",
+        run_id,
+        token_event_count,
+        len(token_buffer),
+        len(tracker.all_results) if tracker is not None else 0,
+        type(agent_error).__name__ if agent_error else None,
+    )
 
     if agent_error is not None:
         raise agent_error

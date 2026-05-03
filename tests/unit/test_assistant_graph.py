@@ -38,7 +38,10 @@ from ui.backend.services.assistant_graph import (  # noqa: E402
     _format_search_result,
     build_research_agent,
 )
-from ui.backend.services.assistant_service import _is_duplicate_or_subset  # noqa: E402
+from ui.backend.services.assistant_service import (  # noqa: E402
+    _is_duplicate_or_subset,
+    _summarize_message,
+)
 
 # Immediately restore sys.modules so other test files are not affected.
 for _k in _MOCKED_KEYS:
@@ -428,6 +431,52 @@ class TestIsDuplicateOrSubset:
     def test_superset_is_not_duplicate(self):
         """If new_text is LONGER than prev_text, it's not a duplicate."""
         assert _is_duplicate_or_subset("hello world foo", "hello") is False
+
+
+class TestSummarizeMessage:
+    """Tests for the per-message diagnostic summary used in deep-research logging."""
+
+    def test_text_message_no_tool_calls(self):
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = "hello world"
+        msg.tool_calls = None
+        s = _summarize_message(msg)
+        assert s["tool_calls"] == []
+        assert s["content_len"] == len("hello world")
+        assert s["type"] == "MagicMock"
+
+    def test_message_with_tool_calls(self):
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = ""
+        msg.tool_calls = [
+            {"name": "search_documents", "args": {"query": "x"}},
+            {"name": "task", "args": {"description": "y"}},
+        ]
+        s = _summarize_message(msg)
+        assert s["tool_calls"] == ["search_documents", "task"]
+        assert s["content_len"] == 0
+
+    def test_missing_content_attribute(self):
+        msg = MagicMock(spec=["tool_calls"])
+        msg.tool_calls = None
+        s = _summarize_message(msg)
+        assert s["content_len"] == 0
+        assert s["tool_calls"] == []
+
+    def test_non_string_content_returns_negative_len(self):
+        """Some langchain message variants store list-of-blocks in .content."""
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = [{"type": "text", "text": "hi"}]
+        msg.tool_calls = None
+        s = _summarize_message(msg)
+        assert s["content_len"] == -1
+
+    def test_tool_call_missing_name(self):
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = ""
+        msg.tool_calls = [{"args": {}}]
+        s = _summarize_message(msg)
+        assert s["tool_calls"] == ["?"]
 
 
 @patch("ui.backend.services.assistant_graph.search_chunks", new=_mock_search_fn)
