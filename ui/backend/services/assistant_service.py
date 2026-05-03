@@ -105,17 +105,53 @@ def _has_any_tool_calls(msg) -> bool:
     return bool(getattr(msg, "tool_calls", None))
 
 
+def _extract_finish_diagnostics(msg: Any) -> Dict[str, Any]:
+    """Pull finish reason / safety / usage from an AIMessage's response metadata.
+
+    LangChain stores Gemini's per-response metadata on
+    ``AIMessage.response_metadata`` and token usage on ``AIMessage.usage_metadata``.
+    When Vertex returns 200 OK with an empty candidate (safety filter, recitation,
+    MAX_TOKENS at zero output, etc.) the only signal lives here — no exception
+    is raised — so we capture it explicitly for diagnosis.
+    """
+    diag: Dict[str, Any] = {}
+    rmeta = getattr(msg, "response_metadata", None) or {}
+    if isinstance(rmeta, dict):
+        for key in (
+            "finish_reason",
+            "stop_reason",
+            "is_blocked",
+            "block_reason",
+            "safety_ratings",
+            "prompt_feedback",
+        ):
+            if key in rmeta and rmeta[key] not in (None, [], {}):
+                diag[key] = rmeta[key]
+    umeta = getattr(msg, "usage_metadata", None)
+    if isinstance(umeta, dict) and umeta:
+        diag["usage"] = {
+            k: umeta.get(k)
+            for k in ("input_tokens", "output_tokens", "total_tokens")
+            if k in umeta
+        }
+    return diag
+
+
 def _summarize_message(msg: Any) -> Dict[str, Any]:
     """Build a compact per-message diagnostic record for logging."""
     tc_names: List[str] = []
     if hasattr(msg, "tool_calls") and msg.tool_calls:
         tc_names = [tc.get("name", "?") for tc in msg.tool_calls]
     content = getattr(msg, "content", "") or ""
-    return {
+    summary: Dict[str, Any] = {
         "type": type(msg).__name__,
         "tool_calls": tc_names,
         "content_len": len(content) if isinstance(content, str) else -1,
     }
+    diag = _extract_finish_diagnostics(msg)
+    if diag:
+        summary["finish"] = diag
+    return summary
 
 
 def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
@@ -382,7 +418,7 @@ async def _stream_deep_research(
         token_event_count,
         len(token_buffer),
         len(tracker.all_results) if tracker is not None else 0,
-        type(agent_error).__name__ if agent_error else None,
+        ("%s: %s" % (type(agent_error).__name__, agent_error) if agent_error else None),
     )
 
     if agent_error is not None:

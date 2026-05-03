@@ -39,6 +39,7 @@ from ui.backend.services.assistant_graph import (  # noqa: E402
     build_research_agent,
 )
 from ui.backend.services.assistant_service import (  # noqa: E402
+    _extract_finish_diagnostics,
     _is_duplicate_or_subset,
     _summarize_message,
 )
@@ -477,6 +478,89 @@ class TestSummarizeMessage:
         msg.tool_calls = [{"args": {}}]
         s = _summarize_message(msg)
         assert s["tool_calls"] == ["?"]
+
+    def test_includes_finish_metadata_when_present(self):
+        msg = MagicMock(spec=["content", "tool_calls", "response_metadata"])
+        msg.content = ""
+        msg.tool_calls = None
+        msg.response_metadata = {"finish_reason": "SAFETY", "is_blocked": True}
+        s = _summarize_message(msg)
+        assert s["finish"]["finish_reason"] == "SAFETY"
+        assert s["finish"]["is_blocked"] is True
+
+    def test_omits_finish_field_when_no_metadata(self):
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = "ok"
+        msg.tool_calls = None
+        s = _summarize_message(msg)
+        assert "finish" not in s
+
+
+class TestExtractFinishDiagnostics:
+    """Tests for the LangChain-generic finish-reason / safety extractor."""
+
+    def test_vertex_style_metadata(self):
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = {
+            "finish_reason": "SAFETY",
+            "is_blocked": True,
+            "safety_ratings": [
+                {"category": "HARM_CATEGORY_HATE", "probability": "HIGH"}
+            ],
+        }
+        msg.usage_metadata = {
+            "input_tokens": 100,
+            "output_tokens": 0,
+            "total_tokens": 100,
+        }
+        diag = _extract_finish_diagnostics(msg)
+        assert diag["finish_reason"] == "SAFETY"
+        assert diag["is_blocked"] is True
+        assert diag["safety_ratings"][0]["probability"] == "HIGH"
+        assert diag["usage"] == {
+            "input_tokens": 100,
+            "output_tokens": 0,
+            "total_tokens": 100,
+        }
+
+    def test_anthropic_style_stop_reason(self):
+        """Anthropic uses ``stop_reason`` rather than ``finish_reason``."""
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = {"stop_reason": "max_tokens"}
+        msg.usage_metadata = {"input_tokens": 50, "output_tokens": 4096}
+        diag = _extract_finish_diagnostics(msg)
+        assert diag["stop_reason"] == "max_tokens"
+        assert "finish_reason" not in diag
+        assert diag["usage"]["output_tokens"] == 4096
+
+    def test_openai_style_finish_reason(self):
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = {"finish_reason": "content_filter"}
+        msg.usage_metadata = None
+        diag = _extract_finish_diagnostics(msg)
+        assert diag == {"finish_reason": "content_filter"}
+
+    def test_no_metadata_returns_empty(self):
+        msg = MagicMock(spec=[])  # no response_metadata, no usage_metadata
+        assert _extract_finish_diagnostics(msg) == {}
+
+    def test_skips_empty_values(self):
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = {
+            "finish_reason": "STOP",
+            "safety_ratings": [],
+            "prompt_feedback": {},
+            "is_blocked": None,
+        }
+        msg.usage_metadata = {}
+        diag = _extract_finish_diagnostics(msg)
+        assert diag == {"finish_reason": "STOP"}
+
+    def test_non_dict_response_metadata_safe(self):
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = "unexpected string"
+        msg.usage_metadata = None
+        assert _extract_finish_diagnostics(msg) == {}
 
 
 @patch("ui.backend.services.assistant_graph.search_chunks", new=_mock_search_fn)
