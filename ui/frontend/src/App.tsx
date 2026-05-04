@@ -45,11 +45,7 @@ import { useGroupDefaults } from './hooks/useGroupDefaults';
 import { useActivityLogging } from './hooks/useActivityLogging';
 import { serializeDrilldownTree, serializeFullDrilldownTree, patchNodeInTree } from './utils/drilldownUtils';
 import { generateUUID } from './utils/uuid';
-import {
-  countFieldValues,
-  mergeFacetField,
-  resolveMetaKey,
-} from './utils/facetMerge';
+import { mergeFacetField } from './utils/facetMerge';
 import AdminPanel from './components/admin/AdminPanel';
 import { AssistantTab } from './components/assistant/AssistantTab';
 import { AuthGate } from './components/auth/AuthGate';
@@ -420,19 +416,6 @@ const getTabFromPath = (): TabName => {
   }
   const path = stripBasePath(window.location.pathname).replace('/', '').toLowerCase();
   return VALID_TABS.includes(path as TabName) ? (path as TabName) : 'search';
-};
-
-/** Deduplicate search results by doc_id, keeping the first occurrence. */
-const deduplicateByDocId = (results: SearchResult[]): SearchResult[] => {
-  const seen = new Set<string>();
-  const unique: SearchResult[] = [];
-  for (const r of results) {
-    if (r.doc_id && !seen.has(r.doc_id)) {
-      seen.add(r.doc_id);
-      unique.push(r);
-    }
-  }
-  return unique;
 };
 
 // Default filter fields (fallback for URL parsing before facets load)
@@ -2633,19 +2616,35 @@ function App() {
   // the actual results (deduped by doc_id) so counts exactly match what the
   // user sees.  All DB values from allFacets are preserved; values absent
   // from the results get count 0 (the UI hides the number for those).
+  // Sidebar facet display:
+  //   - List of values comes from the unfiltered all-DB facets (so every
+  //     possible filter value is visible, even ones that don't appear in
+  //     the current results).
+  //   - Counts come from the backend's query-narrowed /facets response,
+  //     which is computed against ~500 ranked chunks. That's a bigger
+  //     lens than the ~50 the user can see on screen — values like a
+  //     French translation of a primarily-English topic still get a
+  //     real count, instead of dropping to 0 only to surface as 15
+  //     after the user clicks the filter.
+  //   - Falls back to the all-DB list when no query is active or the
+  //     query-narrowed response hasn't loaded yet.
   const displayFacets = React.useMemo(() => {
     const all = allFacetsDataSource === dataSource ? allFacets : null;
     if (!all) return facets;
-    if (!hasSearchRun || !query?.trim() || results.length === 0) return all;
+    if (!hasSearchRun || !query?.trim()) return all;
+    const queryNarrowed = facetsDataSource === dataSource ? facets : null;
+    if (!queryNarrowed) return all;
 
-    const uniqueDocs = deduplicateByDocId(results);
     const mergedFacetEntries: Record<string, FacetValue[]> = {};
     for (const [field, allValues] of Object.entries(all.facets)) {
-      const resultCounts = countFieldValues(uniqueDocs, resolveMetaKey(field));
-      mergedFacetEntries[field] = mergeFacetField(allValues, resultCounts);
+      const counts = new Map<string, number>();
+      for (const fv of queryNarrowed.facets?.[field] || []) {
+        counts.set(fv.value, fv.count);
+      }
+      mergedFacetEntries[field] = mergeFacetField(allValues, counts);
     }
     return { ...all, facets: mergedFacetEntries } as Facets;
-  }, [allFacets, allFacetsDataSource, facets, dataSource, hasSearchRun, query, results]);
+  }, [allFacets, allFacetsDataSource, facets, facetsDataSource, dataSource, hasSearchRun, query]);
 
   const requestHighlightHandler = resolveRequestHighlightHandler(
     SEARCH_SEMANTIC_HIGHLIGHTS,
