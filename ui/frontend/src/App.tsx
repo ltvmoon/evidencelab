@@ -1724,8 +1724,19 @@ function App() {
     highlightedText: string,
     mode: 'subtopic' | 'newtopic' = 'subtopic',
   ) => {
+    const isNewTopic = mode === 'newtopic';
     const snapshot = getSnapshot();
-    startDrilldownInTree(highlightedText, snapshot, query);
+    if (isNewTopic) {
+      // "New topic" mode: drop the existing drilldown chain so the
+      // breadcrumb collapses and the AI summary stands alone — same shape
+      // a fresh top-level search would produce. Updating ``query`` keeps
+      // the URL, activity log and any future sub-drilldowns rooted at
+      // this new topic.
+      resetDrilldownTree();
+      setQuery(highlightedText);
+    } else {
+      startDrilldownInTree(highlightedText, snapshot, query);
+    }
 
     setAiSummaryExpanded(true);
     setAiSummaryLoading(true);
@@ -1738,7 +1749,6 @@ function App() {
     // leaf and the surrounding investigation. New-topic mode treats the
     // selection as a fresh independent question (search and summary use
     // the leaf alone, no parent inheritance).
-    const isNewTopic = mode === 'newtopic';
     const searchQuery = isNewTopic
       ? highlightedText
       : buildContextualSearchQuery(highlightedText, query, drilldownHighlight);
@@ -1788,7 +1798,7 @@ function App() {
       setAiSummary(AI_SUMMARY_ERROR);
       setAiSummaryLoading(false);
     }
-  }, [getSnapshot, startDrilldownInTree, query, drilldownHighlight, launchSummaryStream,
+  }, [getSnapshot, startDrilldownInTree, resetDrilldownTree, query, drilldownHighlight, launchSummaryStream,
       filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
       recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
       minChunkSize, rerankModel, rerankModelPageSize, searchModel, dataSource,
