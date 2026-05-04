@@ -42,6 +42,32 @@ export const buildContextualSearchQuery = (
 };
 
 /**
+ * Resolve the ancestor-path labels from the tree root down to (and
+ * including) the node with id ``targetId``.
+ *
+ * Used by the AI-summary "Exploring: …" breadcrumb so the user can see
+ * the full investigation context, not just the leaf they're currently
+ * looking at. Returns an empty array if the tree is missing or the id
+ * isn't found anywhere in it.
+ */
+export const getAncestorLabels = (
+  tree: DrilldownNode | null | undefined,
+  targetId: string | null | undefined,
+): string[] => {
+  if (!tree || !targetId) return [];
+  const walk = (node: DrilldownNode, trail: string[]): string[] | null => {
+    const next = [...trail, node.label];
+    if (node.id === targetId) return next;
+    for (const child of node.children) {
+      const found = walk(child, next);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(tree, []) ?? [];
+};
+
+/**
  * Serialize a drilldown tree for activity/rating logging.
  * Strips heavy data (results arrays, summaries, prompts) to keep the payload small.
  * Preserves only the tree structure (ids + labels) so admins can see which

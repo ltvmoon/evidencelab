@@ -1720,7 +1720,10 @@ function App() {
   }, []);
 
   // Drilldown: save current state, search for fresh results, stream focused summary
-  const startDrilldown = useCallback(async (highlightedText: string) => {
+  const startDrilldown = useCallback(async (
+    highlightedText: string,
+    mode: 'subtopic' | 'newtopic' = 'subtopic',
+  ) => {
     const snapshot = getSnapshot();
     startDrilldownInTree(highlightedText, snapshot, query);
 
@@ -1730,17 +1733,17 @@ function App() {
     setAiPrompt('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Perform a fresh search using the highlighted text as the query, but
-    // narrow it to chunks relevant to the parent investigation too — without
-    // this, deep drilldowns retrieve generic chunks for the leaf topic and
-    // only the summary prompt narrows them, which is too late.
-    const contextualSearchQuery = buildContextualSearchQuery(
-      highlightedText,
-      query,
-      drilldownHighlight,
-    );
+    // Sub-topic mode inherits the parent investigation's context into the
+    // search query so retrieval is narrowed to chunks relevant to both the
+    // leaf and the surrounding investigation. New-topic mode treats the
+    // selection as a fresh independent question (search and summary use
+    // the leaf alone, no parent inheritance).
+    const isNewTopic = mode === 'newtopic';
+    const searchQuery = isNewTopic
+      ? highlightedText
+      : buildContextualSearchQuery(highlightedText, query, drilldownHighlight);
     const params = buildSearchParams({
-      query: contextualSearchQuery,
+      query: searchQuery,
       filters,
       searchDenseWeight,
       rerankEnabled,
@@ -1766,14 +1769,19 @@ function App() {
       setResults(freshResults);
       setAiSummaryResults(freshResults);
 
-      // Query inheritance: always include root query for broad context,
-      // plus the immediate parent node label for specificity (avoids noisy
-      // full-chain at deep levels). drilldownHighlight is the current node's
-      // label before drilling deeper.
-      const parentContext = drilldownHighlight && drilldownHighlight !== query
-        ? `, specifically "${drilldownHighlight}"`
-        : '';
-      const drilldownQuery = `Regarding: "${highlightedText}"\n\nProvide detail about this, in the context of: "${query}"${parentContext}`;
+      // For sub-topic mode, the summary prompt mirrors the search query's
+      // inheritance (root + immediate parent label). For new-topic mode the
+      // summary stands alone — same prompt the user would get if they typed
+      // the selection into the main search box.
+      let drilldownQuery: string;
+      if (isNewTopic) {
+        drilldownQuery = highlightedText;
+      } else {
+        const parentContext = drilldownHighlight && drilldownHighlight !== query
+          ? `, specifically "${drilldownHighlight}"`
+          : '';
+        drilldownQuery = `Regarding: "${highlightedText}"\n\nProvide detail about this, in the context of: "${query}"${parentContext}`;
+      }
       launchSummaryStream(drilldownQuery, freshResults);
     } catch (error) {
       console.error('Drilldown search failed:', error);

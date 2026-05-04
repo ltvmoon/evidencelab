@@ -1,10 +1,62 @@
 import { DrilldownNode } from '../types/api';
 import {
   buildContextualSearchQuery,
+  getAncestorLabels,
   serializeDrilldownTree,
   serializeFullDrilldownTree,
   patchNodeInTree,
 } from '../utils/drilldownUtils';
+
+describe('getAncestorLabels', () => {
+  const tree: DrilldownNode = {
+    id: 'root',
+    label: 'cash transfers in Niger',
+    children: [
+      {
+        id: 'a',
+        label: 'improved food security',
+        children: [
+          { id: 'a1', label: 'gender outcomes', children: [] },
+          { id: 'a2', label: 'follow-up', children: [] },
+        ],
+      },
+      { id: 'b', label: 'unrelated branch', children: [] },
+    ],
+  };
+
+  test('returns just the root label when target is the root', () => {
+    expect(getAncestorLabels(tree, 'root')).toEqual(['cash transfers in Niger']);
+  });
+
+  test('returns root + leaf for a top-level child', () => {
+    expect(getAncestorLabels(tree, 'a'))
+      .toEqual(['cash transfers in Niger', 'improved food security']);
+  });
+
+  test('returns full path for a deeply-nested target', () => {
+    expect(getAncestorLabels(tree, 'a1'))
+      .toEqual([
+        'cash transfers in Niger',
+        'improved food security',
+        'gender outcomes',
+      ]);
+  });
+
+  test('returns [] when the target is not in the tree', () => {
+    expect(getAncestorLabels(tree, 'missing')).toEqual([]);
+  });
+
+  test('returns [] when tree is null/undefined', () => {
+    expect(getAncestorLabels(null, 'a1')).toEqual([]);
+    expect(getAncestorLabels(undefined, 'a1')).toEqual([]);
+  });
+
+  test('returns [] when targetId is null/undefined/empty', () => {
+    expect(getAncestorLabels(tree, null)).toEqual([]);
+    expect(getAncestorLabels(tree, undefined)).toEqual([]);
+    expect(getAncestorLabels(tree, '')).toEqual([]);
+  });
+});
 
 describe('buildContextualSearchQuery', () => {
   test('returns leaf only when there is no root context', () => {
