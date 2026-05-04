@@ -105,17 +105,82 @@ def _has_any_tool_calls(msg) -> bool:
     return bool(getattr(msg, "tool_calls", None))
 
 
+# Vertex / Gemini populates these keys on AIMessage.response_metadata; OpenAI
+# and Anthropic never do. Used to gate Gemini-specific message handling so
+# other providers retain their existing behavior.
+_GEMINI_METADATA_MARKERS = ("safety_ratings", "is_blocked", "prompt_feedback")
+
+
+def _is_gemini_message(msg: Any) -> bool:
+    """Detect a LangChain AIMessage produced by a Vertex / Gemini model."""
+    rmeta = getattr(msg, "response_metadata", None)
+    if not isinstance(rmeta, dict):
+        return False
+    return any(key in rmeta for key in _GEMINI_METADATA_MARKERS)
+
+
+def _extract_finish_diagnostics(msg: Any) -> Dict[str, Any]:
+    """Pull finish reason / safety / usage from an AIMessage's response metadata.
+
+    LangChain stores Gemini's per-response metadata on
+    ``AIMessage.response_metadata`` and token usage on ``AIMessage.usage_metadata``.
+    When Vertex returns 200 OK with an empty candidate (safety filter, recitation,
+    MAX_TOKENS at zero output, etc.) the only signal lives here — no exception
+    is raised — so we capture it explicitly for diagnosis.
+    """
+    diag: Dict[str, Any] = {}
+    rmeta = getattr(msg, "response_metadata", None) or {}
+    if isinstance(rmeta, dict):
+        for key in (
+            "finish_reason",
+            "stop_reason",
+            "is_blocked",
+            "block_reason",
+            "safety_ratings",
+            "prompt_feedback",
+        ):
+            if key in rmeta and rmeta[key] not in (None, [], {}):
+                diag[key] = rmeta[key]
+    umeta = getattr(msg, "usage_metadata", None)
+    if isinstance(umeta, dict) and umeta:
+        diag["usage"] = {
+            k: umeta.get(k)
+            for k in ("input_tokens", "output_tokens", "total_tokens")
+            if k in umeta
+        }
+    return diag
+
+
+def _summarize_message(msg: Any) -> Dict[str, Any]:
+    """Build a compact per-message diagnostic record for logging."""
+    tc_names: List[str] = []
+    if hasattr(msg, "tool_calls") and msg.tool_calls:
+        tc_names = [tc.get("name", "?") for tc in msg.tool_calls]
+    content = getattr(msg, "content", "") or ""
+    summary: Dict[str, Any] = {
+        "type": type(msg).__name__,
+        "tool_calls": tc_names,
+        "content_len": len(content) if isinstance(content, str) else -1,
+    }
+    diag = _extract_finish_diagnostics(msg)
+    if diag:
+        summary["finish"] = diag
+    return summary
+
+
 def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
     """Process output from the model node.
 
-    Only treat a message as final response text if it has NO tool calls.
-    The deepagents framework has built-in tools (write_todos, etc.) that
-    produce tool calls we don't surface, but their presence means the
-    model is still working, not producing the final answer.
+    For OpenAI / Anthropic, a message with tool calls is never the final
+    answer — the model first emits tool calls, then later emits a separate
+    text-only message. We skip tool-call messages for those providers.
 
-    In deep research mode, the coordinator delegates via the ``task``
-    tool.  We surface these as ``task_delegations`` so the UI can show
-    a "researching" phase.
+    Gemini (Vertex) is different: it routinely emits the final synthesis
+    text alongside a closing ``write_todos`` tool call in the same message,
+    and then returns an empty message on the next iteration. If we skipped
+    that message we'd lose the answer entirely (this was the cause of the
+    blank-screen / content_len=0 bug). For Gemini we therefore pick up
+    content even when tool calls are present.
     """
     result: Dict[str, Any] = {
         "tool_queries": [],
@@ -131,11 +196,23 @@ def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
         task_delegations = _extract_task_delegations(msg)
         if task_delegations:
             result["task_delegations"].extend(task_delegations)
-        elif _has_any_tool_calls(msg):
-            # Model called non-search tools (write_todos, etc.) — skip
-            pass
-        elif hasattr(msg, "content") and msg.content:
+            continue
+        has_content = hasattr(msg, "content") and msg.content
+        if _has_any_tool_calls(msg):
+            # Gemini-only carve-out: the synthesis often rides along with
+            # a write_todos tool call in the same message.
+            if _is_gemini_message(msg) and has_content:
+                result["response_text"] = msg.content
+        elif has_content:
             result["response_text"] = msg.content
+    logger.info(
+        "[deepres] model-step: msgs=%d summary=%s queries=%d tasks=%d response_text_len=%d",
+        len(messages),
+        [_summarize_message(m) for m in messages],
+        len(result["tool_queries"]),
+        len(result["task_delegations"]),
+        len(result["response_text"]),
+    )
     return result
 
 
@@ -206,6 +283,13 @@ async def stream_research_response(
     """
     run_id = uuid_mod.uuid4()
     tracker = None
+    logger.info(
+        "[deepres] stream start: run_id=%s deep=%s model=%s data_source=%s",
+        run_id,
+        deep_research,
+        model_key,
+        data_source,
+    )
 
     try:
         llm = _get_llm(
@@ -324,6 +408,7 @@ async def _stream_deep_research(
     agent_task = asyncio.create_task(_run_agent())
 
     token_buffer = ""
+    token_event_count = 0
     try:
         while True:
             event = await event_queue.get()
@@ -332,6 +417,7 @@ async def _stream_deep_research(
             etype = event.get("type")
             if etype == "token":
                 new_text = event["token"]
+                token_event_count += 1
                 if not _is_duplicate_or_subset(new_text, token_buffer):
                     token_buffer = new_text
             else:
@@ -344,6 +430,16 @@ async def _stream_deep_research(
 
     if token_buffer:
         yield {"type": "token", "token": token_buffer}
+
+    logger.info(
+        "[deepres] stream end: run_id=%s token_events=%d final_buffer_len=%d "
+        "sources=%d agent_error=%s",
+        run_id,
+        token_event_count,
+        len(token_buffer),
+        len(tracker.all_results) if tracker is not None else 0,
+        ("%s: %s" % (type(agent_error).__name__, agent_error) if agent_error else None),
+    )
 
     if agent_error is not None:
         raise agent_error

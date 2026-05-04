@@ -227,6 +227,12 @@ async def stream_assistant_chat(
                 elif etype == "sources":
                     last_sources = event.get("sources")
                 elif _should_persist(event, user, session):
+                    logger.info(
+                        "[deepres] done event: deep=%s synthesis_len=%d sources_count=%d",
+                        body.deep_research,
+                        len(last_synthesis),
+                        len(last_sources or []),
+                    )
                     persist_event = {
                         **event,
                         "synthesis": last_synthesis,
@@ -326,6 +332,13 @@ async def _persist_conversation(
     session.add(assistant_msg)
 
     await session.commit()
+    logger.info(
+        "[deepres] persisted: thread=%s assistant_msg=%s content_len=%d sources_count=%d",
+        tid,
+        assistant_msg.id,
+        len(synthesis or ""),
+        len(sources or []),
+    )
     return tid
 
 

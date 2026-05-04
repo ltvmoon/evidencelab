@@ -38,7 +38,13 @@ from ui.backend.services.assistant_graph import (  # noqa: E402
     _format_search_result,
     build_research_agent,
 )
-from ui.backend.services.assistant_service import _is_duplicate_or_subset  # noqa: E402
+from ui.backend.services.assistant_service import (  # noqa: E402
+    _extract_finish_diagnostics,
+    _is_duplicate_or_subset,
+    _is_gemini_message,
+    _process_agent_output,
+    _summarize_message,
+)
 
 # Immediately restore sys.modules so other test files are not affected.
 for _k in _MOCKED_KEYS:
@@ -428,6 +434,271 @@ class TestIsDuplicateOrSubset:
     def test_superset_is_not_duplicate(self):
         """If new_text is LONGER than prev_text, it's not a duplicate."""
         assert _is_duplicate_or_subset("hello world foo", "hello") is False
+
+
+class TestSummarizeMessage:
+    """Tests for the per-message diagnostic summary used in deep-research logging."""
+
+    def test_text_message_no_tool_calls(self):
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = "hello world"
+        msg.tool_calls = None
+        s = _summarize_message(msg)
+        assert s["tool_calls"] == []
+        assert s["content_len"] == len("hello world")
+        assert s["type"] == "MagicMock"
+
+    def test_message_with_tool_calls(self):
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = ""
+        msg.tool_calls = [
+            {"name": "search_documents", "args": {"query": "x"}},
+            {"name": "task", "args": {"description": "y"}},
+        ]
+        s = _summarize_message(msg)
+        assert s["tool_calls"] == ["search_documents", "task"]
+        assert s["content_len"] == 0
+
+    def test_missing_content_attribute(self):
+        msg = MagicMock(spec=["tool_calls"])
+        msg.tool_calls = None
+        s = _summarize_message(msg)
+        assert s["content_len"] == 0
+        assert s["tool_calls"] == []
+
+    def test_non_string_content_returns_negative_len(self):
+        """Some langchain message variants store list-of-blocks in .content."""
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = [{"type": "text", "text": "hi"}]
+        msg.tool_calls = None
+        s = _summarize_message(msg)
+        assert s["content_len"] == -1
+
+    def test_tool_call_missing_name(self):
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = ""
+        msg.tool_calls = [{"args": {}}]
+        s = _summarize_message(msg)
+        assert s["tool_calls"] == ["?"]
+
+    def test_includes_finish_metadata_when_present(self):
+        msg = MagicMock(spec=["content", "tool_calls", "response_metadata"])
+        msg.content = ""
+        msg.tool_calls = None
+        msg.response_metadata = {"finish_reason": "SAFETY", "is_blocked": True}
+        s = _summarize_message(msg)
+        assert s["finish"]["finish_reason"] == "SAFETY"
+        assert s["finish"]["is_blocked"] is True
+
+    def test_omits_finish_field_when_no_metadata(self):
+        msg = MagicMock(spec=["content", "tool_calls"])
+        msg.content = "ok"
+        msg.tool_calls = None
+        s = _summarize_message(msg)
+        assert "finish" not in s
+
+
+class TestExtractFinishDiagnostics:
+    """Tests for the LangChain-generic finish-reason / safety extractor."""
+
+    def test_vertex_style_metadata(self):
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = {
+            "finish_reason": "SAFETY",
+            "is_blocked": True,
+            "safety_ratings": [
+                {"category": "HARM_CATEGORY_HATE", "probability": "HIGH"}
+            ],
+        }
+        msg.usage_metadata = {
+            "input_tokens": 100,
+            "output_tokens": 0,
+            "total_tokens": 100,
+        }
+        diag = _extract_finish_diagnostics(msg)
+        assert diag["finish_reason"] == "SAFETY"
+        assert diag["is_blocked"] is True
+        assert diag["safety_ratings"][0]["probability"] == "HIGH"
+        assert diag["usage"] == {
+            "input_tokens": 100,
+            "output_tokens": 0,
+            "total_tokens": 100,
+        }
+
+    def test_anthropic_style_stop_reason(self):
+        """Anthropic uses ``stop_reason`` rather than ``finish_reason``."""
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = {"stop_reason": "max_tokens"}
+        msg.usage_metadata = {"input_tokens": 50, "output_tokens": 4096}
+        diag = _extract_finish_diagnostics(msg)
+        assert diag["stop_reason"] == "max_tokens"
+        assert "finish_reason" not in diag
+        assert diag["usage"]["output_tokens"] == 4096
+
+    def test_openai_style_finish_reason(self):
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = {"finish_reason": "content_filter"}
+        msg.usage_metadata = None
+        diag = _extract_finish_diagnostics(msg)
+        assert diag == {"finish_reason": "content_filter"}
+
+    def test_no_metadata_returns_empty(self):
+        msg = MagicMock(spec=[])  # no response_metadata, no usage_metadata
+        assert _extract_finish_diagnostics(msg) == {}
+
+    def test_skips_empty_values(self):
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = {
+            "finish_reason": "STOP",
+            "safety_ratings": [],
+            "prompt_feedback": {},
+            "is_blocked": None,
+        }
+        msg.usage_metadata = {}
+        diag = _extract_finish_diagnostics(msg)
+        assert diag == {"finish_reason": "STOP"}
+
+    def test_non_dict_response_metadata_safe(self):
+        msg = MagicMock(spec=["response_metadata", "usage_metadata"])
+        msg.response_metadata = "unexpected string"
+        msg.usage_metadata = None
+        assert _extract_finish_diagnostics(msg) == {}
+
+
+class TestIsGeminiMessage:
+    """Tests for the Vertex/Gemini provider-detection helper."""
+
+    def test_vertex_safety_ratings_marker(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {"safety_ratings": [], "finish_reason": "STOP"}
+        assert _is_gemini_message(msg) is True
+
+    def test_vertex_is_blocked_marker(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {"is_blocked": False}
+        assert _is_gemini_message(msg) is True
+
+    def test_vertex_prompt_feedback_marker(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {"prompt_feedback": {}}
+        assert _is_gemini_message(msg) is True
+
+    def test_openai_metadata_not_detected(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {
+            "model_name": "gpt-4o",
+            "finish_reason": "stop",
+            "system_fingerprint": "fp_abc",
+        }
+        assert _is_gemini_message(msg) is False
+
+    def test_anthropic_metadata_not_detected(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = {
+            "model_name": "claude-sonnet-4",
+            "stop_reason": "end_turn",
+        }
+        assert _is_gemini_message(msg) is False
+
+    def test_missing_response_metadata(self):
+        msg = MagicMock(spec=[])
+        assert _is_gemini_message(msg) is False
+
+    def test_non_dict_response_metadata(self):
+        msg = MagicMock(spec=["response_metadata"])
+        msg.response_metadata = "weird"
+        assert _is_gemini_message(msg) is False
+
+
+def _make_msg(content="", tool_calls=None, response_metadata=None):
+    """Build a minimal AIMessage stand-in for _process_agent_output tests."""
+    msg = MagicMock(spec=["content", "tool_calls", "response_metadata"])
+    msg.content = content
+    msg.tool_calls = tool_calls
+    msg.response_metadata = response_metadata
+    return msg
+
+
+class TestProcessAgentOutputGeminiCarveOut:
+    """Tests for the Gemini-only behavior of _process_agent_output.
+
+    Gemini emits final synthesis text alongside a write_todos tool call;
+    other providers always separate them. We must pick up content for
+    Gemini messages with tool calls but NOT for OpenAI/Anthropic ones.
+    """
+
+    _GEMINI_META = {"safety_ratings": [], "is_blocked": False, "finish_reason": "STOP"}
+    _OPENAI_META = {"model_name": "gpt-4o", "finish_reason": "stop"}
+
+    def test_gemini_message_with_content_and_write_todos_picked_up(self):
+        msg = _make_msg(
+            content="Final synthesis answer here.",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["response_text"] == "Final synthesis answer here."
+
+    def test_openai_message_with_content_and_tool_call_skipped(self):
+        msg = _make_msg(
+            content="Let me think first",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._OPENAI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["response_text"] == ""
+
+    def test_gemini_message_empty_content_with_tool_call_no_overwrite(self):
+        msg = _make_msg(
+            content="",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["response_text"] == ""
+
+    def test_search_message_still_extracted_as_query(self):
+        msg = _make_msg(
+            content="anything",
+            tool_calls=[{"name": "search_documents", "args": {"query": "food"}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["tool_queries"] == ["food"]
+        assert result["response_text"] == ""
+
+    def test_task_delegation_still_extracted(self):
+        msg = _make_msg(
+            content="anything",
+            tool_calls=[{"name": "task", "args": {"description": "research X"}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["task_delegations"] == ["research X"]
+        assert result["response_text"] == ""
+
+    def test_plain_final_message_still_picked_up(self):
+        msg = _make_msg(
+            content="answer",
+            tool_calls=None,
+            response_metadata=None,
+        )
+        result = _process_agent_output({"messages": [msg]})
+        assert result["response_text"] == "answer"
+
+    def test_later_synthesis_message_overwrites_earlier(self):
+        early = _make_msg(
+            content="intermediate",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._GEMINI_META,
+        )
+        final = _make_msg(
+            content="FINAL",
+            tool_calls=[{"name": "write_todos", "args": {}}],
+            response_metadata=self._GEMINI_META,
+        )
+        result = _process_agent_output({"messages": [early, final]})
+        assert result["response_text"] == "FINAL"
 
 
 @patch("ui.backend.services.assistant_graph.search_chunks", new=_mock_search_fn)
