@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
+/** Whether the drilldown should inherit the parent investigation's
+ *  context (``'subtopic'``) or be treated as a fresh independent
+ *  question (``'newtopic'``). */
+export type DrilldownMode = 'subtopic' | 'newtopic';
+
 interface DigDeeperPopoverProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
-  onDrilldown: (selectedText: string) => void;
+  onDrilldown: (selectedText: string, mode: DrilldownMode) => void;
   disabled?: boolean;
 }
 
@@ -16,7 +21,7 @@ export const DigDeeperPopover: React.FC<DigDeeperPopoverProps> = ({
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [selectedText, setSelectedText] = useState('');
-  const buttonRef = useRef<HTMLButtonElement>(null);
+  const containerEl = useRef<HTMLDivElement>(null);
 
   const handleSelectionChange = useCallback(() => {
     const selection = window.getSelection();
@@ -53,11 +58,21 @@ export const DigDeeperPopover: React.FC<DigDeeperPopoverProps> = ({
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
   }, [handleSelectionChange]);
 
+  const handleClick = useCallback(
+    (mode: DrilldownMode) => (e: React.MouseEvent) => {
+      e.preventDefault();
+      onDrilldown(selectedText, mode);
+      setVisible(false);
+      window.getSelection()?.removeAllRanges();
+    },
+    [onDrilldown, selectedText],
+  );
+
   if (!visible || disabled) return null;
 
   return (
-    <button
-      ref={buttonRef}
+    <div
+      ref={containerEl}
       className="dig-deeper-popover"
       style={{
         position: 'absolute',
@@ -66,14 +81,23 @@ export const DigDeeperPopover: React.FC<DigDeeperPopoverProps> = ({
         transform: 'translateX(-50%)',
       }}
       onMouseDown={(e) => e.preventDefault()}
-      onClick={(e) => {
-        e.preventDefault();
-        onDrilldown(selectedText);
-        setVisible(false);
-        window.getSelection()?.removeAllRanges();
-      }}
     >
-      Find out more
-    </button>
+      <button
+        type="button"
+        className="dig-deeper-popover-btn"
+        aria-label="Find out more as a sub-topic of the current investigation"
+        onClick={handleClick('subtopic')}
+      >
+        Find out more (sub-topic)
+      </button>
+      <button
+        type="button"
+        className="dig-deeper-popover-btn"
+        aria-label="Find out more as a new independent topic"
+        onClick={handleClick('newtopic')}
+      >
+        Find out more (new topic)
+      </button>
+    </div>
   );
 };
