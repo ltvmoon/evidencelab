@@ -4950,21 +4950,24 @@ li.ai-fact-active::before {
   gap: 0.5rem;
 }
 .export-results-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-family: 'Poppins', sans-serif;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--gray-300, #cbd5e1);
-  border-radius: 6px;
-  background: #ffffff;
-  color: var(--gray-700, #334155);
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--radius-md);
+  background: var(--brand-surface);
+  color: var(--brand-primary-dark);
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 .export-results-button:hover:not(:disabled) {
-  background: var(--gray-50, #f8fafc);
-  border-color: var(--gray-400, #94a3b8);
-  color: var(--gray-900, #0f172a);
+  background: rgba(91, 143, 168, 0.1);
+  border-color: var(--brand-primary);
+  color: var(--brand-primary-dark);
 }
 .export-results-button:disabled {
   opacity: 0.55;

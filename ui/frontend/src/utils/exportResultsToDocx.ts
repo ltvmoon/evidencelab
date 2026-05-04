@@ -68,6 +68,18 @@ export const buildExportFilename = (query: string, now: Date): string => {
   return `evidencelab-search-${slugify(query)}-${stamp}.docx`;
 };
 
+/** Append a `#page=N` fragment to a URL, replacing any existing one.
+ *
+ *  Adobe Reader, Chrome's built-in PDF viewer, and most web report viewers
+ *  honour the `#page=N` fragment to jump straight to the cited page — that's
+ *  the same fragment the SPA uses internally, and it lets readers click
+ *  through directly to the cited page rather than to the document cover. */
+const withPageAnchor = (url: string, pageNum: number | undefined): string => {
+  const trimmed = url.replace(/#page=\d+$/, '');
+  if (typeof pageNum !== 'number' || !Number.isFinite(pageNum)) return trimmed;
+  return `${trimmed}#page=${pageNum}`;
+};
+
 /** Best-effort resolution of a clickable hyperlink for a result. */
 export const resolveResultLink = (
   r: SearchResult,
@@ -80,10 +92,12 @@ export const resolveResultLink = (
     r.metadata?.map_pdf_url ||
     r.metadata?.src_doc_raw_metadata?.pdf_url;
   if (typeof directPdf === 'string' && directPdf.trim()) {
-    return directPdf.trim();
+    return withPageAnchor(directPdf.trim(), r.page_num);
   }
   const report = r.report_url;
-  if (typeof report === 'string' && report.trim()) return report.trim();
+  if (typeof report === 'string' && report.trim()) {
+    return withPageAnchor(report.trim(), r.page_num);
+  }
 
   const ds = dataSource || r.data_source || '';
   const page = typeof r.page_num === 'number' ? `#page=${r.page_num}` : '';
@@ -144,12 +158,19 @@ const HEADING_LEVELS_BY_DEPTH: Record<number, (typeof HeadingLevel)[keyof typeof
 /** Try to match a single markdown line to a "block" Paragraph (heading,
  *  bullet, or ordered list item). Returns null when the line is part of a
  *  plain paragraph buffer. Extracted from {@link markdownToParagraphs} to
- *  keep per-line complexity flat. */
-const matchBlockParagraph = (line: string): Paragraph | null => {
+ *  keep per-line complexity flat.
+ *
+ *  ``headingShift`` is added to the parsed depth so that markdown emitted
+ *  inside the AI Summary section becomes a sub-heading (e.g. `#` becomes
+ *  H2) rather than competing with the section's own H1. */
+const matchBlockParagraph = (
+  line: string,
+  headingShift: number,
+): Paragraph | null => {
   const h = /^(#{1,6})\s+(.*)$/.exec(line);
   if (h) {
-    const depth = h[1].length;
-    const heading = HEADING_LEVELS_BY_DEPTH[depth] ?? HeadingLevel.HEADING_4;
+    const depth = Math.min(6, Math.max(1, h[1].length + headingShift));
+    const heading = HEADING_LEVELS_BY_DEPTH[depth] ?? HeadingLevel.HEADING_6;
     return new Paragraph({
       heading,
       children: inlineRuns(h[2]),
@@ -182,8 +203,12 @@ const matchBlockParagraph = (line: string): Paragraph | null => {
  *   - Blank-line paragraph breaks
  *   - Inline **bold**, *italic*, `code`
  *  Anything more exotic is rendered as plain paragraph text — acceptable for
- *  a dev-mode export and safe against unexpected AI output. */
-export const markdownToParagraphs = (md: string): Paragraph[] => {
+ *  a dev-mode export and safe against unexpected AI output.
+ *
+ *  ``headingShift`` lets callers demote any embedded headings — passing 1
+ *  turns a top-level `#` into an H2 so it sits under the surrounding
+ *  section's H1 rather than competing with it. */
+export const markdownToParagraphs = (md: string, headingShift = 0): Paragraph[] => {
   const paragraphs: Paragraph[] = [];
   const lines = md.replace(/\r\n/g, '\n').split('\n');
 
@@ -202,7 +227,7 @@ export const markdownToParagraphs = (md: string): Paragraph[] => {
       flushParagraph();
       continue;
     }
-    const block = matchBlockParagraph(line);
+    const block = matchBlockParagraph(line, headingShift);
     if (block) {
       flushParagraph();
       paragraphs.push(block);
@@ -212,6 +237,71 @@ export const markdownToParagraphs = (md: string): Paragraph[] => {
   }
   flushParagraph();
   return paragraphs;
+};
+
+// ---------------------------------------------------------------------------
+// References (citations parsed out of the AI summary)
+// ---------------------------------------------------------------------------
+
+/** Matches inline citations like `[1]`, `[1, 3]`, `[1,3,5]`. */
+const CITATION_REGEX = /\[(\d+(?:,\s*\d+)*)\]/g;
+
+/** Parse the unique, sorted citation numbers referenced in the AI summary. */
+export const extractCitationNumbers = (summaryText: string): number[] => {
+  const cited = new Set<number>();
+  let m: RegExpExecArray | null;
+  while ((m = CITATION_REGEX.exec(summaryText)) !== null) {
+    for (const part of m[1].split(',')) {
+      const n = parseInt(part.trim(), 10);
+      if (Number.isFinite(n)) cited.add(n);
+    }
+  }
+  return Array.from(cited).sort((a, b) => a - b);
+};
+
+interface CitedRef {
+  sequential: number;
+  result: SearchResult;
+}
+
+export interface ReferenceGroup {
+  title: string;
+  organization?: string;
+  year?: string;
+  refs: CitedRef[];
+}
+
+/** Build a list of grouped references from the AI summary citations.
+ *
+ *  Mirrors the in-app ``buildGroupedReferences`` (in ``AiSummaryReferences``):
+ *  citations are renumbered into citation order, then grouped by document
+ *  title so a single document appears once with all its cited pages listed. */
+export const buildReferenceGroups = (
+  summaryText: string,
+  results: SearchResult[],
+): ReferenceGroup[] => {
+  const sortedCitations = extractCitationNumbers(summaryText);
+  const groupMap = new Map<string, ReferenceGroup>();
+  const groupOrder: string[] = [];
+
+  sortedCitations.forEach((origNum, seqIdx) => {
+    const idx = origNum - 1;
+    if (idx < 0 || idx >= results.length) return;
+    const result = results[idx];
+    const key = result.title || `(untitled #${origNum})`;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        title: key,
+        organization: result.organization,
+        year: result.year,
+        refs: [],
+      });
+      groupOrder.push(key);
+    }
+    groupMap.get(key)!.refs.push({ sequential: seqIdx + 1, result });
+  });
+
+  return groupOrder.map((key) => groupMap.get(key)!);
 };
 
 // ---------------------------------------------------------------------------
@@ -230,9 +320,11 @@ const buildCoverParagraphs = (
       children: [new TextRun({ text: 'Evidence Lab — Search Export', bold: true })],
     }),
   );
+  // Demoted to H2 so the document has exactly two H1s — "AI Summary" and
+  // "Search Results".
   children.push(
     new Paragraph({
-      heading: HeadingLevel.HEADING_1,
+      heading: HeadingLevel.HEADING_2,
       children: [new TextRun({ text: opts.query || '(no query)', italics: true })],
       spacing: { after: 240 },
     }),
@@ -250,7 +342,46 @@ const buildCoverParagraphs = (
   return children;
 };
 
-const buildSummarySection = (summary: string): Paragraph[] => {
+const buildReferenceParagraphs = (groups: ReferenceGroup[]): Paragraph[] => {
+  if (groups.length === 0) return [];
+  const out: Paragraph[] = [];
+  out.push(
+    new Paragraph({
+      heading: HeadingLevel.HEADING_2,
+      children: [new TextRun({ text: 'References' })],
+      spacing: { before: 240, after: 120 },
+    }),
+  );
+  for (const group of groups) {
+    const meta: string[] = [];
+    if (group.organization) meta.push(group.organization);
+    if (group.year) meta.push(group.year);
+    const heading = meta.length ? `${group.title} — ${meta.join(', ')}` : group.title;
+    const tail = group.refs
+      .map(({ sequential, result }) => {
+        const page =
+          typeof result.page_num === 'number' ? ` p.${result.page_num}` : '';
+        return `[${sequential}]${page}`;
+      })
+      .join('  ');
+    out.push(
+      new Paragraph({
+        spacing: { after: 80 },
+        bullet: { level: 0 },
+        children: [
+          new TextRun({ text: heading }),
+          new TextRun({ text: `  ${tail}`, color: '555555' }),
+        ],
+      }),
+    );
+  }
+  return out;
+};
+
+const buildSummarySection = (
+  summary: string,
+  results: SearchResult[],
+): Paragraph[] => {
   if (!summary.trim()) return [];
   const out: Paragraph[] = [];
   out.push(
@@ -260,7 +391,10 @@ const buildSummarySection = (summary: string): Paragraph[] => {
       spacing: { before: 240, after: 120 },
     }),
   );
-  out.push(...markdownToParagraphs(summary));
+  // Demote any markdown headings inside the summary by 1 so the section's
+  // own H1 stays unique.
+  out.push(...markdownToParagraphs(summary, 1));
+  out.push(...buildReferenceParagraphs(buildReferenceGroups(summary, results)));
   return out;
 };
 
@@ -378,7 +512,7 @@ export const buildExportDocument = (opts: ExportOptions): Document => {
 
   const body: Paragraph[] = [
     ...buildCoverParagraphs(opts, now),
-    ...buildSummarySection(opts.aiSummary ?? ''),
+    ...buildSummarySection(opts.aiSummary ?? '', opts.results),
     ...buildResultsSection(opts.results, siteOrigin, opts.dataSource),
   ];
 
@@ -387,6 +521,22 @@ export const buildExportDocument = (opts: ExportOptions): Document => {
     title: `Evidence Lab Search — ${opts.query}`,
     description: `Export of ${opts.results.length} search results` +
       (opts.aiSummary ? ' and the AI summary' : ''),
+    // Match the web app's typography: Open Sans for body, Poppins for
+    // headings. The fonts must be present on the reader's machine —
+    // both are widely deployed system / Office fonts on macOS and
+    // Windows; Word falls back to Calibri if missing.
+    styles: {
+      default: {
+        document: { run: { font: 'Open Sans' } },
+        title: { run: { font: 'Poppins', bold: true } },
+        heading1: { run: { font: 'Poppins', bold: true } },
+        heading2: { run: { font: 'Poppins', bold: true } },
+        heading3: { run: { font: 'Poppins', bold: true } },
+        heading4: { run: { font: 'Poppins', bold: true } },
+        heading5: { run: { font: 'Poppins', bold: true } },
+        heading6: { run: { font: 'Poppins', bold: true } },
+      },
+    },
     numbering: {
       config: [
         {
