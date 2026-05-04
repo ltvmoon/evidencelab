@@ -708,6 +708,70 @@ const FilterPopover: React.FC<FilterPopoverProps> = ({
 };
 
 // ---------------------------------------------------------------------------
+// Comment cell with per-row "See more" / "Show less" toggle so reviewers can
+// read long feedback without leaving the table row to open the row's context
+// panel. The collapsed view stays narrow and ellipsised; the expanded view
+// wraps to full width and preserves linebreaks.
+// ---------------------------------------------------------------------------
+const COMMENT_TRUNCATE_CHARS = 100;
+
+export const CommentCell: React.FC<{ comment: string | null }> = ({ comment }) => {
+  const [expanded, setExpanded] = useState(false);
+  const text = comment || '';
+  if (!text) {
+    return (
+      <td style={{ fontSize: '0.82rem', color: '#888' }}>-</td>
+    );
+  }
+  const isLong = text.length > COMMENT_TRUNCATE_CHARS;
+  if (!isLong) {
+    return (
+      <td style={{
+        fontSize: '0.82rem', maxWidth: '200px', overflow: 'hidden',
+        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }} title={text}>
+        {text}
+      </td>
+    );
+  }
+  if (expanded) {
+    return (
+      <td style={{
+        fontSize: '0.82rem', maxWidth: '320px', whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}>
+        {text}{' '}
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
+          className="admin-show-more-btn"
+          style={{ display: 'inline', padding: 0, marginLeft: 4 }}
+          aria-label="Show less of this comment"
+        >
+          Show less
+        </button>
+      </td>
+    );
+  }
+  return (
+    <td style={{
+      fontSize: '0.82rem', maxWidth: '200px', whiteSpace: 'nowrap',
+    }} title={text}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', maxWidth: 'calc(100% - 70px)', verticalAlign: 'bottom' }}>
+        {text.slice(0, COMMENT_TRUNCATE_CHARS).trimEnd()}…
+      </span>{' '}
+      <button
+        onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+        className="admin-show-more-btn"
+        style={{ display: 'inline', padding: 0, marginLeft: 4 }}
+        aria-label="See full comment"
+      >
+        See more
+      </button>
+    </td>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Rating table row (extracted to reduce cyclomatic complexity)
 // ---------------------------------------------------------------------------
 const hasContext = (r: RatingRow) => r.context && Object.keys(r.context).length > 0;
@@ -727,7 +791,7 @@ const RatingTableRow: React.FC<{
         <td style={{ fontSize: '0.82rem' }}>{rating.user_email || rating.user_display_name || '-'}</td>
         <td style={{ fontSize: '0.82rem' }}>{rating.rating_type.replace(/_/g, ' ')}</td>
         <td style={{ color: '#d4a017', fontSize: '0.9rem', letterSpacing: '1px' }}>{renderStars(rating.score)}</td>
-        <td style={{ fontSize: '0.82rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rating.comment || ''}>{rating.comment || '-'}</td>
+        <CommentCell comment={rating.comment} />
         <td style={{ fontSize: '0.82rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rating.url || ''}>
           {rating.url ? <a href={rating.url} target="_blank" rel="noopener noreferrer" style={{ color: '#1a73e8' }} onClick={(e) => e.stopPropagation()}>link</a> : '-'}
         </td>
