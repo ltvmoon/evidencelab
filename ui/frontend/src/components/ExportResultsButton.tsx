@@ -13,6 +13,9 @@ interface ExportResultsButtonProps {
   query: string;
   /** Rendered AI summary markdown, if any. Optional. */
   aiSummary?: string;
+  /** True while the AI summary stream is still in flight. The button is
+   *  disabled in this state so users don't export a half-written summary. */
+  aiSummaryLoading?: boolean;
   /** Human-readable dataset name (shown on the cover). */
   dataSource?: string;
   /** Optional className so parents can position the button. */
@@ -30,6 +33,7 @@ export const ExportResultsButton: React.FC<ExportResultsButtonProps> = ({
   results,
   query,
   aiSummary,
+  aiSummaryLoading,
   dataSource,
   className,
 }) => {
@@ -37,7 +41,7 @@ export const ExportResultsButton: React.FC<ExportResultsButtonProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const onClick = useCallback(async () => {
-    if (busy || results.length === 0) return;
+    if (busy || results.length === 0 || aiSummaryLoading) return;
     setBusy(true);
     setErrorMsg(null);
     try {
@@ -64,9 +68,14 @@ export const ExportResultsButton: React.FC<ExportResultsButtonProps> = ({
     } finally {
       setBusy(false);
     }
-  }, [busy, results, query, aiSummary, dataSource]);
+  }, [busy, results, query, aiSummary, aiSummaryLoading, dataSource]);
 
-  const disabled = busy || results.length === 0;
+  const disabled = busy || results.length === 0 || !!aiSummaryLoading;
+  const titleText = (() => {
+    if (results.length === 0) return 'Run a search first';
+    if (aiSummaryLoading) return 'Wait for the AI summary to finish';
+    return 'Export the AI summary and search results as a Word document';
+  })();
   return (
     <div className={className}>
       <button
@@ -74,11 +83,7 @@ export const ExportResultsButton: React.FC<ExportResultsButtonProps> = ({
         className="export-results-button"
         onClick={onClick}
         disabled={disabled}
-        title={
-          results.length === 0
-            ? 'Run a search first'
-            : 'Export the AI summary and search results as a Word document'
-        }
+        title={titleText}
         aria-label="Export search results to Word"
       >
         {busy ? (

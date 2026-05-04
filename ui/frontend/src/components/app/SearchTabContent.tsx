@@ -862,6 +862,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             results={effectiveResults}
             query={query}
             aiSummary={effectiveAiSummary}
+            aiSummaryLoading={aiSummaryLoading}
             dataSource={dataSource}
             showFixtureBadge={isFixtureActive}
           />

@@ -120,4 +120,29 @@ describe('ExportResultsButton', () => {
     );
     expect(container.querySelector('.my-wrap')).toBeInTheDocument();
   });
+
+  test('disabled_while_ai_summary_loading_then_shows_wait_hint', () => {
+    render(
+      <ExportResultsButton
+        results={[makeResult()]}
+        query="climate"
+        aiSummaryLoading
+      />,
+    );
+    const btn = screen.getByRole('button', { name: /export search results to word/i });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute('title', 'Wait for the AI summary to finish');
+  });
+
+  test('click_ignored_while_ai_summary_loading_does_not_fire_export', () => {
+    render(
+      <ExportResultsButton
+        results={[makeResult()]}
+        query="climate"
+        aiSummaryLoading
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /export search results to word/i }));
+    expect(mockExport).not.toHaveBeenCalled();
+  });
 });
