@@ -45,6 +45,11 @@ import { useGroupDefaults } from './hooks/useGroupDefaults';
 import { useActivityLogging } from './hooks/useActivityLogging';
 import { serializeDrilldownTree, serializeFullDrilldownTree, patchNodeInTree } from './utils/drilldownUtils';
 import { generateUUID } from './utils/uuid';
+import {
+  countFieldValues,
+  mergeFacetField,
+  resolveMetaKey,
+} from './utils/facetMerge';
 import AdminPanel from './components/admin/AdminPanel';
 import { AssistantTab } from './components/assistant/AssistantTab';
 import { AuthGate } from './components/auth/AuthGate';
@@ -428,54 +433,6 @@ const deduplicateByDocId = (results: SearchResult[]): SearchResult[] => {
     }
   }
   return unique;
-};
-
-/** Resolve the metadata key for a given facet field name. */
-const resolveMetaKey = (field: string): string => {
-  if (field === 'language') return 'sys_language';
-  if (field.startsWith('map_') || field.startsWith('src_') || field.startsWith('tag_')) return field;
-  return `map_${field}`;
-};
-
-/** Extract and normalise a metadata value into individual strings. */
-const extractFieldValues = (doc: SearchResult, metaKey: string): string[] => {
-  const val = doc.metadata?.[metaKey] ?? (doc as Record<string, any>)[metaKey];
-  if (!val) return [];
-  const raw = Array.isArray(val) ? val
-    : typeof val === 'string' && val.includes('; ') ? val.split('; ')
-    : typeof val === 'string' && val.includes(' | ') ? val.split(' | ')
-    : [val];
-  return raw.map((v: any) => String(v).trim()).filter(Boolean);
-};
-
-/** Count per-field values across deduplicated docs. */
-const countFieldValues = (docs: SearchResult[], metaKey: string): Map<string, number> => {
-  const counts = new Map<string, number>();
-  for (const doc of docs) {
-    for (const v of extractFieldValues(doc, metaKey)) {
-      counts.set(v, (counts.get(v) || 0) + 1);
-    }
-  }
-  return counts;
-};
-
-/** Merge all-DB facet values with result-derived counts, sorting counted first. */
-const mergeFacetField = (allValues: FacetValue[], resultCounts: Map<string, number>): FacetValue[] => {
-  const seen = new Set<string>();
-  const merged: FacetValue[] = allValues.map(v => {
-    seen.add(v.value);
-    return { ...v, count: resultCounts.get(v.value) ?? 0 };
-  });
-  for (const [val, count] of resultCounts) {
-    if (!seen.has(val)) merged.push({ value: val, count });
-  }
-  merged.sort((a, b) => {
-    if (a.count > 0 && b.count === 0) return -1;
-    if (a.count === 0 && b.count > 0) return 1;
-    if (a.count !== b.count) return b.count - a.count;
-    return a.value.localeCompare(b.value);
-  });
-  return merged;
 };
 
 // Default filter fields (fallback for URL parsing before facets load)
