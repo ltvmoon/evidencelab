@@ -1,6 +1,47 @@
 import type { DrilldownNode, SearchResult } from '../types/api';
 
 /**
+ * Compose a search query that inherits the parent context for a drilldown
+ * or find-out-more sub-query.
+ *
+ * Without this, "find out more" on a fact like *"improved food security"*
+ * inside a parent query *"cash transfers in Niger"* would search just the
+ * fact text — returning chunks about food security from anywhere — and only
+ * the summarisation prompt would mention the parent. Passing the parent
+ * context through to the search itself narrows retrieval to chunks that are
+ * relevant to *both* the leaf and the surrounding investigation.
+ *
+ * The included context mirrors what the summarisation prompt does:
+ *   - the root query is always included (broad framing),
+ *   - the immediate parent label is added when the user has drilled down
+ *     past the root (specificity),
+ *   - the deeper ancestor chain is intentionally omitted to avoid keyword
+ *     dilution at deep levels.
+ *
+ * The returned string is plain text suitable for both dense embedding and
+ * sparse keyword retrieval — no quotes or operators that the search backend
+ * would treat as syntax.
+ */
+export const buildContextualSearchQuery = (
+  leafQuery: string,
+  rootQuery: string,
+  parentLabel?: string | null,
+): string => {
+  const leaf = leafQuery.trim();
+  const root = rootQuery.trim();
+  // Empty root or root === leaf: just return the leaf — no useful context to add.
+  if (!root || root === leaf) return leaf;
+  const parts: string[] = [leaf, root];
+  // Only add the immediate parent if it's distinct from both leaf and root,
+  // matching how the summary prompt avoids redundant phrases.
+  const parent = (parentLabel || '').trim();
+  if (parent && parent !== leaf && parent !== root) {
+    parts.splice(1, 0, parent);
+  }
+  return parts.join(' ');
+};
+
+/**
  * Serialize a drilldown tree for activity/rating logging.
  * Strips heavy data (results arrays, summaries, prompts) to keep the payload small.
  * Preserves only the tree structure (ids + labels) so admins can see which

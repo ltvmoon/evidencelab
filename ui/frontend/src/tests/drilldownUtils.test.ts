@@ -1,9 +1,68 @@
 import { DrilldownNode } from '../types/api';
 import {
+  buildContextualSearchQuery,
   serializeDrilldownTree,
   serializeFullDrilldownTree,
   patchNodeInTree,
 } from '../utils/drilldownUtils';
+
+describe('buildContextualSearchQuery', () => {
+  test('returns leaf only when there is no root context', () => {
+    expect(buildContextualSearchQuery('cash transfers', '', null))
+      .toBe('cash transfers');
+  });
+
+  test('appends root context to leaf at the top level', () => {
+    // No parent label yet — user is one level into the drilldown.
+    expect(buildContextualSearchQuery('improved food security', 'cash transfers in Niger', null))
+      .toBe('improved food security cash transfers in Niger');
+  });
+
+  test('inserts parent label between leaf and root for deeper drilldowns', () => {
+    expect(
+      buildContextualSearchQuery(
+        'gender outcomes',
+        'cash transfers in Niger',
+        'improved food security',
+      ),
+    ).toBe('gender outcomes improved food security cash transfers in Niger');
+  });
+
+  test('omits parent label when it equals the root (avoid duplication)', () => {
+    expect(
+      buildContextualSearchQuery(
+        'follow-up',
+        'cash transfers in Niger',
+        'cash transfers in Niger',
+      ),
+    ).toBe('follow-up cash transfers in Niger');
+  });
+
+  test('omits parent label when it equals the leaf', () => {
+    expect(
+      buildContextualSearchQuery(
+        'food security',
+        'cash transfers in Niger',
+        'food security',
+      ),
+    ).toBe('food security cash transfers in Niger');
+  });
+
+  test('returns leaf only when leaf equals root', () => {
+    expect(buildContextualSearchQuery('cash transfers', 'cash transfers', null))
+      .toBe('cash transfers');
+  });
+
+  test('trims whitespace on inputs', () => {
+    expect(buildContextualSearchQuery('  leaf  ', '  root  ', '  parent  '))
+      .toBe('leaf parent root');
+  });
+
+  test('treats undefined parent label as no parent', () => {
+    expect(buildContextualSearchQuery('leaf', 'root', undefined))
+      .toBe('leaf root');
+  });
+});
 
 const makeSampleTree = (): DrilldownNode => ({
   id: 'root',

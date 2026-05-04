@@ -43,7 +43,7 @@ import SavedResearchModal from './components/SavedResearchModal';
 import { AuthContext, useAuthState } from './hooks/useAuth';
 import { useGroupDefaults } from './hooks/useGroupDefaults';
 import { useActivityLogging } from './hooks/useActivityLogging';
-import { serializeDrilldownTree, serializeFullDrilldownTree, patchNodeInTree } from './utils/drilldownUtils';
+import { buildContextualSearchQuery, serializeDrilldownTree, serializeFullDrilldownTree, patchNodeInTree } from './utils/drilldownUtils';
 import { generateUUID } from './utils/uuid';
 import { mergeFacetField } from './utils/facetMerge';
 import AdminPanel from './components/admin/AdminPanel';
@@ -1730,9 +1730,17 @@ function App() {
     setAiPrompt('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Perform a fresh search using the highlighted text as the query
+    // Perform a fresh search using the highlighted text as the query, but
+    // narrow it to chunks relevant to the parent investigation too — without
+    // this, deep drilldowns retrieve generic chunks for the leaf topic and
+    // only the summary prompt narrows them, which is too late.
+    const contextualSearchQuery = buildContextualSearchQuery(
+      highlightedText,
+      query,
+      drilldownHighlight,
+    );
     const params = buildSearchParams({
-      query: highlightedText,
+      query: contextualSearchQuery,
       filters,
       searchDenseWeight,
       rerankEnabled,
@@ -1820,8 +1828,15 @@ function App() {
       const nodeId = nodeIds[i];
       setFindOutMoreActiveFact(fact);
       try {
+        // Inherit parent context into the search query, not just the summary
+        // prompt — same reasoning as startDrilldown above.
+        const contextualSearchQuery = buildContextualSearchQuery(
+          fact,
+          query,
+          drilldownHighlight,
+        );
         const params = buildSearchParams({
-          query: fact, filters, searchDenseWeight, rerankEnabled,
+          query: contextualSearchQuery, filters, searchDenseWeight, rerankEnabled,
           recencyBoostEnabled, recencyWeight, recencyScaleDays, sectionTypes,
           keywordBoostShortQueries, minChunkSize, rerankModel, rerankModelPageSize,
           searchModel, dataSource, autoMinScore, deduplicateEnabled,
@@ -1884,10 +1899,15 @@ function App() {
       ? `, specifically "${parentLabel}"`
       : '';
     const summaryQuery = `Regarding: "${userQuery}"\n\nProvide detail about this, in the context of: "${query}"${parentContext}`;
+    const contextualSearchQuery = buildContextualSearchQuery(
+      userQuery,
+      query,
+      parentLabel,
+    );
 
     try {
       const params = buildSearchParams({
-        query: userQuery, filters, searchDenseWeight, rerankEnabled,
+        query: contextualSearchQuery, filters, searchDenseWeight, rerankEnabled,
         recencyBoostEnabled, recencyWeight, recencyScaleDays, sectionTypes,
         keywordBoostShortQueries, minChunkSize, rerankModel, rerankModelPageSize,
         searchModel, dataSource, autoMinScore, deduplicateEnabled,
