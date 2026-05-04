@@ -133,6 +133,54 @@ def build_facets_from_pg(pg, storage_field: str) -> Dict[str, int]:
             return {str(row[0]): int(row[1]) for row in cur.fetchall()}
 
 
+def count_src_jsonb_field_for_doc_ids(pg, raw_key: str, doc_ids: List[str]) -> Counter:
+    """Count distinct values of ``src_doc_raw_metadata->>raw_key`` across a
+    specific set of docs.
+
+    Used by query-narrowed faceting on ``src_*`` fields whose values live
+    only in the JSONB raw-metadata column (the Qdrant chunk payload only
+    sometimes carries the field, so per-payload aggregation under-counts).
+    ``raw_key`` must come from the trusted ``src_field_mapping`` config and
+    is passed as a parameter, not interpolated.
+    """
+    if not doc_ids:
+        return Counter()
+    placeholders = ", ".join(["%s"] * len(doc_ids))
+    sql = f"""
+        SELECT src_doc_raw_metadata->>%s
+        FROM {pg.docs_table}
+        WHERE doc_id IN ({placeholders})
+    """
+    with pg._get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [raw_key, *doc_ids])
+            rows = cur.fetchall()
+    return Counter(row[0] for row in rows if row[0] not in (None, ""))
+
+
+def count_sys_field_for_doc_ids(pg, sys_field: str, doc_ids: List[str]) -> Counter:
+    """Count distinct values of a ``sys_*`` column across a set of docs.
+
+    ``sys_field`` is a column name and is validated against an allowlist
+    before interpolation to prevent SQL injection.
+    """
+    if not doc_ids:
+        return Counter()
+    if not sys_field.startswith("sys_") or not sys_field.replace("_", "").isalnum():
+        raise ValueError(f"Invalid sys_field column: {sys_field!r}")
+    placeholders = ", ".join(["%s"] * len(doc_ids))
+    sql = f"""
+        SELECT {sys_field}
+        FROM {pg.docs_table}
+        WHERE doc_id IN ({placeholders})
+    """
+    with pg._get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, doc_ids)
+            rows = cur.fetchall()
+    return Counter(row[0] for row in rows if row[0] not in (None, ""))
+
+
 def build_facets_from_pg_jsonb(pg, raw_key: str) -> Dict[str, int]:
     """Get facet counts for src_* fields stored inside src_doc_raw_metadata.
 
