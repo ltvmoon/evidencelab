@@ -320,6 +320,82 @@ describe('exportResultsToDocxBlob', () => {
     expect(xml).toContain('p.9');
   });
 
+  test('References entries are NOT rendered as bulleted list items', async () => {
+    const opts = {
+      ...baseOpts,
+      aiSummary: '## Findings\n\nA claim [1]. Another claim [2].',
+    };
+    const xml = await unzip(await exportResultsToDocxBlob(opts));
+    // The bulleted-list paragraph property used elsewhere in this exporter
+    // must not appear in the References section. (Bullet list paragraphs
+    // get a `<w:numPr>` property; a clean references list should not.)
+    // We assert the heading is present but no bullet-style numPr follows it
+    // before the next H1 (Search Results).
+    const refsIdx = xml.indexOf('>References<');
+    const nextH1Idx = xml.indexOf('Search Results', refsIdx);
+    const refsBlock = xml.slice(refsIdx, nextH1Idx);
+    expect(refsBlock).not.toContain('<w:numPr>');
+  });
+
+  test('inline [N] citations in the body become hyperlinks to the cited result', async () => {
+    const opts = {
+      ...baseOpts,
+      aiSummary:
+        '## Findings\n\nClimate change disrupts food systems [1]. Sahel droughts compound this [2].',
+    };
+    const zip = await JSZip.loadAsync(
+      await (await exportResultsToDocxBlob(opts)).arrayBuffer(),
+    );
+    const rels = await zip.file('word/_rels/document.xml.rels')!.async('string');
+    // Both result-1 PDF and result-2 fallback SPA link should be referenced
+    // via hyperlink relationships, sourced from the inline [N] markers.
+    expect(rels).toContain('https://example.org/reports/bangladesh.pdf#page=42');
+    expect(rels).toContain('/document/doc-2');
+  });
+
+  test('References section uses each document\'s own citation numbers', async () => {
+    // Two distinct citations for the same first document — the references
+    // entry should list both numbers (1 and 3 in citation order), not 1 and 2.
+    const opts = {
+      ...baseOpts,
+      aiSummary: 'Claim A [1]. Claim B [2]. Follow-up on A [3].',
+      results: [
+        makeResult({
+          chunk_id: 'c1',
+          doc_id: 'doc-1',
+          title: 'Same Doc',
+          pdf_url: 'https://example.org/same.pdf',
+          page_num: 5,
+        }),
+        makeResult({
+          chunk_id: 'c2',
+          doc_id: 'doc-2',
+          title: 'Other Doc',
+          page_num: 3,
+        }),
+        makeResult({
+          chunk_id: 'c3',
+          doc_id: 'doc-1',
+          title: 'Same Doc',
+          pdf_url: 'https://example.org/same.pdf',
+          page_num: 11,
+        }),
+      ],
+    };
+    const xml = await unzip(await exportResultsToDocxBlob(opts));
+    const refsIdx = xml.indexOf('>References<');
+    expect(refsIdx).toBeGreaterThan(-1);
+    const refsBlock = xml.slice(refsIdx);
+    // The first reference entry (Same Doc) should contain BOTH 1 and 3
+    // — visible as separate hyperlink runs inside a single bracketed
+    // group at the start of the entry.
+    expect(refsBlock).toMatch(/Same Doc/);
+    expect(refsBlock).toMatch(/>1</);
+    expect(refsBlock).toMatch(/>3</);
+    expect(refsBlock).toMatch(/p\.5/);
+    expect(refsBlock).toMatch(/p\.11/);
+  });
+
   test('omits References section when the summary has no citations', async () => {
     const opts = {
       ...baseOpts,
@@ -329,5 +405,19 @@ describe('exportResultsToDocxBlob', () => {
     // Heading text 'References' must not appear in document.xml when the
     // summary cites nothing — keeps short summaries clean.
     expect(xml).not.toContain('>References<');
+  });
+
+  test('H1 default style is bigger than H2 and brand blue', async () => {
+    const zip = await JSZip.loadAsync(
+      await (await exportResultsToDocxBlob(baseOpts)).arrayBuffer(),
+    );
+    const styles = await zip.file('word/styles.xml')!.async('string');
+    // The `default` heading styles are written into styles.xml. We assert
+    // the H1 size is strictly greater than H2 and that H1 carries the
+    // brand-primary blue (5B8FA8). Sizes are in half-points so we look
+    // for `<w:sz w:val="40"` (H1) vs `<w:sz w:val="28"` (H2).
+    expect(styles).toMatch(/Heading1[\s\S]*?w:val="40"/);
+    expect(styles).toMatch(/Heading1[\s\S]*?w:val="5B8FA8"/);
+    expect(styles).toMatch(/Heading2[\s\S]*?w:val="28"/);
   });
 });

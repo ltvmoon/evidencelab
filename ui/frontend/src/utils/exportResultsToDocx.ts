@@ -117,33 +117,91 @@ const normaliseExcerpt = (s: string): string =>
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-/** Render inline markdown emphasis (`**bold**` and `*italic*`) into a list of
- *  TextRun children. Keeps the implementation tiny — we do not need a full
- *  markdown parser, just enough to survive what the AI summary endpoint emits.
- */
-const inlineRuns = (text: string, base: { size?: number } = {}): TextRun[] => {
-  const runs: TextRun[] = [];
-  // Match **bold** | *italic* | `code`
-  const re = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`)/g;
+/** Inline children of a Paragraph: either plain runs or hyperlink containers.
+ *  `Paragraph.children` accepts both, so we expose this union. */
+type InlineChild = TextRun | ExternalHyperlink;
+
+/** Optional context that lets {@link inlineRuns} convert `[N]` markers in a
+ *  body paragraph into clickable hyperlinks pointing at the cited result's
+ *  source PDF / report — so a reader can click straight from the citation to
+ *  the supporting page. */
+export interface CitationContext {
+  results: SearchResult[];
+  siteOrigin: string;
+  dataSource?: string;
+}
+
+/** Build the inline children for a `[N]` / `[N, M]` citation marker. Each
+ *  number becomes its own hyperlink so a reader can click any one of them
+ *  to jump to the specific cited document/page. The brackets and commas
+ *  remain as plain text so the visual matches the source markdown. */
+const buildCitationRuns = (
+  matched: string,
+  base: { size?: number },
+  ctx: CitationContext,
+): InlineChild[] => {
+  const nums = matched
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n));
+  const out: InlineChild[] = [new TextRun({ text: '[', size: base.size })];
+  nums.forEach((n, idx) => {
+    if (idx > 0) out.push(new TextRun({ text: ', ', size: base.size }));
+    const result = ctx.results[n - 1];
+    if (!result) {
+      out.push(new TextRun({ text: String(n), size: base.size }));
+      return;
+    }
+    out.push(
+      new ExternalHyperlink({
+        link: resolveResultLink(result, ctx.siteOrigin, ctx.dataSource),
+        children: [
+          new TextRun({ text: String(n), style: 'Hyperlink', size: base.size }),
+        ],
+      }),
+    );
+  });
+  out.push(new TextRun({ text: ']', size: base.size }));
+  return out;
+};
+
+/** Render inline markdown emphasis (`**bold**`, `*italic*`, `` `code` ``) and,
+ *  when a citation context is supplied, `[N]` / `[N, M]` citation markers
+ *  into a list of inline children. Keeps the implementation tiny — we do not
+ *  need a full markdown parser, just enough to survive what the AI summary
+ *  endpoint emits. */
+const inlineRuns = (
+  text: string,
+  base: { size?: number } = {},
+  citations?: CitationContext,
+): InlineChild[] => {
+  const out: InlineChild[] = [];
+  // Match **bold** | *italic* | `code` | [N(, M)*]
+  const re = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[(\d+(?:,\s*\d+)*)\])/g;
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > lastIndex) {
-      runs.push(new TextRun({ text: text.slice(lastIndex, m.index), size: base.size }));
+      out.push(new TextRun({ text: text.slice(lastIndex, m.index), size: base.size }));
     }
     if (m[2] !== undefined) {
-      runs.push(new TextRun({ text: m[2], bold: true, size: base.size }));
+      out.push(new TextRun({ text: m[2], bold: true, size: base.size }));
     } else if (m[3] !== undefined) {
-      runs.push(new TextRun({ text: m[3], italics: true, size: base.size }));
+      out.push(new TextRun({ text: m[3], italics: true, size: base.size }));
     } else if (m[4] !== undefined) {
-      runs.push(new TextRun({ text: m[4], font: 'Menlo', size: base.size }));
+      out.push(new TextRun({ text: m[4], font: 'Menlo', size: base.size }));
+    } else if (m[5] !== undefined && citations) {
+      out.push(...buildCitationRuns(m[5], base, citations));
+    } else {
+      // No citation context — preserve the original `[N]` text verbatim.
+      out.push(new TextRun({ text: m[0], size: base.size }));
     }
     lastIndex = m.index + m[0].length;
   }
   if (lastIndex < text.length) {
-    runs.push(new TextRun({ text: text.slice(lastIndex), size: base.size }));
+    out.push(new TextRun({ text: text.slice(lastIndex), size: base.size }));
   }
-  return runs.length ? runs : [new TextRun({ text, size: base.size })];
+  return out.length ? out : [new TextRun({ text, size: base.size })];
 };
 
 const HEADING_LEVELS_BY_DEPTH: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
@@ -166,11 +224,14 @@ const HEADING_LEVELS_BY_DEPTH: Record<number, (typeof HeadingLevel)[keyof typeof
 const matchBlockParagraph = (
   line: string,
   headingShift: number,
+  citations?: CitationContext,
 ): Paragraph | null => {
   const h = /^(#{1,6})\s+(.*)$/.exec(line);
   if (h) {
     const depth = Math.min(6, Math.max(1, h[1].length + headingShift));
     const heading = HEADING_LEVELS_BY_DEPTH[depth] ?? HeadingLevel.HEADING_6;
+    // Headings stay text-only — rendering hyperlinks inside a heading
+    // confuses Word's outline view, so omit the citation context here.
     return new Paragraph({
       heading,
       children: inlineRuns(h[2]),
@@ -180,7 +241,7 @@ const matchBlockParagraph = (
   const ul = /^[-*]\s+(.*)$/.exec(line);
   if (ul) {
     return new Paragraph({
-      children: inlineRuns(ul[1]),
+      children: inlineRuns(ul[1], {}, citations),
       bullet: { level: 0 },
       spacing: { after: 80 },
     });
@@ -188,7 +249,7 @@ const matchBlockParagraph = (
   const ol = /^(\d+)\.\s+(.*)$/.exec(line);
   if (ol) {
     return new Paragraph({
-      children: inlineRuns(ol[2]),
+      children: inlineRuns(ol[2], {}, citations),
       numbering: { reference: 'summary-ordered', level: 0 },
       spacing: { after: 80 },
     });
@@ -207,8 +268,15 @@ const matchBlockParagraph = (
  *
  *  ``headingShift`` lets callers demote any embedded headings — passing 1
  *  turns a top-level `#` into an H2 so it sits under the surrounding
- *  section's H1 rather than competing with it. */
-export const markdownToParagraphs = (md: string, headingShift = 0): Paragraph[] => {
+ *  section's H1 rather than competing with it.
+ *
+ *  ``citations`` lets callers turn `[N]` markers in body text into clickable
+ *  hyperlinks pointing at the cited result's source URL. */
+export const markdownToParagraphs = (
+  md: string,
+  headingShift = 0,
+  citations?: CitationContext,
+): Paragraph[] => {
   const paragraphs: Paragraph[] = [];
   const lines = md.replace(/\r\n/g, '\n').split('\n');
 
@@ -217,7 +285,9 @@ export const markdownToParagraphs = (md: string, headingShift = 0): Paragraph[] 
     const text = buffer.join(' ').trim();
     buffer = [];
     if (text) {
-      paragraphs.push(new Paragraph({ children: inlineRuns(text), spacing: { after: 120 } }));
+      paragraphs.push(
+        new Paragraph({ children: inlineRuns(text, {}, citations), spacing: { after: 120 } }),
+      );
     }
   };
 
@@ -227,7 +297,7 @@ export const markdownToParagraphs = (md: string, headingShift = 0): Paragraph[] 
       flushParagraph();
       continue;
     }
-    const block = matchBlockParagraph(line, headingShift);
+    const block = matchBlockParagraph(line, headingShift, citations);
     if (block) {
       flushParagraph();
       paragraphs.push(block);
@@ -342,7 +412,10 @@ const buildCoverParagraphs = (
   return children;
 };
 
-const buildReferenceParagraphs = (groups: ReferenceGroup[]): Paragraph[] => {
+const buildReferenceParagraphs = (
+  groups: ReferenceGroup[],
+  ctx: CitationContext,
+): Paragraph[] => {
   if (groups.length === 0) return [];
   const out: Paragraph[] = [];
   out.push(
@@ -352,28 +425,36 @@ const buildReferenceParagraphs = (groups: ReferenceGroup[]): Paragraph[] => {
       spacing: { before: 240, after: 120 },
     }),
   );
+  // Each entry is a plain (non-bulleted) paragraph led by the document's
+  // citation numbers in brackets, mirroring how citations appear inline:
+  //   [1, 3]  Doc title — Org, 2020   p.4   p.9
+  // Each [N] is a clickable hyperlink to that specific result's page.
   for (const group of groups) {
     const meta: string[] = [];
     if (group.organization) meta.push(group.organization);
     if (group.year) meta.push(group.year);
-    const heading = meta.length ? `${group.title} — ${meta.join(', ')}` : group.title;
-    const tail = group.refs
-      .map(({ sequential, result }) => {
-        const page =
-          typeof result.page_num === 'number' ? ` p.${result.page_num}` : '';
-        return `[${sequential}]${page}`;
-      })
-      .join('  ');
-    out.push(
-      new Paragraph({
-        spacing: { after: 80 },
-        bullet: { level: 0 },
-        children: [
-          new TextRun({ text: heading }),
-          new TextRun({ text: `  ${tail}`, color: '555555' }),
-        ],
-      }),
-    );
+    const titleSuffix = meta.length ? ` — ${meta.join(', ')}` : '';
+
+    const children: InlineChild[] = [];
+    children.push(new TextRun({ text: '[' }));
+    group.refs.forEach(({ sequential, result }, idx) => {
+      if (idx > 0) children.push(new TextRun({ text: ', ' }));
+      children.push(
+        new ExternalHyperlink({
+          link: resolveResultLink(result, ctx.siteOrigin, ctx.dataSource),
+          children: [new TextRun({ text: String(sequential), style: 'Hyperlink' })],
+        }),
+      );
+    });
+    children.push(new TextRun({ text: '] ' }));
+    children.push(new TextRun({ text: group.title + titleSuffix, bold: true }));
+    for (const { result } of group.refs) {
+      if (typeof result.page_num === 'number') {
+        children.push(new TextRun({ text: '   p.' + result.page_num, color: '555555' }));
+      }
+    }
+
+    out.push(new Paragraph({ spacing: { after: 80 }, children }));
   }
   return out;
 };
@@ -381,6 +462,8 @@ const buildReferenceParagraphs = (groups: ReferenceGroup[]): Paragraph[] => {
 const buildSummarySection = (
   summary: string,
   results: SearchResult[],
+  siteOrigin: string,
+  dataSource?: string,
 ): Paragraph[] => {
   if (!summary.trim()) return [];
   const out: Paragraph[] = [];
@@ -391,10 +474,12 @@ const buildSummarySection = (
       spacing: { before: 240, after: 120 },
     }),
   );
+  const citations: CitationContext = { results, siteOrigin, dataSource };
   // Demote any markdown headings inside the summary by 1 so the section's
-  // own H1 stays unique.
-  out.push(...markdownToParagraphs(summary, 1));
-  out.push(...buildReferenceParagraphs(buildReferenceGroups(summary, results)));
+  // own H1 stays unique. Pass the citation context so [N] markers in the
+  // body become clickable links.
+  out.push(...markdownToParagraphs(summary, 1, citations));
+  out.push(...buildReferenceParagraphs(buildReferenceGroups(summary, results), citations));
   return out;
 };
 
@@ -512,7 +597,7 @@ export const buildExportDocument = (opts: ExportOptions): Document => {
 
   const body: Paragraph[] = [
     ...buildCoverParagraphs(opts, now),
-    ...buildSummarySection(opts.aiSummary ?? '', opts.results),
+    ...buildSummarySection(opts.aiSummary ?? '', opts.results, siteOrigin, opts.dataSource),
     ...buildResultsSection(opts.results, siteOrigin, opts.dataSource),
   ];
 
@@ -522,19 +607,21 @@ export const buildExportDocument = (opts: ExportOptions): Document => {
     description: `Export of ${opts.results.length} search results` +
       (opts.aiSummary ? ' and the AI summary' : ''),
     // Match the web app's typography: Open Sans for body, Poppins for
-    // headings. The fonts must be present on the reader's machine —
-    // both are widely deployed system / Office fonts on macOS and
-    // Windows; Word falls back to Calibri if missing.
+    // headings. Sizes are in half-points — H1 is biggest and brand blue
+    // (matches `--brand-primary` in App.css), H2 a step smaller and
+    // greyish-dark, H3-H6 progressively smaller. Word falls back to
+    // Calibri if Open Sans / Poppins aren't installed on the reader's
+    // machine.
     styles: {
       default: {
         document: { run: { font: 'Open Sans' } },
-        title: { run: { font: 'Poppins', bold: true } },
-        heading1: { run: { font: 'Poppins', bold: true } },
-        heading2: { run: { font: 'Poppins', bold: true } },
-        heading3: { run: { font: 'Poppins', bold: true } },
-        heading4: { run: { font: 'Poppins', bold: true } },
-        heading5: { run: { font: 'Poppins', bold: true } },
-        heading6: { run: { font: 'Poppins', bold: true } },
+        title: { run: { font: 'Poppins', bold: true, size: 48, color: '5B8FA8' } },
+        heading1: { run: { font: 'Poppins', bold: true, size: 40, color: '5B8FA8' } },
+        heading2: { run: { font: 'Poppins', bold: true, size: 28, color: '2C3E50' } },
+        heading3: { run: { font: 'Poppins', bold: true, size: 24, color: '2C3E50' } },
+        heading4: { run: { font: 'Poppins', bold: true, size: 22, color: '2C3E50' } },
+        heading5: { run: { font: 'Poppins', bold: true, size: 22, color: '2C3E50' } },
+        heading6: { run: { font: 'Poppins', bold: true, size: 22, color: '2C3E50' } },
       },
     },
     numbering: {
