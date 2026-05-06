@@ -21,6 +21,7 @@ from pipeline.utilities.google_vertex_client import (  # noqa: E402
 )
 from ui.backend.services.azure_foundry_reranker import rerank_with_azure_foundry
 from ui.backend.services.google_vertex_reranker import (  # noqa: E402
+    RerankerUnavailableError,
     rerank_with_google_vertex,
 )
 
@@ -365,6 +366,81 @@ def _is_azure_foundry_reranker(config: Dict[str, Any]) -> bool:
     )
 
 
+def _rerank_via_vertex_with_fallback(
+    query: str, documents: List[str], vertex_model_id: str
+) -> Optional[List[float]]:
+    """Call the Vertex reranker; return ``None`` on transient unavailability.
+
+    On a known-transient Google outage (``RerankerUnavailableError``) this
+    emits a prominent ``WARNING`` and returns ``None`` so the caller knows
+    to fall back to the unranked results. Other exceptions propagate so a
+    real bug isn't silently masked.
+    """
+    try:
+        return rerank_with_google_vertex(
+            query=query, documents=documents, model_id=vertex_model_id
+        )
+    except RerankerUnavailableError as exc:
+        bar = "=" * 72
+        logger.warning(
+            "%s\nVERTEX RERANKER UNAVAILABLE — falling back to no-rerank.\n"
+            "  reason : %s\n"
+            "  query  : %r\n"
+            "  docs   : %d (returned in original score order)\n"
+            "  model  : %s\n"
+            "If this persists, switch the model combo's rerank_model to a "
+            "non-Vertex option (e.g. jinaai/jina-reranker-v2-base-multilingual) "
+            "or disable rerank, and check GCP status for Discovery Engine.\n"
+            "%s",
+            bar,
+            exc,
+            query,
+            len(documents),
+            vertex_model_id,
+            bar,
+        )
+        return None
+
+
+def _compute_rerank_scores(
+    query: str,
+    documents: List[str],
+    rerank_model: Optional[str],
+    rerank_config: Dict[str, Any],
+    model_name: str,
+    supported_rerank_models: Optional[Dict[str, Any]],
+    rerank_model_loader: Optional[Any],
+) -> Optional[List[float]]:
+    """Run the appropriate reranker and return per-document scores.
+
+    Returns ``None`` when the chosen backend has signalled a transient
+    unavailability (e.g. Vertex 503), telling the caller to skip the
+    rerank step and return the original result order untouched. Other
+    backends raise on failure so genuine bugs aren't silently swallowed.
+    """
+    if _is_azure_foundry_reranker(rerank_config):
+        deployment = rerank_config.get("model_id", model_name)
+        with _rerank_semaphore:
+            return rerank_with_azure_foundry(
+                query=query,
+                documents=documents,
+                deployment=deployment,
+                config=rerank_config,
+            )
+    if _is_google_vertex_reranker(rerank_config):
+        vertex_model_id = rerank_config.get("model_id", model_name)
+        with _rerank_semaphore:
+            return _rerank_via_vertex_with_fallback(query, documents, vertex_model_id)
+    if rerank_model_loader is not None:
+        reranker = rerank_model_loader(rerank_model)
+    else:
+        reranker = get_rerank_model(
+            rerank_model, supported_rerank_models=supported_rerank_models
+        )
+    with _rerank_semaphore:
+        return list(reranker.rerank(query, documents))
+
+
 def _is_google_vertex_reranker(config: Dict[str, Any]) -> bool:
     return (
         config.get("provider") == "google_vertex"
@@ -468,32 +544,19 @@ def rerank_results(
         rerank_model, supported_rerank_models=supported_rerank_models
     )
     t_rerank_infer_start = time.time()
-    if _is_azure_foundry_reranker(rerank_config):
-        deployment = rerank_config.get("model_id", model_name)
-        with _rerank_semaphore:
-            rerank_scores = rerank_with_azure_foundry(
-                query=query,
-                documents=documents,
-                deployment=deployment,
-                config=rerank_config,
-            )
-    elif _is_google_vertex_reranker(rerank_config):
-        vertex_model_id = rerank_config.get("model_id", model_name)
-        with _rerank_semaphore:
-            rerank_scores = rerank_with_google_vertex(
-                query=query,
-                documents=documents,
-                model_id=vertex_model_id,
-            )
-    else:
-        if rerank_model_loader is not None:
-            reranker = rerank_model_loader(rerank_model)
-        else:
-            reranker = get_rerank_model(
-                rerank_model, supported_rerank_models=supported_rerank_models
-            )
-        with _rerank_semaphore:
-            rerank_scores = list(reranker.rerank(query, documents))
+    rerank_scores = _compute_rerank_scores(
+        query=query,
+        documents=documents,
+        rerank_model=rerank_model,
+        rerank_config=rerank_config,
+        model_name=model_name,
+        supported_rerank_models=supported_rerank_models,
+        rerank_model_loader=rerank_model_loader,
+    )
+    if rerank_scores is None:
+        # Reranker signalled transient unavailability — return the original
+        # result order rather than 500-ing the search route.
+        return results
     t_rerank_infer_end = time.time()
     logger.info(
         "[TIMING] rerank inference: %.3fs (%s docs)",
