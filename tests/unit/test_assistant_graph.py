@@ -36,10 +36,13 @@ from ui.backend.services.assistant_graph import (  # noqa: E402
     SearchTracker,
     _build_search_tool,
     _format_search_result,
+    _load_system_prompt,
+    _next_citation_index,
     build_research_agent,
 )
 from ui.backend.services.assistant_service import (  # noqa: E402
     _extract_finish_diagnostics,
+    _extract_prior_sources,
     _is_duplicate_or_subset,
     _is_gemini_message,
     _process_agent_output,
@@ -285,6 +288,87 @@ class TestSearchTracker:
         assert len(tracker.all_results) == 2
         assert tracker.all_results[0]["global_index"] == 1
         assert tracker.all_results[1]["global_index"] == 2
+
+    def test_prior_sources_seed_global_index_counter(self):
+        """A new turn must continue numbering from the highest prior index, not 1."""
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c-new", "d-new", "Fresh Doc", "T", 0.9),
+        ]
+
+        prior = [
+            {"chunkId": "c1", "docId": "d1", "title": "Doc 1", "index": 1},
+            {"chunkId": "c2", "docId": "d2", "title": "Doc 2", "index": 5},
+            {"chunkId": "c3", "docId": "d3", "title": "Doc 3", "index": 30},
+        ]
+        tracker = SearchTracker(prior_sources=prior)
+        results = tracker.search("follow-up query")
+
+        # New chunk continues from prior max (30), so gets index 31.
+        assert results[0]["global_index"] == 31
+
+    def test_prior_sources_seed_dedup_set(self):
+        """Re-retrieving a prior chunk in a follow-up turn must not double-count it."""
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c-prior", "d1", score=0.9),  # already in prior
+            _make_scored_point("c-new", "d2", score=0.8),  # genuinely new
+        ]
+
+        prior = [
+            {"chunkId": "c-prior", "docId": "d1", "title": "Already Cited", "index": 7},
+        ]
+        tracker = SearchTracker(prior_sources=prior)
+        tracker.search("follow-up query")
+
+        # Only the genuinely-new chunk gets added; the prior chunk is
+        # skipped by dedup. The new index continues from prior max (7+1=8).
+        assert [r["chunk_id"] for r in tracker.all_results] == ["c-new"]
+        assert tracker.all_results[0]["global_index"] == 8
+
+    def test_get_sources_merges_prior_and_new_sorted_by_index(self):
+        """get_sources() must return prior + new entries sorted by global index."""
+        _mock_search_fn.reset_mock()
+        _mock_search_fn.side_effect = None
+        _mock_search_fn.return_value = [
+            _make_scored_point("c-new", "d-new", "New Doc", "Body", 0.9),
+        ]
+
+        prior = [
+            {"chunkId": "c1", "docId": "d1", "title": "Prior 1", "index": 1},
+            {"chunkId": "c3", "docId": "d3", "title": "Prior 3", "index": 3},
+        ]
+        tracker = SearchTracker(prior_sources=prior)
+        tracker.search("follow-up")
+
+        sources = tracker.get_sources()
+        indices = [s["index"] for s in sources]
+        # 1 (prior), 3 (prior), 4 (new, since prior max was 3)
+        assert indices == [1, 3, 4]
+        # Prior entries preserved verbatim (camelCase shape).
+        assert sources[0]["title"] == "Prior 1"
+        assert sources[1]["title"] == "Prior 3"
+        assert sources[2]["title"] == "New Doc"
+
+    def test_prior_sources_default_none_keeps_existing_behavior(self):
+        """Omitting prior_sources must keep single-turn behavior unchanged."""
+        tracker = SearchTracker()
+        assert tracker.prior_sources == []
+        assert tracker._global_result_count == 0
+        assert tracker._seen_ids == set()
+
+    def test_prior_sources_ignores_non_int_index(self):
+        """Defensive: a malformed prior entry without int index must not break init."""
+        prior = [
+            {"chunkId": "c1", "docId": "d1", "title": "Bad", "index": None},
+            {"chunkId": "c2", "docId": "d2", "title": "Ok", "index": 4},
+        ]
+        tracker = SearchTracker(prior_sources=prior)
+        assert tracker._global_result_count == 4
+        # Both chunkIds still seed the dedup set.
+        assert tracker._seen_ids == {"c1", "c2"}
 
     def test_get_new_queries_returns_only_new(self):
         _mock_search_fn.reset_mock()
@@ -994,3 +1078,125 @@ class TestGetSourcesEnrichment:
         sources = tracker.get_sources()
 
         assert sources[0]["headings"] == ["Chapter 1", "Section A"]
+
+
+class TestNextCitationIndex:
+    """Tests for _next_citation_index — the index a new search result will get."""
+
+    def test_empty_or_none_starts_at_1(self):
+        assert _next_citation_index(None) == 1
+        assert _next_citation_index([]) == 1
+
+    def test_returns_one_more_than_max(self):
+        prior = [
+            {"index": 1},
+            {"index": 5},
+            {"index": 3},
+        ]
+        assert _next_citation_index(prior) == 6
+
+    def test_ignores_non_int_indices(self):
+        prior = [
+            {"index": "not an int"},
+            {"index": None},
+            {"index": 7},
+        ]
+        assert _next_citation_index(prior) == 8
+
+    def test_all_non_int_falls_back_to_1(self):
+        assert _next_citation_index([{"index": None}, {"index": "x"}]) == 1
+
+
+class TestExtractPriorSources:
+    """Tests for _extract_prior_sources — pulling sources from history."""
+
+    def test_returns_empty_for_none_or_empty(self):
+        assert _extract_prior_sources(None) == []
+        assert _extract_prior_sources([]) == []
+
+    def test_extracts_sources_from_assistant_messages_only(self):
+        history = [
+            {"role": "user", "content": "Q1", "sources": [{"index": 99}]},
+            {
+                "role": "assistant",
+                "content": "A1",
+                "sources": [{"index": 1, "title": "T"}],
+            },
+        ]
+        result = _extract_prior_sources(history)
+        assert [s["index"] for s in result] == [1]
+
+    def test_dedupes_across_turns_by_index(self):
+        """A citation re-cited in turn 2 must appear only once."""
+        history = [
+            {
+                "role": "assistant",
+                "content": "A1",
+                "sources": [
+                    {"index": 1, "title": "T1"},
+                    {"index": 2, "title": "T2"},
+                ],
+            },
+            {"role": "user", "content": "Q2"},
+            {
+                "role": "assistant",
+                "content": "A2",
+                "sources": [
+                    {
+                        "index": 2,
+                        "title": "T2 (latest)",
+                    },  # duplicate index — latest wins
+                    {"index": 3, "title": "T3"},
+                ],
+            },
+        ]
+        result = _extract_prior_sources(history)
+        assert [s["index"] for s in result] == [1, 2, 3]
+        # Last-write-wins lets the most recent message refine an entry if needed.
+        assert result[1]["title"] == "T2 (latest)"
+
+    def test_ignores_assistant_messages_without_sources(self):
+        history = [
+            {"role": "assistant", "content": "A1"},  # no sources key at all
+            {"role": "assistant", "content": "A2", "sources": []},  # empty list
+            {"role": "assistant", "content": "A3", "sources": None},  # explicit None
+        ]
+        assert _extract_prior_sources(history) == []
+
+    def test_ignores_sources_with_non_int_index(self):
+        history = [
+            {
+                "role": "assistant",
+                "content": "A1",
+                "sources": [
+                    {"index": "abc", "title": "Bad"},
+                    {"index": 2, "title": "Good"},
+                ],
+            },
+        ]
+        result = _extract_prior_sources(history)
+        assert [s["index"] for s in result] == [2]
+
+
+class TestLoadSystemPromptPriorSources:
+    """Tests for _load_system_prompt's prior-sources block."""
+
+    def test_no_prior_sources_omits_block(self):
+        prompt = _load_system_prompt(data_source="wfp")
+        assert "Previously cited sources" not in prompt
+
+    def test_with_prior_sources_includes_block_and_titles(self):
+        prior = [
+            {"index": 1, "title": "Eval of Climate Policies"},
+            {"index": 2, "title": "Resilience Programme Report"},
+        ]
+        prompt = _load_system_prompt(data_source="wfp", prior_sources=prior)
+        assert "Previously cited sources" in prompt
+        assert "[1] Eval of Climate Policies" in prompt
+        assert "[2] Resilience Programme Report" in prompt
+
+    def test_with_prior_sources_advertises_next_index(self):
+        prior = [{"index": 7, "title": "T"}]
+        prompt = _load_system_prompt(data_source="wfp", prior_sources=prior)
+        # New search results should be numbered starting from [8].
+        assert "[8]" in prompt

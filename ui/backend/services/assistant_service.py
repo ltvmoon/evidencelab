@@ -47,7 +47,7 @@ def _get_langsmith_trace_url(run_id: uuid_mod.UUID) -> Optional[str]:
 
 def _build_conversation_messages(
     query: str,
-    conversation_messages: Optional[List[Dict[str, str]]] = None,
+    conversation_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> List:
     """Build LangChain message objects from conversation history."""
     messages: List = []
@@ -61,6 +61,29 @@ def _build_conversation_messages(
                 messages.append(AIMessage(content=content))
     messages.append(HumanMessage(content=query))
     return messages
+
+
+def _extract_prior_sources(
+    conversation_messages: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """Collect every cited source from prior assistant turns, deduped by index.
+
+    Sources are stored per-message in the SSE/persistence shape and carry
+    a stable ``index`` (the global citation number). Merging by index keeps
+    one entry per citation across the whole thread so a follow-up turn can
+    re-use those numbers without renumbering.
+    """
+    if not conversation_messages:
+        return []
+    by_idx: Dict[int, Dict[str, Any]] = {}
+    for msg in conversation_messages:
+        if msg.get("role") != "assistant":
+            continue
+        for src in msg.get("sources") or []:
+            idx = src.get("index")
+            if isinstance(idx, int):
+                by_idx[idx] = src
+    return [by_idx[k] for k in sorted(by_idx.keys())]
 
 
 def _build_done_event(run_id: uuid_mod.UUID) -> Dict[str, Any]:
@@ -297,6 +320,7 @@ async def stream_research_response(
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        prior_sources = _extract_prior_sources(conversation_messages)
         builder = build_deep_research_agent if deep_research else build_research_agent
         agent, tracker = builder(
             llm,
@@ -304,8 +328,15 @@ async def stream_research_response(
             reranker_model,
             search_settings,
             system_prompt_override=system_prompt_override,
+            prior_sources=prior_sources,
         )
         messages = _build_conversation_messages(query, conversation_messages)
+        if prior_sources:
+            logger.info(
+                "[deepres] prior_sources: count=%d max_index=%d",
+                len(prior_sources),
+                max((s.get("index") or 0) for s in prior_sources),
+            )
         cfg = _get_assistant_config()
         if deep_research:
             deep_cfg = cfg.get("deep_research", {})
