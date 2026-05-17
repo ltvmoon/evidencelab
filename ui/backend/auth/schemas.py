@@ -483,9 +483,14 @@ class AssistantChatRequest(BaseModel):
     reranker_model: Optional[str] = None
     search_settings: Optional[AssistantSearchSettings] = None
     deep_research: bool = False
-    conversation_history: Optional[List[Dict[str, str]]] = Field(
+    conversation_history: Optional[List[Dict[str, Any]]] = Field(
         None,
-        description="Prior conversation messages for unauthenticated users",
+        description=(
+            "Prior conversation messages for unauthenticated users. Each "
+            "entry has 'role' and 'content'; assistant entries may also "
+            "carry 'sources' so citation numbers stay resolvable across "
+            "follow-up turns."
+        ),
     )
 
 

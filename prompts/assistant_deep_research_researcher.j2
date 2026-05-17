@@ -48,3 +48,12 @@ Summarize your findings in a clear, structured format:
 
 You are searching documents from: {{ data_source }}
 {% endif %}
+{% if prior_sources %}
+
+## Previously cited sources
+
+These citation numbers are already in use from earlier turns of this conversation. Re-use them exactly when you refer to the same sources. New results from search_documents will be numbered starting from [{{ next_index }}].
+{% for src in prior_sources %}
+[{{ src.index }}] {{ src.title }}
+{%- endfor %}
+{% endif %}
