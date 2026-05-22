@@ -227,6 +227,21 @@ class RatingCreate(BaseModel):
         return _validate_jsonb(v)
 
 
+# ---------------------------------------------------------------------------
+# Admin response (triage) statuses
+# ---------------------------------------------------------------------------
+# Stored as a plain VARCHAR(32) in the DB and validated here so new values
+# can be added without a migration. Order matters: the frontend uses the
+# first entry as the default selection for unfilled responses.
+VALID_RESPONSE_STATUSES = (
+    "open",
+    "acknowledged",
+    "info_needed",
+    "resolved",
+    "wontfix",
+)
+
+
 class RatingRead(BaseModel):
     """Rating representation returned by read endpoints."""
 
@@ -241,10 +256,39 @@ class RatingRead(BaseModel):
     comment: Optional[str] = None
     context: Optional[dict] = None
     url: Optional[str] = None
+    response_status: Optional[str] = None
+    response_notes: Optional[str] = None
+    responded_by_user_id: Optional[uuid.UUID] = None
+    responded_by_email: Optional[str] = None
+    responded_by_display_name: Optional[str] = None
+    responded_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class RatingResponseUpdate(BaseModel):
+    """Payload for the admin response (triage) endpoint.
+
+    Both fields are optional so callers can update status alone, notes
+    alone, or both. Passing ``None`` for ``response_status`` clears the
+    status (and audit fields).
+    """
+
+    response_status: Optional[str] = Field(None, max_length=32)
+    response_notes: Optional[str] = Field(None, max_length=4000)
+
+    @field_validator("response_status")
+    @classmethod
+    def validate_response_status(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        if v not in VALID_RESPONSE_STATUSES:
+            raise ValueError(
+                "response_status must be one of: " + ", ".join(VALID_RESPONSE_STATUSES)
+            )
+        return v
 
 
 class ActivityCreate(BaseModel):
