@@ -14,16 +14,20 @@ rating directly in the same table:
 
 An index on ``response_status`` supports the admin grid's filter.
 
-Revision ID: 0026_add_response_to_user_ratings
+Revision ID: 0026_add_rating_response
 Revises: 0025_merge_0024_heads
 Create Date: 2026-05-20
+
+Note: the revision ID is intentionally kept under 32 characters to fit
+the stock ``alembic_version.version_num`` column type (``varchar(32)``)
+used by CI and fresh databases.
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0026_add_response_to_user_ratings"
+revision = "0026_add_rating_response"
 down_revision = "0025_merge_0024_heads"
 branch_labels = None
 depends_on = None
