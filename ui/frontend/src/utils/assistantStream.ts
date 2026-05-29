@@ -28,6 +28,9 @@ export interface AssistantStreamHandlers {
 interface ConversationMessage {
   role: string;
   content: string;
+  // Assistant messages also carry their previously emitted sources so the
+  // backend can re-use the same citation numbers in follow-up turns.
+  sources?: SourceReference[];
 }
 
 interface AssistantStreamOptions {

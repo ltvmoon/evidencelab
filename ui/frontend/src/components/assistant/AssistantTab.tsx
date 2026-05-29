@@ -304,7 +304,16 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
       // backend can maintain context across messages (including when the
       // user toggles deep research mid-conversation).
       const history = !isAuthenticated && messages.length > 0
-        ? messages.map((m) => ({ role: m.role, content: m.content }))
+        ? messages.map((m) => {
+            const entry: { role: string; content: string; sources?: SourceReference[] } = {
+              role: m.role,
+              content: m.content,
+            };
+            if (m.role === 'assistant' && m.sources && m.sources.length > 0) {
+              entry.sources = m.sources;
+            }
+            return entry;
+          })
         : undefined;
 
       await streamAssistantChat({

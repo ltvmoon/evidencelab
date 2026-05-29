@@ -67,6 +67,7 @@ class SearchTracker:
         data_source: Optional[str] = None,
         reranker_model: Optional[str] = None,
         search_settings: Optional[Dict[str, Any]] = None,
+        prior_sources: Optional[List[Dict[str, Any]]] = None,
     ):
         self.data_source = data_source
         self.reranker_model = reranker_model
@@ -76,6 +77,18 @@ class SearchTracker:
         self._seen_ids: set = set()
         self._emitted_query_count: int = 0
         self._global_result_count: int = 0
+        # Sources carried over from earlier turns in this conversation, in
+        # the SSE/persistence shape (camelCase: chunkId, docId, title, ...,
+        # index). Seeds dedup + index counter so global_index is genuinely
+        # global across the whole thread, not reset per turn.
+        self.prior_sources: List[Dict[str, Any]] = list(prior_sources or [])
+        for s in self.prior_sources:
+            cid = s.get("chunkId")
+            if cid:
+                self._seen_ids.add(cid)
+            idx = s.get("index")
+            if isinstance(idx, int) and idx > self._global_result_count:
+                self._global_result_count = idx
         # Field boost state — lazily initialised on first search
         self._field_boost_fields = self.search_settings.get("field_boost_fields")
         self._field_boost_enabled = bool(
@@ -330,17 +343,15 @@ class SearchTracker:
     def get_sources(self) -> List[Dict[str, Any]]:
         """Build source references from accumulated results.
 
-        Returns all results (not deduplicated by doc_id) so that each
-        global citation index maps to exactly one entry.  Results are
-        ordered by their global index so the frontend can look up
-        ``sources[N-1]`` for citation ``[N]``.
+        Returns prior-turn sources merged with this turn's new results, in
+        the SSE/persistence shape, ordered by global index. Including
+        prior sources lets the frontend resolve citation markers carried
+        over from earlier assistant messages — e.g. when a follow-up
+        question asks for a summary of the previous answer without
+        triggering any new search.
         """
-        ordered = sorted(
-            self.all_results,
-            key=lambda x: x.get("global_index", 0),
-        )
-        sources: List[Dict[str, Any]] = []
-        for r in ordered:
+        new_sources: List[Dict[str, Any]] = []
+        for r in self.all_results:
             text = r.get("text", "")
             entry: Dict[str, Any] = {
                 "chunkId": r.get("chunk_id", ""),
@@ -354,8 +365,9 @@ class SearchTracker:
             }
             if r.get("bbox"):
                 entry["bbox"] = r["bbox"]
-            sources.append(entry)
-        return sources
+            new_sources.append(entry)
+        combined = list(self.prior_sources) + new_sources
+        return sorted(combined, key=lambda x: x.get("index") or 0)
 
 
 def _build_search_tool(tracker: SearchTracker):
@@ -397,10 +409,35 @@ def _build_search_tool(tracker: SearchTracker):
     return search_documents
 
 
-def _load_system_prompt(data_source: Optional[str] = None) -> str:
-    """Load and render the assistant system prompt."""
+def _load_system_prompt(
+    data_source: Optional[str] = None,
+    prior_sources: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """Load and render the assistant system prompt.
+
+    When ``prior_sources`` is non-empty, the template emits a block
+    listing the citation numbers already used in earlier turns of the
+    conversation so the model re-uses them instead of restarting from
+    ``[1]``.
+    """
     template = _jinja_env.get_template("assistant_system.j2")
-    return template.render(data_source=data_source)
+    return template.render(
+        data_source=data_source,
+        prior_sources=prior_sources or [],
+        next_index=_next_citation_index(prior_sources),
+    )
+
+
+def _next_citation_index(prior_sources: Optional[List[Dict[str, Any]]]) -> int:
+    """Compute the citation index a new search result would receive."""
+    if not prior_sources:
+        return 1
+    int_indices: List[int] = []
+    for s in prior_sources:
+        idx = s.get("index")
+        if isinstance(idx, int):
+            int_indices.append(idx)
+    return (max(int_indices) + 1) if int_indices else 1
 
 
 def build_research_agent(
@@ -409,6 +446,7 @@ def build_research_agent(
     reranker_model: Optional[str] = None,
     search_settings: Optional[Dict[str, Any]] = None,
     system_prompt_override: Optional[str] = None,
+    prior_sources: Optional[List[Dict[str, Any]]] = None,
 ) -> tuple:
     """
     Build a deep research agent.
@@ -419,6 +457,9 @@ def build_research_agent(
         reranker_model: Optional reranker model key from UI model combo
         search_settings: Optional search parameters (dense_weight, boosts, etc.)
         system_prompt_override: Optional group prompt to append to base prompt
+        prior_sources: Sources cited in earlier turns of this conversation
+            (SSE/persistence shape, keyed by camelCase). Seeds the search
+            tracker so global citation indices remain stable across turns.
 
     Returns:
         Tuple of (compiled_agent, search_tracker)
@@ -430,10 +471,11 @@ def build_research_agent(
         data_source=data_source,
         reranker_model=reranker_model,
         search_settings=search_settings,
+        prior_sources=prior_sources,
     )
     tracker.MAX_SEARCHES = max_queries
     search_tool = _build_search_tool(tracker)
-    system_prompt = _load_system_prompt(data_source)
+    system_prompt = _load_system_prompt(data_source, prior_sources=prior_sources)
 
     if system_prompt_override:
         system_prompt = (
@@ -460,18 +502,32 @@ def build_research_agent(
     return agent, tracker
 
 
-def _load_deep_research_prompt(data_source: Optional[str] = None) -> str:
+def _load_deep_research_prompt(
+    data_source: Optional[str] = None,
+    prior_sources: Optional[List[Dict[str, Any]]] = None,
+) -> str:
     """Load and render the deep research coordinator prompt."""
     template = _jinja_env.get_template("assistant_deep_research_coordinator.j2")
-    return template.render(data_source=data_source)
+    return template.render(
+        data_source=data_source,
+        prior_sources=prior_sources or [],
+        next_index=_next_citation_index(prior_sources),
+    )
 
 
 def _load_researcher_prompt(
-    data_source: Optional[str] = None, max_queries: int = 10
+    data_source: Optional[str] = None,
+    max_queries: int = 10,
+    prior_sources: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Load and render the deep research researcher sub-agent prompt."""
     template = _jinja_env.get_template("assistant_deep_research_researcher.j2")
-    return template.render(data_source=data_source, max_queries=max_queries)
+    return template.render(
+        data_source=data_source,
+        max_queries=max_queries,
+        prior_sources=prior_sources or [],
+        next_index=_next_citation_index(prior_sources),
+    )
 
 
 def build_deep_research_agent(
@@ -480,6 +536,7 @@ def build_deep_research_agent(
     reranker_model: Optional[str] = None,
     search_settings: Optional[Dict[str, Any]] = None,
     system_prompt_override: Optional[str] = None,
+    prior_sources: Optional[List[Dict[str, Any]]] = None,
 ) -> tuple:
     """Build a deep research agent with sub-agent delegation.
 
@@ -498,13 +555,18 @@ def build_deep_research_agent(
         data_source=data_source,
         reranker_model=reranker_model,
         search_settings=search_settings,
+        prior_sources=prior_sources,
     )
     tracker.MAX_SEARCHES = max_queries
 
     search_tool = _build_search_tool(tracker)
 
-    coordinator_prompt = _load_deep_research_prompt(data_source)
-    researcher_prompt = _load_researcher_prompt(data_source, max_queries=max_queries)
+    coordinator_prompt = _load_deep_research_prompt(
+        data_source, prior_sources=prior_sources
+    )
+    researcher_prompt = _load_researcher_prompt(
+        data_source, max_queries=max_queries, prior_sources=prior_sources
+    )
 
     if system_prompt_override:
         coordinator_prompt = (

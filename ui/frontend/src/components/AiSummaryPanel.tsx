@@ -6,7 +6,7 @@ import { LANGUAGES } from '../constants';
 import { RainbowText } from './RainbowText';
 import { AiSummaryWithCitations } from './AiSummaryWithCitations';
 import { AiSummaryReferences } from './AiSummaryReferences';
-import { DigDeeperPopover } from './DigDeeperPopover';
+import { DigDeeperPopover, DrilldownMode } from './DigDeeperPopover';
 import { DrilldownBreadcrumb } from './DrilldownBreadcrumb';
 import { DrilldownGraphView } from './DrilldownGraphView';
 import { exportResearchToPdf } from '../utils/exportResearch';
@@ -35,7 +35,7 @@ interface AiSummaryPanelProps {
   onClosePrompt: () => void;
   drilldownStackDepth?: number;
   drilldownHighlight?: string;
-  onDrilldown?: (selectedText: string) => void;
+  onDrilldown?: (selectedText: string, mode: DrilldownMode) => void;
   onDrilldownBack?: () => void;
   drilldownTree?: DrilldownNode | null;
   drilldownCurrentNodeId?: string | null;
@@ -113,7 +113,7 @@ const AiSummaryBody = ({
   filteredResults: SearchResult[];
   onResultClick: (result: SearchResult) => void;
   contentRef?: React.RefObject<HTMLDivElement | null>;
-  onDrilldown?: (text: string) => void;
+  onDrilldown?: (text: string, mode: DrilldownMode) => void;
   loading?: boolean;
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
@@ -168,7 +168,7 @@ const AiSummaryContent = ({
   filteredResults: SearchResult[];
   onResultClick: (result: SearchResult) => void;
   contentRef?: React.RefObject<HTMLDivElement | null>;
-  onDrilldown?: (text: string) => void;
+  onDrilldown?: (text: string, mode: DrilldownMode) => void;
   onFindOutMore?: (keyFacts: string[]) => void;
   findOutMoreLoading?: boolean;
   findOutMoreActiveFact?: string | null;
@@ -534,6 +534,8 @@ interface DrilldownNavRowProps {
   globalSummaryLoading: boolean;
   drilldownStackDepth: number;
   drilldownHighlight?: string;
+  drilldownTree?: DrilldownNode | null;
+  drilldownCurrentNodeId?: string | null;
   onSetViewMode: (mode: 'summary' | 'tree' | 'global') => void;
   onGenerateGlobalSummary: () => void;
   onExportResearch: () => void;
@@ -547,6 +549,7 @@ interface DrilldownNavRowProps {
 
 const DrilldownNavRow = ({
   viewMode, hasGraph, globalSummaryLoading, drilldownStackDepth, drilldownHighlight,
+  drilldownTree, drilldownCurrentNodeId,
   onSetViewMode, onGenerateGlobalSummary, onExportResearch, onSaveResearch,
   saveResearchLoading, saveResearchStatus, isAuthenticated, onDrilldownBack,
   onLoadPreviousResearch,
@@ -584,7 +587,13 @@ const DrilldownNavRow = ({
       </button>
     )}
     {viewMode === 'summary' && (
-      <DrilldownBreadcrumb stackDepth={drilldownStackDepth} onBack={onDrilldownBack} currentHighlight={drilldownHighlight} />
+      <DrilldownBreadcrumb
+        stackDepth={drilldownStackDepth}
+        onBack={onDrilldownBack}
+        currentHighlight={drilldownHighlight}
+        tree={drilldownTree}
+        currentNodeId={drilldownCurrentNodeId}
+      />
     )}
   </div>
 );
@@ -867,6 +876,8 @@ export const AiSummaryPanel = ({
             globalSummaryLoading={globalSummaryLoading}
             drilldownStackDepth={drilldownStackDepth || 0}
             drilldownHighlight={drilldownHighlight}
+            drilldownTree={drilldownTree}
+            drilldownCurrentNodeId={drilldownCurrentNodeId}
             onSetViewMode={setViewMode}
             onGenerateGlobalSummary={handleGenerateGlobalSummary}
             onExportResearch={handleExportResearch}

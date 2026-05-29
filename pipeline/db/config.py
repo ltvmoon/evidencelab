@@ -245,6 +245,34 @@ def get_default_filter_fields(data_source: str) -> Dict[str, str]:
     return {}
 
 
+def get_src_field_mapping(data_source: str) -> Dict[str, str]:
+    """Return mapping from ``src_<sanitized>`` field names to raw metadata keys.
+
+    Used by the facet endpoint to query ``src_*`` filter values directly from
+    the ``src_doc_raw_metadata`` JSONB column when the field is not indexed in
+    Qdrant. The mapping inverts the sanitization that
+    ``normalize_document_payload`` applies at search time, e.g.
+    ``{"src_evaluation_category": "Evaluation category"}``.
+    """
+    config = load_datasources_config()
+    datasources = config.get("datasources", config)
+    if not isinstance(datasources, dict):
+        return {}
+
+    for domain_config in datasources.values():
+        if (
+            isinstance(domain_config, dict)
+            and domain_config.get("data_subdir") == data_source
+        ):
+            mapping = domain_config.get("src_field_mapping", {})
+            if isinstance(mapping, dict):
+                return {
+                    str(k): str(v) for k, v in mapping.items() if isinstance(v, str)
+                }
+            return {}
+    return {}
+
+
 def get_taxonomy_filter_fields(data_source: str) -> Dict[str, str]:
     """Return taxonomy fields configured for a datasource as {tag_key: label}.
 

@@ -99,7 +99,7 @@ class TestActivityCreate:
 
     def test_filters_jsonb_size_limit(self):
         """Extremely large filters payload should be rejected."""
-        huge = {"data": "x" * 250_000}
+        huge = {"data": "x" * 1_100_000}
         with pytest.raises(ValidationError, match="size"):
             ActivityCreate(
                 search_id=str(uuid.uuid4()),

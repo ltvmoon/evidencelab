@@ -10,10 +10,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from ui.backend.auth.db import get_async_session
 from ui.backend.auth.models import User, UserActivity, UserRating
-from ui.backend.auth.schemas import VALID_RATING_TYPES, RatingCreate, RatingRead
+from ui.backend.auth.schemas import (
+    VALID_RATING_TYPES,
+    VALID_RESPONSE_STATUSES,
+    RatingCreate,
+    RatingRead,
+    RatingResponseUpdate,
+)
 from ui.backend.auth.users import (
     current_active_user,
     current_superuser,
@@ -30,8 +37,17 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
-def _rating_to_read(rating: UserRating, user: User | None = None) -> RatingRead:
-    """Convert a UserRating ORM object to a RatingRead response."""
+def _rating_to_read(
+    rating: UserRating,
+    user: User | None = None,
+    responder: User | None = None,
+) -> RatingRead:
+    """Convert a UserRating ORM object to a RatingRead response.
+
+    ``user`` is the rating creator; ``responder`` is the admin who last
+    edited ``response_status`` / ``response_notes`` (may be ``None`` if
+    no response has been recorded or the responder was deleted).
+    """
     return RatingRead(
         id=rating.id,
         user_id=rating.user_id,
@@ -44,6 +60,12 @@ def _rating_to_read(rating: UserRating, user: User | None = None) -> RatingRead:
         comment=rating.comment,
         context=rating.context,
         url=rating.url,
+        response_status=rating.response_status,
+        response_notes=rating.response_notes,
+        responded_by_user_id=rating.responded_by_user_id,
+        responded_by_email=responder.email if responder else None,
+        responded_by_display_name=responder.full_name if responder else None,
+        responded_at=rating.responded_at,
         created_at=rating.created_at,
         updated_at=rating.updated_at,
     )
@@ -183,12 +205,25 @@ async def list_all_ratings(
     sort_by: str = Query("created_at"),
     order: str = Query("desc"),
     rating_type: Optional[str] = Query(None),
+    response_status: Optional[str] = Query(None),
     admin: User = Depends(current_superuser),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """List all ratings with pagination (superuser only)."""
-    base = select(UserRating, User).outerjoin(
-        User, UserRating.user_id == User.id  # type: ignore[arg-type]
+    """List all ratings with pagination (superuser only).
+
+    Joins ``users`` twice: once for the rating creator and once
+    (aliased as ``Responder``) for the admin who last recorded a
+    response. Both joins are LEFT OUTER so ratings with no responder
+    (or an anonymous creator) are still returned.
+    """
+    Responder = aliased(User)
+    base = (
+        select(UserRating, User, Responder)
+        .outerjoin(User, UserRating.user_id == User.id)  # type: ignore[arg-type]
+        .outerjoin(
+            Responder,
+            UserRating.responded_by_user_id == Responder.id,  # type: ignore[arg-type]
+        )
     )
 
     if rating_type and rating_type in VALID_RATING_TYPES:
@@ -197,12 +232,16 @@ async def list_all_ratings(
     if user_email:
         base = base.where(User.email == user_email)  # type: ignore[arg-type]
 
+    if response_status and response_status in VALID_RESPONSE_STATUSES:
+        base = base.where(UserRating.response_status == response_status)  # type: ignore[arg-type]
+
     if search:
         pattern = f"%{search}%"
         base = base.where(  # type: ignore[arg-type]
             User.email.ilike(pattern)  # type: ignore[attr-defined]
             | UserRating.reference_id.ilike(pattern)  # type: ignore[attr-defined]
             | UserRating.comment.ilike(pattern)  # type: ignore[attr-defined]
+            | UserRating.response_notes.ilike(pattern)  # type: ignore[attr-defined]
         )
 
     # Count total
@@ -216,6 +255,8 @@ async def list_all_ratings(
         "score": UserRating.score,
         "rating_type": UserRating.rating_type,
         "user_email": User.email,
+        "response_status": UserRating.response_status,
+        "responded_at": UserRating.responded_at,
     }
     sort_col = sort_col_map.get(sort_by, UserRating.created_at)
     if order == "asc":
@@ -229,7 +270,9 @@ async def list_all_ratings(
 
     result = await session.execute(base)
     rows = result.unique().all()
-    items = [_rating_to_read(rating, user) for rating, user in rows]
+    items = [
+        _rating_to_read(rating, user, responder) for rating, user, responder in rows
+    ]
 
     return {
         "items": [item.model_dump(mode="json") for item in items],
@@ -242,15 +285,31 @@ async def list_all_ratings(
 @router.get("/export", tags=["ratings"])
 async def export_ratings(
     rating_type: Optional[str] = Query(None),
+    response_status: Optional[str] = Query(None),
     admin: User = Depends(current_superuser),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Export all ratings as XLSX (superuser only)."""
+    """Export all ratings as XLSX (superuser only).
+
+    Includes the admin-response columns (status, notes, responder
+    email, responded_at) so the export reflects exactly what is
+    visible in the admin grid.
+    """
     import openpyxl
 
-    stmt = select(UserRating, User).outerjoin(User, UserRating.user_id == User.id)
+    Responder = aliased(User)
+    stmt = (
+        select(UserRating, User, Responder)
+        .outerjoin(User, UserRating.user_id == User.id)
+        .outerjoin(
+            Responder,
+            UserRating.responded_by_user_id == Responder.id,  # type: ignore[arg-type]
+        )
+    )
     if rating_type and rating_type in VALID_RATING_TYPES:
         stmt = stmt.where(UserRating.rating_type == rating_type)
+    if response_status and response_status in VALID_RESPONSE_STATUSES:
+        stmt = stmt.where(UserRating.response_status == response_status)  # type: ignore[arg-type]
     stmt = stmt.order_by(UserRating.created_at.desc())
 
     result = await session.execute(stmt)
@@ -270,10 +329,14 @@ async def export_ratings(
         "Item ID",
         "Comment",
         "URL",
+        "Response Status",
+        "Response Notes",
+        "Responded By",
+        "Responded At",
     ]
     ws.append(headers)
 
-    for rating, user in rows:
+    for rating, user, responder in rows:
         ws.append(
             [
                 (
@@ -289,6 +352,14 @@ async def export_ratings(
                 rating.item_id or "",
                 rating.comment or "",
                 rating.url or "",
+                rating.response_status or "",
+                rating.response_notes or "",
+                responder.email if responder else "",
+                (
+                    rating.responded_at.strftime("%Y-%m-%d %H:%M")
+                    if rating.responded_at
+                    else ""
+                ),
             ]
         )
 
@@ -304,3 +375,62 @@ async def export_ratings(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.patch("/{rating_id}/response", response_model=RatingRead, tags=["ratings"])
+async def update_rating_response(
+    rating_id: uuid.UUID,
+    body: RatingResponseUpdate,
+    admin: User = Depends(current_superuser),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Record or clear an admin response on a rating (superuser only).
+
+    Both fields are optional; passing both as ``None`` clears the
+    response (status, notes, and audit fields are all set to ``NULL``).
+    Otherwise ``responded_by_user_id`` and ``responded_at`` are
+    refreshed to the current admin / timestamp on every edit.
+    """
+    result = await session.execute(select(UserRating).where(UserRating.id == rating_id))
+    rating = result.scalars().first()
+    if rating is None:
+        raise HTTPException(status_code=404, detail="Rating not found")
+
+    is_clear = body.response_status is None and not body.response_notes
+    if is_clear:
+        rating.response_status = None
+        rating.response_notes = None
+        rating.responded_by_user_id = None
+        rating.responded_at = None
+    else:
+        rating.response_status = body.response_status
+        rating.response_notes = body.response_notes
+        rating.responded_by_user_id = admin.id
+        rating.responded_at = datetime.now(timezone.utc)
+
+    await session.commit()
+    await session.refresh(rating)
+
+    # Re-fetch the rating creator (and resolved responder) so the
+    # response payload carries display names just like /ratings/all.
+    creator = None
+    if rating.user_id:
+        creator_row = await session.execute(
+            select(User).where(User.id == rating.user_id)
+        )
+        creator = creator_row.scalars().first()
+
+    responder = None
+    if rating.responded_by_user_id:
+        responder_row = await session.execute(
+            select(User).where(User.id == rating.responded_by_user_id)
+        )
+        responder = responder_row.scalars().first()
+
+    logger.info(
+        "Admin %s updated response on rating %s (status=%s)",
+        admin.email,
+        rating.id,
+        rating.response_status,
+    )
+    return _rating_to_read(rating, creator, responder)

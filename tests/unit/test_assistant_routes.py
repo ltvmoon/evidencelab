@@ -598,3 +598,55 @@ class TestSearchSettingsPassthrough:
         assert settings["field_boost_enabled"] is True
         assert settings["field_boost_fields"] == {"country": 0.5}
         assert settings["dense_weight"] == 0.7
+
+
+class TestMessageToHistoryEntry:
+    """Tests for _message_to_history_entry — the pure shape mapper used by
+    _load_conversation_history when projecting ConversationMessage rows
+    onto the history dict that the agent consumes.
+    """
+
+    def _import_helper(self):
+        # Imported lazily so the module-level mocks at the top of this
+        # file are in place when ui.backend.routes.assistant is first
+        # imported by other tests.
+        from ui.backend.routes.assistant import _message_to_history_entry
+
+        return _message_to_history_entry
+
+    def test_user_entry_never_has_sources(self):
+        helper = self._import_helper()
+        msg = MagicMock(
+            role="user", content="hello", sources={"citations": [{"index": 1}]}
+        )
+        entry = helper(msg)
+        assert entry == {"role": "user", "content": "hello"}
+
+    def test_assistant_entry_with_citations(self):
+        helper = self._import_helper()
+        citations = [{"index": 1, "title": "T1"}, {"index": 2, "title": "T2"}]
+        msg = MagicMock(
+            role="assistant", content="answer", sources={"citations": citations}
+        )
+        entry = helper(msg)
+        assert entry == {"role": "assistant", "content": "answer", "sources": citations}
+
+    def test_assistant_entry_with_no_sources_column(self):
+        helper = self._import_helper()
+        msg = MagicMock(role="assistant", content="answer", sources=None)
+        entry = helper(msg)
+        # No sources key at all — keeps the wire shape minimal.
+        assert entry == {"role": "assistant", "content": "answer"}
+
+    def test_assistant_entry_with_empty_citations_list(self):
+        helper = self._import_helper()
+        msg = MagicMock(role="assistant", content="answer", sources={"citations": []})
+        entry = helper(msg)
+        assert entry == {"role": "assistant", "content": "answer"}
+
+    def test_assistant_entry_with_non_dict_sources_column(self):
+        helper = self._import_helper()
+        # Defensive: legacy rows may have stored a different shape.
+        msg = MagicMock(role="assistant", content="answer", sources={"foo": "bar"})
+        entry = helper(msg)
+        assert entry == {"role": "assistant", "content": "answer"}

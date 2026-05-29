@@ -182,6 +182,56 @@ def test_rerank_results_updates_scores_and_limit(monkeypatch):
     assert reranked[0].payload["text"] == "two"
 
 
+def test_rerank_falls_back_to_unranked_on_vertex_unavailable(monkeypatch, caplog):
+    """When the Vertex reranker raises RerankerUnavailableError (transient
+    Google-side outage), rerank_results must return the original results
+    unchanged rather than propagating the error to the search route. A
+    WARNING is emitted so the situation is loud in ops monitoring."""
+    from ui.backend.services.google_vertex_reranker import RerankerUnavailableError
+
+    results = [
+        SimpleNamespace(id="a", payload={"text": "one"}, score=0.10),
+        SimpleNamespace(id="b", payload={"text": "two"}, score=0.20),
+        SimpleNamespace(id="c", payload={"text": "three"}, score=0.30),
+    ]
+
+    def _boom(**_kwargs):
+        raise RerankerUnavailableError(
+            "Vertex Discovery Engine rank API unavailable: "
+            "ServiceUnavailable: 503 The service is currently unavailable."
+        )
+
+    # Force the Vertex code path inside search_models.rerank_results.
+    monkeypatch.setattr(search_models, "_is_google_vertex_reranker", lambda _cfg: True)
+    monkeypatch.setattr(
+        search_models,
+        "_get_rerank_model_config",
+        lambda *a, **kw: {
+            "provider": "google_vertex",
+            "model_id": "semantic-ranker-default-004",
+        },
+    )
+    monkeypatch.setattr(search_models, "rerank_with_google_vertex", _boom)
+    monkeypatch.setattr(
+        search_models,
+        "_resolve_rerank_model_name",
+        lambda *_a, **_kw: "vertex-ai-ranker",
+    )
+
+    caplog.set_level("WARNING")
+    out = search.rerank_results("query", results, limit=None, max_rerank_candidates=0)
+
+    # Original results returned in original order with original scores.
+    assert out is results
+    assert [r.score for r in out] == [0.10, 0.20, 0.30]
+
+    # Loud-and-clear log so an extended outage isn't silent.
+    msgs = " ".join(record.getMessage() for record in caplog.records)
+    assert "VERTEX RERANKER UNAVAILABLE" in msgs
+    assert "no-rerank" in msgs
+    assert "503" in msgs
+
+
 def test_get_models_returns_both(monkeypatch):
     dense_model = object()
     sparse_model = object()

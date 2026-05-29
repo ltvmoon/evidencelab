@@ -38,12 +38,14 @@ import { SearchTabContent } from './components/app/SearchTabContent';
 import { HeatmapTabContent } from './components/app/HeatmapTabContent';
 import { TabContent } from './components/app/TabContent';
 import { CookieConsent, getGaConsent } from './components/CookieConsent';
+import FeedbackButton from './components/feedback/FeedbackButton';
 import SavedResearchModal from './components/SavedResearchModal';
 import { AuthContext, useAuthState } from './hooks/useAuth';
 import { useGroupDefaults } from './hooks/useGroupDefaults';
 import { useActivityLogging } from './hooks/useActivityLogging';
-import { serializeDrilldownTree, serializeFullDrilldownTree, patchNodeInTree } from './utils/drilldownUtils';
+import { buildContextualSearchQuery, serializeDrilldownTree, serializeFullDrilldownTree, patchNodeInTree } from './utils/drilldownUtils';
 import { generateUUID } from './utils/uuid';
+import { mergeFacetField } from './utils/facetMerge';
 import AdminPanel from './components/admin/AdminPanel';
 import { AssistantTab } from './components/assistant/AssistantTab';
 import { AuthGate } from './components/auth/AuthGate';
@@ -414,67 +416,6 @@ const getTabFromPath = (): TabName => {
   }
   const path = stripBasePath(window.location.pathname).replace('/', '').toLowerCase();
   return VALID_TABS.includes(path as TabName) ? (path as TabName) : 'search';
-};
-
-/** Deduplicate search results by doc_id, keeping the first occurrence. */
-const deduplicateByDocId = (results: SearchResult[]): SearchResult[] => {
-  const seen = new Set<string>();
-  const unique: SearchResult[] = [];
-  for (const r of results) {
-    if (r.doc_id && !seen.has(r.doc_id)) {
-      seen.add(r.doc_id);
-      unique.push(r);
-    }
-  }
-  return unique;
-};
-
-/** Resolve the metadata key for a given facet field name. */
-const resolveMetaKey = (field: string): string => {
-  if (field === 'language') return 'sys_language';
-  if (field.startsWith('map_') || field.startsWith('src_') || field.startsWith('tag_')) return field;
-  return `map_${field}`;
-};
-
-/** Extract and normalise a metadata value into individual strings. */
-const extractFieldValues = (doc: SearchResult, metaKey: string): string[] => {
-  const val = doc.metadata?.[metaKey] ?? (doc as Record<string, any>)[metaKey];
-  if (!val) return [];
-  const raw = Array.isArray(val) ? val
-    : typeof val === 'string' && val.includes('; ') ? val.split('; ')
-    : typeof val === 'string' && val.includes(' | ') ? val.split(' | ')
-    : [val];
-  return raw.map((v: any) => String(v).trim()).filter(Boolean);
-};
-
-/** Count per-field values across deduplicated docs. */
-const countFieldValues = (docs: SearchResult[], metaKey: string): Map<string, number> => {
-  const counts = new Map<string, number>();
-  for (const doc of docs) {
-    for (const v of extractFieldValues(doc, metaKey)) {
-      counts.set(v, (counts.get(v) || 0) + 1);
-    }
-  }
-  return counts;
-};
-
-/** Merge all-DB facet values with result-derived counts, sorting counted first. */
-const mergeFacetField = (allValues: FacetValue[], resultCounts: Map<string, number>): FacetValue[] => {
-  const seen = new Set<string>();
-  const merged: FacetValue[] = allValues.map(v => {
-    seen.add(v.value);
-    return { ...v, count: resultCounts.get(v.value) ?? 0 };
-  });
-  for (const [val, count] of resultCounts) {
-    if (!seen.has(val)) merged.push({ value: val, count });
-  }
-  merged.sort((a, b) => {
-    if (a.count > 0 && b.count === 0) return -1;
-    if (a.count === 0 && b.count > 0) return 1;
-    if (a.count !== b.count) return b.count - a.count;
-    return a.value.localeCompare(b.value);
-  });
-  return merged;
 };
 
 // Default filter fields (fallback for URL parsing before facets load)
@@ -1782,9 +1723,23 @@ function App() {
   }, []);
 
   // Drilldown: save current state, search for fresh results, stream focused summary
-  const startDrilldown = useCallback(async (highlightedText: string) => {
+  const startDrilldown = useCallback(async (
+    highlightedText: string,
+    mode: 'subtopic' | 'newtopic' = 'subtopic',
+  ) => {
+    const isNewTopic = mode === 'newtopic';
     const snapshot = getSnapshot();
-    startDrilldownInTree(highlightedText, snapshot, query);
+    if (isNewTopic) {
+      // "New topic" mode: drop the existing drilldown chain so the
+      // breadcrumb collapses and the AI summary stands alone — same shape
+      // a fresh top-level search would produce. Updating ``query`` keeps
+      // the URL, activity log and any future sub-drilldowns rooted at
+      // this new topic.
+      resetDrilldownTree();
+      setQuery(highlightedText);
+    } else {
+      startDrilldownInTree(highlightedText, snapshot, query);
+    }
 
     setAiSummaryExpanded(true);
     setAiSummaryLoading(true);
@@ -1792,9 +1747,16 @@ function App() {
     setAiPrompt('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Perform a fresh search using the highlighted text as the query
+    // Sub-topic mode inherits the parent investigation's context into the
+    // search query so retrieval is narrowed to chunks relevant to both the
+    // leaf and the surrounding investigation. New-topic mode treats the
+    // selection as a fresh independent question (search and summary use
+    // the leaf alone, no parent inheritance).
+    const searchQuery = isNewTopic
+      ? highlightedText
+      : buildContextualSearchQuery(highlightedText, query, drilldownHighlight);
     const params = buildSearchParams({
-      query: highlightedText,
+      query: searchQuery,
       filters,
       searchDenseWeight,
       rerankEnabled,
@@ -1820,21 +1782,26 @@ function App() {
       setResults(freshResults);
       setAiSummaryResults(freshResults);
 
-      // Query inheritance: always include root query for broad context,
-      // plus the immediate parent node label for specificity (avoids noisy
-      // full-chain at deep levels). drilldownHighlight is the current node's
-      // label before drilling deeper.
-      const parentContext = drilldownHighlight && drilldownHighlight !== query
-        ? `, specifically "${drilldownHighlight}"`
-        : '';
-      const drilldownQuery = `Regarding: "${highlightedText}"\n\nProvide detail about this, in the context of: "${query}"${parentContext}`;
+      // For sub-topic mode, the summary prompt mirrors the search query's
+      // inheritance (root + immediate parent label). For new-topic mode the
+      // summary stands alone — same prompt the user would get if they typed
+      // the selection into the main search box.
+      let drilldownQuery: string;
+      if (isNewTopic) {
+        drilldownQuery = highlightedText;
+      } else {
+        const parentContext = drilldownHighlight && drilldownHighlight !== query
+          ? `, specifically "${drilldownHighlight}"`
+          : '';
+        drilldownQuery = `Regarding: "${highlightedText}"\n\nProvide detail about this, in the context of: "${query}"${parentContext}`;
+      }
       launchSummaryStream(drilldownQuery, freshResults);
     } catch (error) {
       console.error('Drilldown search failed:', error);
       setAiSummary(AI_SUMMARY_ERROR);
       setAiSummaryLoading(false);
     }
-  }, [getSnapshot, startDrilldownInTree, query, drilldownHighlight, launchSummaryStream,
+  }, [getSnapshot, startDrilldownInTree, resetDrilldownTree, query, drilldownHighlight, launchSummaryStream,
       filters, searchDenseWeight, rerankEnabled, recencyBoostEnabled,
       recencyWeight, recencyScaleDays, sectionTypes, keywordBoostShortQueries,
       minChunkSize, rerankModel, rerankModelPageSize, searchModel, dataSource,
@@ -1882,8 +1849,15 @@ function App() {
       const nodeId = nodeIds[i];
       setFindOutMoreActiveFact(fact);
       try {
+        // Inherit parent context into the search query, not just the summary
+        // prompt — same reasoning as startDrilldown above.
+        const contextualSearchQuery = buildContextualSearchQuery(
+          fact,
+          query,
+          drilldownHighlight,
+        );
         const params = buildSearchParams({
-          query: fact, filters, searchDenseWeight, rerankEnabled,
+          query: contextualSearchQuery, filters, searchDenseWeight, rerankEnabled,
           recencyBoostEnabled, recencyWeight, recencyScaleDays, sectionTypes,
           keywordBoostShortQueries, minChunkSize, rerankModel, rerankModelPageSize,
           searchModel, dataSource, autoMinScore, deduplicateEnabled,
@@ -1946,10 +1920,15 @@ function App() {
       ? `, specifically "${parentLabel}"`
       : '';
     const summaryQuery = `Regarding: "${userQuery}"\n\nProvide detail about this, in the context of: "${query}"${parentContext}`;
+    const contextualSearchQuery = buildContextualSearchQuery(
+      userQuery,
+      query,
+      parentLabel,
+    );
 
     try {
       const params = buildSearchParams({
-        query: userQuery, filters, searchDenseWeight, rerankEnabled,
+        query: contextualSearchQuery, filters, searchDenseWeight, rerankEnabled,
         recencyBoostEnabled, recencyWeight, recencyScaleDays, sectionTypes,
         keywordBoostShortQueries, minChunkSize, rerankModel, rerankModelPageSize,
         searchModel, dataSource, autoMinScore, deduplicateEnabled,
@@ -2683,19 +2662,35 @@ function App() {
   // the actual results (deduped by doc_id) so counts exactly match what the
   // user sees.  All DB values from allFacets are preserved; values absent
   // from the results get count 0 (the UI hides the number for those).
+  // Sidebar facet display:
+  //   - List of values comes from the unfiltered all-DB facets (so every
+  //     possible filter value is visible, even ones that don't appear in
+  //     the current results).
+  //   - Counts come from the backend's query-narrowed /facets response,
+  //     which is computed against ~500 ranked chunks. That's a bigger
+  //     lens than the ~50 the user can see on screen — values like a
+  //     French translation of a primarily-English topic still get a
+  //     real count, instead of dropping to 0 only to surface as 15
+  //     after the user clicks the filter.
+  //   - Falls back to the all-DB list when no query is active or the
+  //     query-narrowed response hasn't loaded yet.
   const displayFacets = React.useMemo(() => {
     const all = allFacetsDataSource === dataSource ? allFacets : null;
     if (!all) return facets;
-    if (!hasSearchRun || !query?.trim() || results.length === 0) return all;
+    if (!hasSearchRun || !query?.trim()) return all;
+    const queryNarrowed = facetsDataSource === dataSource ? facets : null;
+    if (!queryNarrowed) return all;
 
-    const uniqueDocs = deduplicateByDocId(results);
     const mergedFacetEntries: Record<string, FacetValue[]> = {};
     for (const [field, allValues] of Object.entries(all.facets)) {
-      const resultCounts = countFieldValues(uniqueDocs, resolveMetaKey(field));
-      mergedFacetEntries[field] = mergeFacetField(allValues, resultCounts);
+      const counts = new Map<string, number>();
+      for (const fv of queryNarrowed.facets?.[field] || []) {
+        counts.set(fv.value, fv.count);
+      }
+      mergedFacetEntries[field] = mergeFacetField(allValues, counts);
     }
     return { ...all, facets: mergedFacetEntries } as Facets;
-  }, [allFacets, allFacetsDataSource, facets, dataSource, hasSearchRun, query, results]);
+  }, [allFacets, allFacetsDataSource, facets, facetsDataSource, dataSource, hasSearchRun, query]);
 
   const requestHighlightHandler = resolveRequestHighlightHandler(
     SEARCH_SEMANTIC_HIGHLIGHTS,
@@ -3078,6 +3073,7 @@ function App() {
       />
 
       <CookieConsent />
+      <FeedbackButton />
     </div >
   );
 

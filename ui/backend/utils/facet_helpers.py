@@ -133,6 +133,78 @@ def build_facets_from_pg(pg, storage_field: str) -> Dict[str, int]:
             return {str(row[0]): int(row[1]) for row in cur.fetchall()}
 
 
+def count_src_jsonb_field_for_doc_ids(pg, raw_key: str, doc_ids: List[str]) -> Counter:
+    """Count distinct values of ``src_doc_raw_metadata->>raw_key`` across a
+    specific set of docs.
+
+    Used by query-narrowed faceting on ``src_*`` fields whose values live
+    only in the JSONB raw-metadata column (the Qdrant chunk payload only
+    sometimes carries the field, so per-payload aggregation under-counts).
+    ``raw_key`` must come from the trusted ``src_field_mapping`` config and
+    is passed as a parameter, not interpolated.
+    """
+    if not doc_ids:
+        return Counter()
+    placeholders = ", ".join(["%s"] * len(doc_ids))
+    sql = f"""
+        SELECT src_doc_raw_metadata->>%s
+        FROM {pg.docs_table}
+        WHERE doc_id IN ({placeholders})
+    """
+    with pg._get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [raw_key, *doc_ids])
+            rows = cur.fetchall()
+    return Counter(row[0] for row in rows if row[0] not in (None, ""))
+
+
+def count_sys_field_for_doc_ids(pg, sys_field: str, doc_ids: List[str]) -> Counter:
+    """Count distinct values of a ``sys_*`` column across a set of docs.
+
+    ``sys_field`` is a column name and is validated against an allowlist
+    before interpolation to prevent SQL injection.
+    """
+    if not doc_ids:
+        return Counter()
+    if not sys_field.startswith("sys_") or not sys_field.replace("_", "").isalnum():
+        raise ValueError(f"Invalid sys_field column: {sys_field!r}")
+    placeholders = ", ".join(["%s"] * len(doc_ids))
+    sql = f"""
+        SELECT {sys_field}
+        FROM {pg.docs_table}
+        WHERE doc_id IN ({placeholders})
+    """
+    with pg._get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, doc_ids)
+            rows = cur.fetchall()
+    return Counter(row[0] for row in rows if row[0] not in (None, ""))
+
+
+def build_facets_from_pg_jsonb(pg, raw_key: str) -> Dict[str, int]:
+    """Get facet counts for src_* fields stored inside src_doc_raw_metadata.
+
+    The Qdrant payload only carries fields that the indexer copied as
+    top-level keys; raw metadata read from the source (e.g. WFP's
+    ``"Evaluation category"`` column) lives only in the ``src_doc_raw_metadata``
+    JSONB blob in PostgreSQL. ``raw_key`` is the original source key
+    (passed as a query parameter, never interpolated) and must come from
+    the ``src_field_mapping`` in config.json.
+    """
+    query = f"""
+        SELECT src_doc_raw_metadata->>%s AS value, COUNT(*) AS count
+        FROM {pg.docs_table}
+        WHERE src_doc_raw_metadata->>%s IS NOT NULL
+          AND src_doc_raw_metadata->>%s != ''
+        GROUP BY value
+        ORDER BY count DESC
+    """
+    with pg._get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (raw_key, raw_key, raw_key))
+            return {str(row[0]): int(row[1]) for row in cur.fetchall()}
+
+
 def _is_dynamic_field(core_field: str) -> bool:
     """Return True for config-driven fields that need cardinality validation."""
     return core_field.startswith("src_") or core_field.startswith("tag_")
@@ -188,11 +260,27 @@ def _facet_tag_field(db, core_field: str) -> Dict[Any, int]:
 
 
 def _facet_storage_field(
-    db, pg, core_field: str, storage_field: str, facet_filter
+    db,
+    pg,
+    core_field: str,
+    storage_field: str,
+    facet_filter,
+    src_field_mapping: Optional[Dict[str, str]] = None,
 ) -> Dict[Any, int]:
-    """Query facet counts for a storage field from Qdrant or PostgreSQL."""
+    """Query facet counts for a storage field from Qdrant or PostgreSQL.
+
+    Routing:
+    - ``sys_*`` fields → PostgreSQL top-level columns (when ``pg`` is provided).
+    - ``src_*`` fields with a configured ``src_field_mapping`` entry →
+      PostgreSQL ``src_doc_raw_metadata`` JSONB lookup.
+    - Everything else → Qdrant payload facet (with ``facet_filter`` applied).
+    """
     if storage_field.startswith("sys_") and pg:
         return build_facets_from_pg(pg, storage_field)
+    if storage_field.startswith("src_") and pg and src_field_mapping:
+        raw_key = src_field_mapping.get(storage_field)
+        if raw_key:
+            return build_facets_from_pg_jsonb(pg, raw_key)
     return db.facet_documents(
         key=storage_field,
         filter_conditions=facet_filter,
@@ -216,12 +304,15 @@ def build_facets_from_db(
     facet_filter,
     resolve_storage_field,
     pg=None,
+    src_field_mapping: Optional[Dict[str, str]] = None,
 ) -> Tuple[Dict[str, List[FacetValue]], Dict[str, RangeInfo]]:
     """Build facet results for all filter fields.
 
     Routes sys_* fields to PostgreSQL and all others to Qdrant.
     Maps language codes to full display names.
     Detects numerical dynamic fields and returns them as range_fields.
+    When ``src_field_mapping`` is provided, ``src_*`` fields with a configured
+    raw key are read from the ``src_doc_raw_metadata`` JSONB column.
 
     Returns:
         Tuple of (facets dict, range_fields dict).
@@ -239,7 +330,12 @@ def build_facets_from_db(
             continue
 
         raw_counts = _get_raw_counts(
-            db, pg, core_field, facet_filter, resolve_storage_field
+            db,
+            pg,
+            core_field,
+            facet_filter,
+            resolve_storage_field,
+            src_field_mapping=src_field_mapping,
         )
         if raw_counts is None:
             facets_result[core_field] = []
@@ -257,13 +353,27 @@ def build_facets_from_db(
     return facets_result, range_fields
 
 
-def _get_raw_counts(db, pg, core_field, facet_filter, resolve_storage_field):
+def _get_raw_counts(
+    db,
+    pg,
+    core_field,
+    facet_filter,
+    resolve_storage_field,
+    src_field_mapping: Optional[Dict[str, str]] = None,
+):
     """Fetch raw facet counts for a field, returning None on failure."""
     if core_field.startswith("tag_"):
         return _safe_facet_query(lambda: _facet_tag_field(db, core_field), core_field)
 
     storage_field = resolve_storage_field(core_field, db.data_source if db else None)
     return _safe_facet_query(
-        lambda: _facet_storage_field(db, pg, core_field, storage_field, facet_filter),
+        lambda: _facet_storage_field(
+            db,
+            pg,
+            core_field,
+            storage_field,
+            facet_filter,
+            src_field_mapping=src_field_mapping,
+        ),
         core_field,
     )

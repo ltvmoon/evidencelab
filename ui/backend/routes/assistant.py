@@ -127,6 +127,22 @@ def _resolve_model_config(body: AssistantChatRequest):
     )
 
 
+def _message_to_history_entry(msg) -> dict:
+    """Convert a ``ConversationMessage`` row to the history-dict shape.
+
+    Assistant entries carry their persisted ``sources`` (the citations
+    list previously emitted on the SSE ``sources`` event) so the agent
+    can re-use the same global citation numbers in follow-up turns
+    instead of restarting from [1]. User entries never carry sources.
+    """
+    entry: dict = {"role": msg.role, "content": msg.content}
+    if msg.role == "assistant":
+        sources = (msg.sources or {}).get("citations")
+        if sources:
+            entry["sources"] = sources
+    return entry
+
+
 async def _load_conversation_history(body, user, session):
     """Load prior messages for a thread, returning a list of dicts."""
     if not (body.thread_id and _USER_MODULE and user and session):
@@ -140,7 +156,7 @@ async def _load_conversation_history(body, user, session):
         )
         result = await session.execute(stmt)
         msgs = result.scalars().all()
-        return [{"role": m.role, "content": m.content} for m in msgs]
+        return [_message_to_history_entry(m) for m in msgs]
     except Exception as exc:
         logger.warning("Failed to load thread history: %s", exc)
         return []
@@ -227,6 +243,12 @@ async def stream_assistant_chat(
                 elif etype == "sources":
                     last_sources = event.get("sources")
                 elif _should_persist(event, user, session):
+                    logger.info(
+                        "[deepres] done event: deep=%s synthesis_len=%d sources_count=%d",
+                        body.deep_research,
+                        len(last_synthesis),
+                        len(last_sources or []),
+                    )
                     persist_event = {
                         **event,
                         "synthesis": last_synthesis,
@@ -326,6 +348,13 @@ async def _persist_conversation(
     session.add(assistant_msg)
 
     await session.commit()
+    logger.info(
+        "[deepres] persisted: thread=%s assistant_msg=%s content_len=%d sources_count=%d",
+        tid,
+        assistant_msg.id,
+        len(synthesis or ""),
+        len(sources or []),
+    )
     return tid
 
 

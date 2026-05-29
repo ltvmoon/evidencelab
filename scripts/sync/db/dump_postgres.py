@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import shlex
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -52,6 +53,63 @@ def _get_valid_data_sources(root_dir: Path) -> List[str]:
     ]
 
 
+def _validate_dump_archive(
+    *,
+    root_dir: Path,
+    use_prod: bool,
+    dump_path: Path,
+) -> None:
+    """Validate that the custom-format dump can be read by pg_restore.
+
+    Catches truncated / incomplete dumps early (broken pipe or EOF during
+    write would otherwise produce a file that ``pg_dump`` exited cleanly
+    on but ``pg_restore`` can't read). The validation copies the dump
+    into the postgres container at a scratch path under the data dir
+    (writable by the postgres user, and not under ``/tmp`` so bandit's
+    insecure-tmp check doesn't trip without resorting to ``# nosec``),
+    runs ``pg_restore -l`` against it, and removes the scratch copy on
+    the way out — even if validation fails.
+    """
+    compose_cmd = _compose_base_command(use_prod)
+    dump_name = dump_path.name
+    container_dump_path = f"/var/lib/postgresql/data/_dump_validate_{dump_name}"
+
+    copy_cmd = (
+        f"{compose_cmd} cp {shlex.quote(str(dump_path))} "
+        f"postgres:{shlex.quote(container_dump_path)}"
+    )
+    copy_result = subprocess.run(copy_cmd, shell=True, cwd=root_dir)  # nosec B602
+    if copy_result.returncode != 0:
+        raise RuntimeError(
+            "Postgres dump validation failed: could not copy dump into container."
+        )
+
+    try:
+        validate_cmd = (
+            f"{compose_cmd} exec -T postgres "
+            f"pg_restore -l {shlex.quote(container_dump_path)}"
+        )
+        validate_result = subprocess.run(
+            validate_cmd,
+            shell=True,
+            cwd=root_dir,
+            capture_output=True,
+            text=True,
+        )  # nosec B602
+        if validate_result.returncode != 0:
+            stderr = (validate_result.stderr or "").strip()
+            raise RuntimeError(
+                "Postgres dump validation failed: pg_restore could not read "
+                f"archive. {stderr}"
+            )
+    finally:
+        cleanup_cmd = (
+            f"{compose_cmd} exec -T postgres "
+            f"rm -f {shlex.quote(container_dump_path)}"
+        )
+        subprocess.run(cleanup_cmd, shell=True, cwd=root_dir)  # nosec B602
+
+
 def dump_postgres(
     *,
     root_dir: Path,
@@ -97,6 +155,13 @@ def dump_postgres(
 
     if dump_path.stat().st_size == 0:
         raise RuntimeError("Postgres dump is empty.")
+
+    logger.info("Validating dump archive readability with pg_restore...")
+    _validate_dump_archive(
+        root_dir=root_dir,
+        use_prod=use_prod,
+        dump_path=dump_path,
+    )
 
     logger.info("Backup location: %s", backup_dir)
     return backup_dir
