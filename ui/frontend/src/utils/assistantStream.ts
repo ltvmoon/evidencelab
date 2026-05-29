@@ -2,10 +2,17 @@ import { API_KEY } from '../config';
 import { SummaryModelConfig, SourceReference, SearchToolCall } from '../types/api';
 import { SearchSettings } from '../types/auth';
 
-interface AssistantDoneData {
+export interface AssistantUsage {
+  llm_model?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+}
+
+export interface AssistantDoneData {
   threadId?: string;
   messageId?: string;
   langsmith_trace_url?: string;
+  usage?: AssistantUsage;
 }
 
 export interface AssistantStreamHandlers {
@@ -124,6 +131,7 @@ const handleStreamedData = (
         threadId: streamedData.threadId,
         messageId: streamedData.messageId,
         langsmith_trace_url: streamedData.langsmith_trace_url,
+        usage: streamedData.usage,
       });
       return fullText;
 

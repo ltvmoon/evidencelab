@@ -27,7 +27,9 @@ def test_render_prompt_includes_query_and_results():
 @pytest.mark.asyncio
 async def test_generate_ai_summary_returns_stripped_content(monkeypatch):
     class FakeLLM:
-        async def ainvoke(self, _messages):
+        # Accept a ``config`` kwarg so the UsageMetadataCallbackHandler
+        # added in the token-usage feature can be threaded through.
+        async def ainvoke(self, _messages, config=None):
             return SimpleNamespace(content="  Hello World  ")
 
     monkeypatch.setattr(

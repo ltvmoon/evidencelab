@@ -12,6 +12,7 @@ import uuid as uuid_mod
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage
 
 from ui.backend.services.assistant_graph import (
@@ -19,6 +20,7 @@ from ui.backend.services.assistant_graph import (
     build_deep_research_agent,
     build_research_agent,
 )
+from ui.backend.services.llm_service import summarize_usage_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +65,18 @@ def _build_conversation_messages(
     return messages
 
 
-def _build_done_event(run_id: uuid_mod.UUID) -> Dict[str, Any]:
-    """Build the completion event with optional LangSmith trace URL."""
+def _build_done_event(
+    run_id: uuid_mod.UUID,
+    usage_handler: Optional[UsageMetadataCallbackHandler] = None,
+    model_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build the completion event with optional LangSmith trace URL.
+
+    When *usage_handler* is provided, attach the accumulated token usage
+    (summed across every LLM hop the agent took) and the configured
+    ``model_key`` so the frontend can include them in the activity log
+    POST.
+    """
     done_event: Dict[str, Any] = {
         "type": "done",
         "messageId": str(uuid_mod.uuid4()),
@@ -72,6 +84,10 @@ def _build_done_event(run_id: uuid_mod.UUID) -> Dict[str, Any]:
     langsmith_url = _get_langsmith_trace_url(run_id)
     if langsmith_url:
         done_event["langsmith_trace_url"] = langsmith_url
+    if usage_handler is not None:
+        usage = summarize_usage_metadata(usage_handler, model_key)
+        if usage:
+            done_event["usage"] = usage
     return done_event
 
 
@@ -149,17 +165,24 @@ def _is_duplicate_or_subset(new_text: str, prev_text: str) -> bool:
 
 
 async def _yield_sources_and_done(
-    tracker: Any, run_id: uuid_mod.UUID
+    tracker: Any,
+    run_id: uuid_mod.UUID,
+    usage_handler: Optional[UsageMetadataCallbackHandler] = None,
+    model_key: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Yield final sources (if any) followed by the done event."""
     sources = tracker.get_sources()
     if sources:
         yield {"type": "sources", "sources": sources}
-    yield _build_done_event(run_id)
+    yield _build_done_event(run_id, usage_handler=usage_handler, model_key=model_key)
 
 
 async def _handle_stream_error(
-    exc: Exception, tracker: Any, run_id: uuid_mod.UUID
+    exc: Exception,
+    tracker: Any,
+    run_id: uuid_mod.UUID,
+    usage_handler: Optional[UsageMetadataCallbackHandler] = None,
+    model_key: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Yield error or graceful completion events for a stream exception."""
     is_recursion = "recursion" in str(exc).lower()
@@ -169,7 +192,9 @@ async def _handle_stream_error(
         logger.error("Research stream error: %s", exc, exc_info=True)
 
     if is_recursion and tracker and tracker.all_results:
-        async for event in _yield_sources_and_done(tracker, run_id):
+        async for event in _yield_sources_and_done(
+            tracker, run_id, usage_handler=usage_handler, model_key=model_key
+        ):
             yield event
     else:
         yield {"type": "error", "error": str(exc)}
@@ -206,6 +231,7 @@ async def stream_research_response(
     """
     run_id = uuid_mod.uuid4()
     tracker = None
+    usage_handler = UsageMetadataCallbackHandler()
 
     try:
         llm = _get_llm(
@@ -233,20 +259,24 @@ async def stream_research_response(
 
         if deep_research:
             async for event in _stream_deep_research(
-                agent, tracker, messages, run_id, recursion_limit
+                agent, tracker, messages, run_id, recursion_limit, usage_handler
             ):
                 yield event
         else:
             async for event in _stream_normal_research(
-                agent, tracker, messages, run_id, recursion_limit
+                agent, tracker, messages, run_id, recursion_limit, usage_handler
             ):
                 yield event
 
-        async for event in _yield_sources_and_done(tracker, run_id):
+        async for event in _yield_sources_and_done(
+            tracker, run_id, usage_handler=usage_handler, model_key=model_key
+        ):
             yield event
 
     except Exception as exc:
-        async for event in _handle_stream_error(exc, tracker, run_id):
+        async for event in _handle_stream_error(
+            exc, tracker, run_id, usage_handler=usage_handler, model_key=model_key
+        ):
             yield event
 
 
@@ -256,12 +286,17 @@ async def _stream_normal_research(
     messages: List,
     run_id: uuid_mod.UUID,
     recursion_limit: int,
+    usage_handler: UsageMetadataCallbackHandler,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Stream events from a normal (non-deep) research agent."""
     token_buffer = ""
     async for step_output in agent.astream(
         {"messages": messages},
-        config={"run_id": str(run_id), "recursion_limit": recursion_limit},
+        config={
+            "run_id": str(run_id),
+            "recursion_limit": recursion_limit,
+            "callbacks": [usage_handler],
+        },
         stream_mode="updates",
     ):
         for event in _events_from_step(step_output, tracker):
@@ -288,6 +323,7 @@ async def _stream_deep_research(
     messages: List,
     run_id: uuid_mod.UUID,
     recursion_limit: int,
+    usage_handler: UsageMetadataCallbackHandler,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Stream deep research events with real-time search progress.
 
@@ -311,6 +347,7 @@ async def _stream_deep_research(
                 config={
                     "run_id": str(run_id),
                     "recursion_limit": recursion_limit,
+                    "callbacks": [usage_handler],
                 },
                 stream_mode="updates",
             ):

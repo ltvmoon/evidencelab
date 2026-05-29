@@ -1,11 +1,17 @@
 """Tests for activity schemas and validation."""
 
 import uuid
+from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
-from ui.backend.auth.schemas import ActivityCreate, ActivityRead, ActivitySummaryUpdate
+from ui.backend.auth.schemas import (
+    ActivityCreate,
+    ActivityRead,
+    ActivitySummaryUpdate,
+    ActivitySummaryUpdateAnonymous,
+)
 
 
 class TestActivityCreate:
@@ -222,3 +228,87 @@ class TestActivityRead:
         assert r.ai_summary is None
         assert r.url is None
         assert r.has_ratings is False
+        # Token-usage fields default to None for historical rows.
+        assert r.llm_model is None
+        assert r.prompt_tokens is None
+        assert r.completion_tokens is None
+        assert r.cost_usd is None
+
+
+@pytest.mark.unit
+class TestActivityTokenUsageFields:
+    """Validation of the shared token-usage fields across activity schemas."""
+
+    def _base_create_kwargs(self):
+        return {
+            "search_id": str(uuid.uuid4()),
+            "query": "test",
+        }
+
+    def test_token_usage_round_trip_on_create(self):
+        """Token + cost fields round-trip through ActivityCreate."""
+        a = ActivityCreate(
+            **self._base_create_kwargs(),
+            llm_model="gpt-4.1-mini",
+            prompt_tokens=1234,
+            completion_tokens=567,
+            cost_usd=Decimal("0.001234"),
+        )
+        assert a.llm_model == "gpt-4.1-mini"
+        assert a.prompt_tokens == 1234
+        assert a.completion_tokens == 567
+        assert a.cost_usd == Decimal("0.001234")
+
+    def test_token_usage_optional_on_create(self):
+        """All four token-usage fields are optional (existing callers unaffected)."""
+        a = ActivityCreate(**self._base_create_kwargs())
+        assert a.llm_model is None
+        assert a.prompt_tokens is None
+        assert a.completion_tokens is None
+        assert a.cost_usd is None
+
+    def test_negative_tokens_rejected(self):
+        """Negative token counts should fail validation."""
+        with pytest.raises(ValidationError, match="prompt_tokens"):
+            ActivityCreate(**self._base_create_kwargs(), prompt_tokens=-1)
+        with pytest.raises(ValidationError, match="completion_tokens"):
+            ActivityCreate(**self._base_create_kwargs(), completion_tokens=-1)
+
+    def test_negative_cost_rejected(self):
+        """Negative cost values should fail validation."""
+        with pytest.raises(ValidationError, match="cost_usd"):
+            ActivityCreate(**self._base_create_kwargs(), cost_usd=Decimal("-0.0001"))
+
+    def test_extreme_tokens_rejected(self):
+        """Token counts beyond the 10M cap should fail validation."""
+        with pytest.raises(ValidationError, match="prompt_tokens"):
+            ActivityCreate(**self._base_create_kwargs(), prompt_tokens=10_000_001)
+
+    def test_long_model_name_rejected(self):
+        """Model names over 128 chars are rejected to match the DB column."""
+        with pytest.raises(ValidationError, match="llm_model"):
+            ActivityCreate(**self._base_create_kwargs(), llm_model="x" * 129)
+
+    def test_summary_update_accepts_token_usage(self):
+        """ActivitySummaryUpdate now carries the same usage fields."""
+        u = ActivitySummaryUpdate(
+            llm_model="gpt-4.1-mini",
+            prompt_tokens=10,
+            completion_tokens=5,
+        )
+        assert u.llm_model == "gpt-4.1-mini"
+        assert u.prompt_tokens == 10
+        assert u.completion_tokens == 5
+
+    def test_summary_update_anonymous_accepts_token_usage(self):
+        """Same on the anonymous variant used by the live frontend."""
+        u = ActivitySummaryUpdateAnonymous(
+            session_id="abc-123",
+            llm_model="gemini-2.5-flash",
+            prompt_tokens=500,
+            completion_tokens=200,
+            cost_usd=Decimal("0.000650"),
+        )
+        assert u.session_id == "abc-123"
+        assert u.llm_model == "gemini-2.5-flash"
+        assert u.cost_usd == Decimal("0.000650")

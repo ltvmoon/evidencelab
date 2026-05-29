@@ -48,7 +48,7 @@ import AdminPanel from './components/admin/AdminPanel';
 import { AssistantTab } from './components/assistant/AssistantTab';
 import { AuthGate } from './components/auth/AuthGate';
 import { DEFAULT_SECTION_TYPES, DEFAULT_FIELD_BOOST_FIELDS, buildSearchURL, getSearchStateFromURL } from './utils/searchUrl';
-import { streamAiSummary } from './utils/aiSummaryStream';
+import { streamAiSummary, AiSummaryUsage } from './utils/aiSummaryStream';
 import {
   highlightTextWithAPI,
   findSemanticMatches,
@@ -1709,7 +1709,10 @@ function App() {
       handlers: {
         onPrompt: setAiPrompt,
         onToken: setAiSummary,
-        onDone: () => {
+        onDone: (data) => {
+          // Stash usage so the trailing updateActivitySummary effect can
+          // include token counts + model in the PATCH that fires next.
+          aiSummaryUsageRef.current = data?.usage;
           setAiSummaryLoading(false);
         },
         onError: (message: string) => {
@@ -2267,6 +2270,9 @@ function App() {
   const searchDurationMsRef = useRef<number>(0);
   const summaryStartMsRef = useRef<number>(0);
   const prevAiSummaryLoadingRef = useRef(false);
+  // Captured token usage from the AI summary SSE done event so the
+  // trailing PATCH /activity/{id}/summary can persist it.
+  const aiSummaryUsageRef = useRef<AiSummaryUsage | undefined>(undefined);
   useEffect(() => {
     // Detect transition from loading → done and log the completed summary
     if (
@@ -2287,7 +2293,9 @@ function App() {
         aiSummary,
         summaryDurationMs,
         drilldownTree ? serializeDrilldownTree(drilldownTree) : undefined,
+        aiSummaryUsageRef.current,
       );
+      aiSummaryUsageRef.current = undefined;
     }
     prevAiSummaryLoadingRef.current = aiSummaryLoading;
   }, [aiSummaryLoading, aiSummary, isDrilldown, updateActivitySummary, drilldownTree]);

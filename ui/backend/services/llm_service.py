@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from deep_translator import GoogleTranslator
 from jinja2 import Environment, FileSystemLoader
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 
 # Add utils to path for imports
@@ -61,6 +62,35 @@ def _resolve_langsmith_url_prefix() -> Optional[str]:
 
     setattr(_resolve_langsmith_url_prefix, cache_attr, result)
     return result
+
+
+def summarize_usage_metadata(
+    handler: UsageMetadataCallbackHandler,
+    model_key: Optional[str],
+) -> Dict[str, Any]:
+    """Collapse a ``UsageMetadataCallbackHandler`` into activity-log fields.
+
+    The handler accumulates per-model usage as a nested dict; we sum
+    across whichever models the LLM reported (typically just one) so a
+    single PATCH call carries the totals plus the configured ``model_key``
+    (the user-facing key from ``supported_llms``).
+    """
+    payload: Dict[str, Any] = {}
+    if model_key:
+        payload["llm_model"] = model_key
+    try:
+        per_model = handler.usage_metadata or {}
+    except Exception:  # pragma: no cover - handler API surface
+        per_model = {}
+    if not per_model:
+        return payload
+    prompt = sum(int(v.get("input_tokens", 0) or 0) for v in per_model.values())
+    completion = sum(int(v.get("output_tokens", 0) or 0) for v in per_model.values())
+    if prompt:
+        payload["prompt_tokens"] = prompt
+    if completion:
+        payload["completion_tokens"] = completion
+    return payload
 
 
 def get_langsmith_trace_url(run_id: uuid_mod.UUID) -> Optional[str]:
@@ -177,7 +207,8 @@ async def stream_ai_summary(
 
         # Generate a deterministic run_id for LangSmith tracing
         run_id: Optional[uuid_mod.UUID] = None
-        config: Dict[str, Any] = {}
+        usage_handler = UsageMetadataCallbackHandler()
+        config: Dict[str, Any] = {"callbacks": [usage_handler]}
         if is_langsmith_tracing_enabled():
             run_id = uuid_mod.uuid4()
             config["run_id"] = run_id
@@ -185,7 +216,7 @@ async def stream_ai_summary(
         # Stream tokens from the LLM
         accumulated = ""
         async for chunk in llm.astream(
-            messages, config=config or None  # type: ignore[arg-type]
+            messages, config=config  # type: ignore[arg-type]
         ):
             if chunk.content:
                 token = str(chunk.content)
@@ -195,7 +226,7 @@ async def stream_ai_summary(
         logger.info(f"✓ Streamed AI summary ({len(accumulated)} chars)")
 
         # Yield metadata dict as final item (picked up by the route layer)
-        metadata: Dict[str, Any] = {}
+        metadata: Dict[str, Any] = summarize_usage_metadata(usage_handler, model_key)
         if run_id:
             trace_url = get_langsmith_trace_url(run_id)
             if trace_url:
@@ -229,6 +260,33 @@ async def generate_ai_summary(
     Returns:
         Generated summary text
     """
+    summary, _ = await generate_ai_summary_with_usage(
+        query=query,
+        results=results,
+        max_results=max_results,
+        model_key=model_key,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        system_prompt_override=system_prompt_override,
+    )
+    return summary
+
+
+async def generate_ai_summary_with_usage(
+    query: str,
+    results: List[Dict[str, Any]],
+    max_results: int = 20,
+    model_key: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    system_prompt_override: str | None = None,
+) -> tuple[str, Dict[str, Any]]:
+    """Generate an AI summary and return ``(summary, usage_metadata)``.
+
+    ``usage_metadata`` carries the same shape emitted by the streaming
+    endpoint: ``llm_model``, ``prompt_tokens``, ``completion_tokens``
+    when the provider reports usage.
+    """
     try:
         # Limit to top N results
         top_results = results[:max_results]
@@ -260,7 +318,10 @@ async def generate_ai_summary(
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
         ]
-        response = await llm.ainvoke(messages)
+        usage_handler = UsageMetadataCallbackHandler()
+        response = await llm.ainvoke(
+            messages, config={"callbacks": [usage_handler]}  # type: ignore[arg-type]
+        )
 
         # Return raw content, matching the streaming endpoint behaviour
         summary = str(response.content).strip()
@@ -272,7 +333,8 @@ async def generate_ai_summary(
 
         logger.info(f"✓ Generated AI summary ({len(summary)} chars)")
 
-        return summary
+        usage = summarize_usage_metadata(usage_handler, model_key)
+        return summary, usage
 
     except Exception as e:
         logger.error(f"Error generating AI summary: {e}", exc_info=True)
