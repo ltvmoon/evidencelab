@@ -48,6 +48,7 @@ const ACTIVITY_TYPES: ReadonlyArray<{ value: string; label: string }> = [
 ];
 
 const NULL_CELL = '—';
+const BORDER_LIGHT = '1px solid #ccc';
 
 // ---------------------------------------------------------------------------
 // Display helpers
@@ -147,14 +148,14 @@ const Controls: React.FC<ControlsProps> = ({
           type="date"
           value={fromDate}
           onChange={(e) => onFromDateChange(e.target.value)}
-          style={{ padding: '0.3rem', borderRadius: 4, border: '1px solid #ccc', fontSize: '0.85rem' }}
+          style={{ padding: '0.3rem', borderRadius: 4, border: BORDER_LIGHT, fontSize: '0.85rem' }}
         />
         <label style={{ fontSize: '0.8rem', color: '#555', marginLeft: 8, marginRight: 4 }}>To:</label>
         <input
           type="date"
           value={toDate}
           onChange={(e) => onToDateChange(e.target.value)}
-          style={{ padding: '0.3rem', borderRadius: 4, border: '1px solid #ccc', fontSize: '0.85rem' }}
+          style={{ padding: '0.3rem', borderRadius: 4, border: BORDER_LIGHT, fontSize: '0.85rem' }}
         />
       </div>
       <div>
@@ -162,7 +163,7 @@ const Controls: React.FC<ControlsProps> = ({
         <select
           value={activityType}
           onChange={(e) => onActivityTypeChange(e.target.value)}
-          style={{ padding: '0.3rem', borderRadius: 4, border: '1px solid #ccc', fontSize: '0.85rem' }}
+          style={{ padding: '0.3rem', borderRadius: 4, border: BORDER_LIGHT, fontSize: '0.85rem' }}
         >
           {ACTIVITY_TYPES.map((t) => (
             <option key={t.value} value={t.value}>{t.label}</option>
