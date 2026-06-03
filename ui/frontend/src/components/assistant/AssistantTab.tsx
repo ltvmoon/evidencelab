@@ -4,7 +4,11 @@ import { useAuth } from '../../hooks/useAuth';
 import { useRatings, Rating } from '../../hooks/useRatings';
 import { ChatMessage, SearchResult, SearchToolCall, SourceReference, SummaryModelConfig, ThreadListItem } from '../../types/api';
 import { SearchSettings } from '../../types/auth';
-import { streamAssistantChat, AssistantStreamHandlers } from '../../utils/assistantStream';
+import {
+  streamAssistantChat,
+  AssistantStreamHandlers,
+  AssistantUsage,
+} from '../../utils/assistantStream';
 import { useActivityLogging } from '../../hooks/useActivityLogging';
 import RatingModal from '../ratings/RatingModal';
 import { ChatMessageList } from './ChatMessageList';
@@ -252,6 +256,9 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Captured from the SSE done event so logSearch can persist tokens/model.
+    let lastUsage: AssistantUsage | undefined;
+
     const handlers: AssistantStreamHandlers = {
       onPhase: (phase) => setStreamingPhase(phase),
       onPlan: (queries) => setSearchQueries(queries),
@@ -273,6 +280,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
           setActiveThreadId(data.threadId);
           if (isAuthenticated) loadThreads();
         }
+        lastUsage = data.usage;
         setLastResponseDeep(deepResearch);
       },
       onError: (message) => {
@@ -364,7 +372,7 @@ export const AssistantTab: React.FC<AssistantTabProps> = ({
               text: r.text || '',
             })),
           })),
-        }, searchResults, undefined, finalContent);
+        }, searchResults, undefined, finalContent, lastUsage);
       }
     } finally {
       // Always clear streaming state, even on error/abort

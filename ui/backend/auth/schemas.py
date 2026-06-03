@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from fastapi_users import schemas
@@ -291,7 +292,20 @@ class RatingResponseUpdate(BaseModel):
         return v
 
 
-class ActivityCreate(BaseModel):
+class _TokenUsageFields(BaseModel):
+    """Optional LLM usage and cost fields shared by activity schemas.
+
+    Defined once and mixed into the create/update/read schemas so the
+    validation bounds stay consistent across endpoints.
+    """
+
+    llm_model: Optional[str] = Field(None, max_length=128)
+    prompt_tokens: Optional[int] = Field(None, ge=0, le=10_000_000)
+    completion_tokens: Optional[int] = Field(None, ge=0, le=10_000_000)
+    cost_usd: Optional[Decimal] = Field(None, ge=0, le=1000)
+
+
+class ActivityCreate(_TokenUsageFields):
     """Payload for logging a search activity."""
 
     search_id: str = Field(..., max_length=100)
@@ -313,7 +327,7 @@ class ActivityCreate(BaseModel):
         return _validate_jsonb(v)
 
 
-class ActivitySummaryUpdate(BaseModel):
+class ActivitySummaryUpdate(_TokenUsageFields):
     """Payload for updating an existing activity record.
 
     All fields optional: send ai_summary to update the summary text,
@@ -331,7 +345,7 @@ class ActivitySummaryUpdate(BaseModel):
         return _validate_jsonb(v)
 
 
-class ActivitySummaryUpdateAnonymous(BaseModel):
+class ActivitySummaryUpdateAnonymous(_TokenUsageFields):
     """Payload for updating an activity record (authenticated or anonymous)."""
 
     ai_summary: Optional[str] = Field(None, max_length=100_000)
@@ -345,7 +359,7 @@ class ActivitySummaryUpdateAnonymous(BaseModel):
         return _validate_jsonb(v)
 
 
-class ActivityRead(BaseModel):
+class ActivityRead(_TokenUsageFields):
     """Activity representation returned by admin endpoints."""
 
     id: uuid.UUID
