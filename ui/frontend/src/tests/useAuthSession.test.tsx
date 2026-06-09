@@ -315,6 +315,57 @@ describe('useAuthState — inactivity timeout', () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Tests — sliding-session refresh                                    */
+/* ------------------------------------------------------------------ */
+
+describe('useAuthState — sliding-session refresh', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupInterceptorMock();
+    (axios.get as jest.Mock).mockResolvedValue({ data: mockUser });
+    (axios.post as jest.Mock).mockResolvedValue({ data: {} });
+  });
+
+  it('posts /auth/refresh while the user is active', async () => {
+    jest.useFakeTimers();
+    render(<AuthTestHarness />);
+    await flushPromises();
+
+    expect(screen.getByTestId('authenticated').textContent).toBe('true');
+    (axios.post as jest.Mock).mockClear();
+
+    // Keep the session active just before the refresh interval fires.
+    act(() => { jest.advanceTimersByTime(20 * 60 * 1000); });
+    act(() => { window.dispatchEvent(new MouseEvent('mousedown')); });
+    // Cross the 30-minute refresh interval (half the 1h default lifetime).
+    await act(async () => { jest.advanceTimersByTime(15 * 60 * 1000); });
+
+    expect(axios.post).toHaveBeenCalledWith(
+      expect.stringContaining('/auth/refresh'),
+    );
+    jest.useRealTimers();
+  });
+
+  it('does NOT post /auth/refresh when the user is idle', async () => {
+    jest.useFakeTimers();
+    render(<AuthTestHarness />);
+    await flushPromises();
+
+    expect(screen.getByTestId('authenticated').textContent).toBe('true');
+    (axios.post as jest.Mock).mockClear();
+
+    // No activity at all — advance across two refresh intervals.
+    await act(async () => { jest.advanceTimersByTime(59 * 60 * 1000); });
+
+    const refreshCalls = (axios.post as jest.Mock).mock.calls.filter(
+      ([url]) => typeof url === 'string' && url.includes('/auth/refresh'),
+    );
+    expect(refreshCalls).toHaveLength(0);
+    jest.useRealTimers();
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /*  Tests — login/logout session state                                 */
 /* ------------------------------------------------------------------ */
 

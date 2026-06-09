@@ -5,12 +5,14 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 
+from ui.backend.auth.models import User
 from ui.backend.auth.oauth import google_oauth_client, microsoft_oauth_client
 from ui.backend.auth.schemas import UserCreate, UserRead
 from ui.backend.auth.users import (
     AUTH_SECRET,
     bearer_backend,
     cookie_backend,
+    current_active_user,
     fastapi_users,
     get_user_manager,
 )
@@ -64,6 +66,39 @@ router.include_router(
     fastapi_users.get_reset_password_router(),
     tags=["auth"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Sliding-session refresh
+#
+# Re-issues the httpOnly auth cookie (and a fresh JWT) for the currently
+# authenticated user. The frontend calls this on an interval while the user is
+# active, so the access token's expiry always stays ahead of "now" and an
+# active user is never logged out mid-session. An idle user makes no refresh
+# call, so their cookie lapses at the configured lifetime — an intentional
+# idle logout. Mounted unconditionally so both email and OAuth sessions slide.
+#
+# A valid session cookie is required (current_active_user returns 401
+# otherwise), so this cannot bootstrap a session — only extend an existing one.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/refresh", tags=["auth"])
+async def refresh_session(
+    user: User = Depends(current_active_user),
+    strategy=Depends(cookie_backend.get_strategy),
+):
+    """Re-issue the auth cookie for the current user (sliding session).
+
+    Args:
+        user: The authenticated user, resolved from the existing auth cookie.
+        strategy: The cookie backend's JWT strategy.
+
+    Returns:
+        Response: A 204 response carrying a refreshed ``Set-Cookie`` header.
+    """
+    return await cookie_backend.login(strategy, user)
+
 
 # ---------------------------------------------------------------------------
 # OAuth providers (only registered when credentials are configured)
