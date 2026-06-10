@@ -57,7 +57,12 @@ if AUTH_SECRET in _INSECURE_DEFAULTS or len(AUTH_SECRET) < 32:
     )
     AUTH_SECRET = _generated
 
-TOKEN_LIFETIME_SECONDS = 3600  # 1 hour (short-lived; refresh via cookie)
+# Access-token (and auth-cookie) lifetime. The frontend slides the session by
+# re-issuing the cookie via POST /auth/refresh before it expires while the user
+# is active, so an active user is never logged out mid-session. An idle user's
+# cookie lapses at this lifetime. Configurable to keep the frontend refresh
+# cadence and idle timeout aligned (see AUTH_IDLE_TIMEOUT).
+TOKEN_LIFETIME_SECONDS = int(os.environ.get("AUTH_TOKEN_LIFETIME", "3600"))  # 1 hour
 
 # Registration controls — restrict who can sign up.
 # Comma-separated list of allowed email domains (e.g. "example.com,corp.org").
