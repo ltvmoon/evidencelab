@@ -66,10 +66,20 @@ Administrators can view all user ratings from the **Admin Panel → Ratings** ta
 
 The Ratings panel provides:
 
-- **Search** — filter by email, reference ID, or comment text
-- **Column filters** — filter by Type (search result, AI summary, document summary, taxonomy), Score (1–5), or User
-- **Sortable columns** — sort by date, user, type, or score
+- **Search** — filter by email, reference ID, comment, or response notes
+- **Column filters** — filter by Type (search result, AI summary, document summary, taxonomy), Score (1–5), User, or Response status
+- **Sortable columns** — sort by date, user, type, score, or response status
 - **Expandable rows** — click any row to see the full context: the query, AI summary, search results, and timing data that were captured when the rating was given
 - **Export to Excel** — click **"Download Ratings"** to export all ratings as an XLSX file
 
-The export includes: Date, User Email, User Name, Type, Score, Reference ID, Item ID, Comment, and URL.
+### Responding to Ratings (Admin)
+
+Each rating row carries an **admin response** so reviewers can record the action taken without leaving the table. Click a row to expand it; the response form sits at the top of the expanded panel:
+
+- **Status** — pick one of **Open**, **Acknowledged**, **Info needed**, **Resolved**, or **Won't fix**. Rows render a color-coded chip in the Response column so the queue is easy to scan. Untouched rows show an em-dash.
+- **Notes** — optional free-text follow-up (up to 4000 characters). Stored alongside the status and searchable from the top search bar.
+- **Save** — persists the change and stamps the row with who responded and when. The audit footer below the form shows the last responder's email and timestamp.
+
+You can clear a response by setting the status back to **— No status —** and emptying the notes; the audit fields are cleared with it.
+
+The export includes: Date, User Email, User Name, Type, Score, Reference ID, Item ID, Comment, URL, Response Status, Response Notes, Responded By, and Responded At.

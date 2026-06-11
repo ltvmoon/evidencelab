@@ -3,14 +3,22 @@
 import copy
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
 from ui.backend.routes.activity import (
+    _SORT_COL_MAP,
     _activity_to_read,
+    _apply_summary_fields,
+    _apply_token_usage,
     _build_activity_items,
     _build_export_row,
     _count_search_results,
+    _merge_filters_update,
     _ms_to_seconds,
+    _resolve_cost,
 )
 
 # ---------------------------------------------------------------------------
@@ -32,6 +40,10 @@ def _make_activity(**overrides):
         "url": None,
         "has_ratings": False,
         "created_at": datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc),
+        "llm_model": None,
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "cost_usd": None,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -157,6 +169,8 @@ class TestBuildExportRow:
     """Tests for the _build_export_row helper."""
 
     def test_basic_row(self):
+        from decimal import Decimal
+
         user = _make_user()
         activity = _make_activity(
             query="water sanitation",
@@ -165,6 +179,10 @@ class TestBuildExportRow:
             url="https://example.com",
             has_ratings=True,
             filters={"timing": {"search_duration_ms": 1500}},
+            llm_model="gpt-4.1-mini",
+            prompt_tokens=1200,
+            completion_tokens=350,
+            cost_usd=Decimal("0.001040"),
         )
         row = _build_export_row(activity, user)
         assert row[0] == "2026-03-01 12:00"  # formatted date
@@ -175,16 +193,20 @@ class TestBuildExportRow:
         assert row[5] == 1.5  # search time seconds
         assert row[6] is None  # no summary time
         assert row[7] is None  # no heatmap time
-        assert row[8] == "A short summary."
-        assert row[9] == "https://example.com"
-        assert row[10] == "Yes"
+        assert row[8] == "gpt-4.1-mini"
+        assert row[9] == 1200
+        assert row[10] == 350
+        assert row[11] == 0.00104  # Decimal('0.001040') → float
+        assert row[12] == "A short summary."
+        assert row[13] == "https://example.com"
+        assert row[14] == "Yes"
 
     def test_long_summary_truncated(self):
         long_summary = "x" * 1500
         activity = _make_activity(ai_summary=long_summary)
         row = _build_export_row(activity, None)
-        assert len(row[8]) <= 1000
-        assert row[8].endswith("...")
+        assert len(row[12]) <= 1000
+        assert row[12].endswith("...")
 
     def test_null_user(self):
         activity = _make_activity()
@@ -196,6 +218,15 @@ class TestBuildExportRow:
         activity = _make_activity(created_at=None)
         row = _build_export_row(activity, None)
         assert row[0] == ""
+
+    def test_null_cost_keeps_none(self):
+        """Empty cost cell stays None (not 0.0) so XLSX renders blank."""
+        activity = _make_activity(llm_model="gpt-4.1-mini", prompt_tokens=10)
+        row = _build_export_row(activity, None)
+        assert row[8] == "gpt-4.1-mini"
+        assert row[9] == 10
+        assert row[10] is None
+        assert row[11] is None
 
 
 # ---------------------------------------------------------------------------
@@ -353,3 +384,194 @@ class TestActivitySummaryMerge:
         )
         self._merge_summary(activity, body)
         assert activity.filters is original  # same reference, no copy
+
+
+# ---------------------------------------------------------------------------
+# _activity_to_read with token-usage fields
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestActivityToReadTokenUsage:
+    """Token-usage round-trip through _activity_to_read."""
+
+    def test_token_fields_pass_through(self):
+        activity = _make_activity(
+            llm_model="gpt-4.1-mini",
+            prompt_tokens=2000,
+            completion_tokens=500,
+            cost_usd=Decimal("0.001600"),
+        )
+        result = _activity_to_read(activity)
+        assert result.llm_model == "gpt-4.1-mini"
+        assert result.prompt_tokens == 2000
+        assert result.completion_tokens == 500
+        assert result.cost_usd == Decimal("0.001600")
+
+    def test_null_token_fields_render_as_none(self):
+        """Historical rows (all None) round-trip cleanly."""
+        activity = _make_activity()
+        result = _activity_to_read(activity)
+        assert result.llm_model is None
+        assert result.prompt_tokens is None
+        assert result.completion_tokens is None
+        assert result.cost_usd is None
+
+
+# ---------------------------------------------------------------------------
+# _resolve_cost
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestResolveCost:
+    """The route helper that prefers server-computed cost over client input."""
+
+    def test_server_overrides_client(self):
+        """Even if the client lies about cost, the server recomputes."""
+        # gpt-4.1-mini at 1000/500 tokens computes to 0.001200; client lies.
+        result = _resolve_cost(Decimal("999"), "gpt-4.1-mini", 1000, 500)
+        assert result == Decimal("0.001200")
+
+    def test_falls_back_to_client_when_model_unknown(self):
+        """For models without rates, we trust the client-supplied value."""
+        result = _resolve_cost(Decimal("0.05"), "not-a-real-model", 1000, 500)
+        assert result == Decimal("0.05")
+
+    def test_all_none(self):
+        """With nothing to work from, returns None."""
+        assert _resolve_cost(None, None, None, None) is None
+
+    def test_client_none_unknown_model_no_tokens(self):
+        """Unknown model + no tokens + no client value → None."""
+        assert _resolve_cost(None, "unknown", None, None) is None
+
+
+# ---------------------------------------------------------------------------
+# _apply_token_usage  (PATCH route helper)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestApplyTokenUsage:
+    """End-to-end behaviour of the PATCH helper."""
+
+    @staticmethod
+    def _body(**fields):
+        defaults = {
+            "llm_model": None,
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "cost_usd": None,
+        }
+        defaults.update(fields)
+        return SimpleNamespace(**defaults)
+
+    def test_writes_model_tokens_and_computed_cost(self):
+        """A full usage payload populates all four columns; server recomputes cost."""
+        activity = _make_activity()
+        body = self._body(
+            llm_model="gpt-4.1-mini",
+            prompt_tokens=1000,
+            completion_tokens=500,
+            cost_usd=Decimal("0.05"),  # client-supplied lie
+        )
+        _apply_token_usage(activity, body)
+        assert activity.llm_model == "gpt-4.1-mini"
+        assert activity.prompt_tokens == 1000
+        assert activity.completion_tokens == 500
+        assert activity.cost_usd == Decimal("0.001200")  # server-computed
+
+    def test_no_op_when_payload_empty(self):
+        """If no usage fields are submitted, leave the activity alone."""
+        activity = _make_activity(
+            llm_model="prev-model",
+            prompt_tokens=10,
+            completion_tokens=5,
+            cost_usd=Decimal("0.0001"),
+        )
+        body = self._body()
+        _apply_token_usage(activity, body)
+        # Unchanged.
+        assert activity.llm_model == "prev-model"
+        assert activity.prompt_tokens == 10
+        assert activity.completion_tokens == 5
+        assert activity.cost_usd == Decimal("0.0001")
+
+    def test_partial_update_only_overwrites_provided_fields(self):
+        """Partial PATCHes (model + tokens, no cost) still trigger recompute."""
+        activity = _make_activity(cost_usd=Decimal("999"))
+        body = self._body(
+            llm_model="gpt-4.1-mini",
+            prompt_tokens=1000,
+            completion_tokens=0,
+        )
+        _apply_token_usage(activity, body)
+        assert activity.cost_usd == Decimal("0.000400")
+
+    def test_unknown_model_keeps_client_cost(self):
+        """When model has no rate, persist whatever cost the client sent."""
+        activity = _make_activity()
+        body = self._body(
+            llm_model="custom-model",
+            prompt_tokens=100,
+            completion_tokens=50,
+            cost_usd=Decimal("0.123456"),
+        )
+        _apply_token_usage(activity, body)
+        assert activity.cost_usd == Decimal("0.123456")
+
+
+# ---------------------------------------------------------------------------
+# Sort map
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSortColMap:
+    """The sort_by whitelist must include the new token-usage columns."""
+
+    def test_new_sort_keys_present(self):
+        for key in ("llm_model", "total_tokens", "cost_usd"):
+            assert key in _SORT_COL_MAP, f"{key} missing from sort map"
+
+    def test_sort_columns_are_callable_factories(self):
+        """Each entry must be a lambda returning a SQLAlchemy expression."""
+        for key, factory in _SORT_COL_MAP.items():
+            assert callable(factory), f"{key} sort entry must be callable"
+
+
+# ---------------------------------------------------------------------------
+# _apply_summary_fields + _merge_filters_update  (helpers extracted from route)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestApplySummaryFields:
+    def test_writes_summary_when_provided(self):
+        activity = _make_activity(ai_summary="old")
+        body = SimpleNamespace(ai_summary="new")
+        _apply_summary_fields(activity, body)
+        assert activity.ai_summary == "new"
+
+    def test_leaves_summary_when_none(self):
+        activity = _make_activity(ai_summary="kept")
+        body = SimpleNamespace(ai_summary=None)
+        _apply_summary_fields(activity, body)
+        assert activity.ai_summary == "kept"
+
+
+@pytest.mark.unit
+class TestMergeFiltersUpdate:
+    def test_merges_timing_into_empty_filters(self):
+        activity = _make_activity(filters=None)
+        body = SimpleNamespace(summary_duration_ms=1500.0, drilldown_tree=None)
+        _merge_filters_update(activity, body)
+        assert activity.filters == {"timing": {"summary_duration_ms": 1500.0}}
+
+    def test_no_op_when_nothing_to_merge(self):
+        original = {"existing": True}
+        activity = _make_activity(filters=original)
+        body = SimpleNamespace(summary_duration_ms=None, drilldown_tree=None)
+        _merge_filters_update(activity, body)
+        assert activity.filters is original

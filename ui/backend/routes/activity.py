@@ -5,11 +5,12 @@ import io
 import logging
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Float, func, select
+from sqlalchemy import Float, Numeric, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ui.backend.auth.db import get_async_session
@@ -20,6 +21,7 @@ from ui.backend.auth.schemas import (
     ActivitySummaryUpdateAnonymous,
 )
 from ui.backend.auth.users import current_superuser, optional_current_user
+from ui.backend.utils.llm_costs import compute_cost
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,29 @@ def _activity_to_read(activity: UserActivity, user: User | None = None) -> Activ
         url=activity.url,
         has_ratings=activity.has_ratings,
         created_at=activity.created_at,
+        llm_model=activity.llm_model,
+        prompt_tokens=activity.prompt_tokens,
+        completion_tokens=activity.completion_tokens,
+        cost_usd=activity.cost_usd,
     )
+
+
+def _resolve_cost(
+    submitted: Optional[Decimal],
+    model: Optional[str],
+    prompt_tokens: Optional[int],
+    completion_tokens: Optional[int],
+) -> Optional[Decimal]:
+    """Prefer the server-computed cost over a client-submitted value.
+
+    Clients can submit usage; the server is authoritative for cost so we
+    can't be billed wrong amounts by tampered payloads. Falls back to the
+    client value when the server has no rate for the model.
+    """
+    server = compute_cost(model, prompt_tokens, completion_tokens)
+    if server is not None:
+        return server
+    return submitted
 
 
 # JSONB sort keys that need nullslast() handling
@@ -74,7 +98,18 @@ _SORT_COL_MAP = {
     "heatmap_time": lambda: UserActivity.filters["timing"][
         "heatmap_duration_ms"
     ].astext.cast(Float),
+    "llm_model": lambda: UserActivity.llm_model,
+    "total_tokens": lambda: (
+        func.coalesce(UserActivity.prompt_tokens, 0)
+        + func.coalesce(UserActivity.completion_tokens, 0)
+    ).cast(Numeric),
+    "cost_usd": lambda: UserActivity.cost_usd,
 }
+
+# Columns that may be NULL for old rows; we want nullslast on DESC and
+# asc-with-nulls-last when sorted ascending so unknown values cluster at
+# the bottom rather than dominating the page.
+_NULLABLE_SORT_KEYS = _JSONB_SORT_KEYS | {"llm_model", "total_tokens", "cost_usd"}
 
 
 def _apply_activity_sorting(stmt, sort_by: str, order: str):
@@ -82,7 +117,7 @@ def _apply_activity_sorting(stmt, sort_by: str, order: str):
     col_factory = _SORT_COL_MAP.get(sort_by)
     sort_col = col_factory() if col_factory else UserActivity.created_at
     expr = sort_col.asc() if order == "asc" else sort_col.desc()
-    if sort_by in _JSONB_SORT_KEYS:
+    if sort_by in _NULLABLE_SORT_KEYS:
         expr = expr.nullslast()
     return stmt.order_by(expr)
 
@@ -123,6 +158,7 @@ def _build_export_row(activity: UserActivity, user: User | None) -> list:
     created = (
         activity.created_at.strftime("%Y-%m-%d %H:%M") if activity.created_at else ""
     )
+    cost = activity.cost_usd
     return [
         created,
         user.email if user else "(anonymous)",
@@ -132,6 +168,10 @@ def _build_export_row(activity: UserActivity, user: User | None) -> list:
         _ms_to_seconds(timing.get("search_duration_ms")),
         _ms_to_seconds(timing.get("summary_duration_ms")),
         _ms_to_seconds(timing.get("heatmap_duration_ms")),
+        activity.llm_model or "",
+        activity.prompt_tokens,
+        activity.completion_tokens,
+        float(cost) if cost is not None else None,
         summary_text,
         activity.url or "",
         "Yes" if activity.has_ratings else "No",
@@ -169,6 +209,15 @@ async def log_activity(
         search_results=body.search_results,
         ai_summary=body.ai_summary,
         url=body.url,
+        llm_model=body.llm_model,
+        prompt_tokens=body.prompt_tokens,
+        completion_tokens=body.completion_tokens,
+        cost_usd=_resolve_cost(
+            body.cost_usd,
+            body.llm_model,
+            body.prompt_tokens,
+            body.completion_tokens,
+        ),
     )
     session.add(activity)
     await session.commit()
@@ -207,25 +256,65 @@ async def update_activity_summary(
     activity = result.scalars().first()
     if activity is None:
         raise HTTPException(status_code=404, detail="Activity record not found")
-    if body.ai_summary is not None:
-        activity.ai_summary = body.ai_summary
 
-    # Merge timing & drilldown tree into existing filters JSONB.
-    # Deep-copy to ensure SQLAlchemy detects the mutation (shallow copy
-    # shares nested dicts, so the ORM may skip the UPDATE).
-    if body.summary_duration_ms is not None or body.drilldown_tree is not None:
-        merged = copy.deepcopy(activity.filters or {})
-        if body.summary_duration_ms is not None:
-            timing = merged.get("timing", {})
-            timing["summary_duration_ms"] = body.summary_duration_ms
-            merged["timing"] = timing
-        if body.drilldown_tree is not None:
-            merged["drilldown_tree"] = body.drilldown_tree
-        activity.filters = merged
+    _apply_summary_fields(activity, body)
+    _merge_filters_update(activity, body)
+    _apply_token_usage(activity, body)
 
     await session.commit()
     await session.refresh(activity)
     return _activity_to_read(activity, user)
+
+
+def _apply_summary_fields(activity: UserActivity, body) -> None:
+    """Copy the ai_summary text onto *activity* when provided."""
+    if body.ai_summary is not None:
+        activity.ai_summary = body.ai_summary
+
+
+def _merge_filters_update(activity: UserActivity, body) -> None:
+    """Merge timing & drilldown_tree into the filters JSONB column.
+
+    Deep-copies the existing dict so SQLAlchemy sees the mutation (a
+    shallow copy shares nested dicts and the ORM may skip the UPDATE).
+    """
+    if body.summary_duration_ms is None and body.drilldown_tree is None:
+        return
+    merged = copy.deepcopy(activity.filters or {})
+    if body.summary_duration_ms is not None:
+        timing = merged.get("timing", {})
+        timing["summary_duration_ms"] = body.summary_duration_ms
+        merged["timing"] = timing
+    if body.drilldown_tree is not None:
+        merged["drilldown_tree"] = body.drilldown_tree
+    activity.filters = merged
+
+
+def _apply_token_usage(activity: UserActivity, body) -> None:
+    """Persist optional LLM usage and cost fields from *body*.
+
+    Server recomputes ``cost_usd`` from the token counts when a rate is
+    configured (see ``_resolve_cost``) so a tampered client value can't
+    poison the admin spend view.
+    """
+    if body.llm_model is not None:
+        activity.llm_model = body.llm_model
+    if body.prompt_tokens is not None:
+        activity.prompt_tokens = body.prompt_tokens
+    if body.completion_tokens is not None:
+        activity.completion_tokens = body.completion_tokens
+    if (
+        body.llm_model is not None
+        or body.prompt_tokens is not None
+        or body.completion_tokens is not None
+        or body.cost_usd is not None
+    ):
+        activity.cost_usd = _resolve_cost(
+            body.cost_usd,
+            activity.llm_model,
+            activity.prompt_tokens,
+            activity.completion_tokens,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +423,10 @@ async def export_activity(
         "Search Time (s)",
         "Summary Time (s)",
         "Heatmap Time (s)",
+        "Model",
+        "Prompt Tokens",
+        "Completion Tokens",
+        "Cost (USD)",
         "AI Summary",
         "URL",
         "Has Ratings",

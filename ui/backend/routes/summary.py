@@ -190,6 +190,15 @@ async def stream_summary(
                 completion_data["langsmith_trace_url"] = stream_metadata[
                     "langsmith_trace_url"
                 ]
+            # Forward LLM usage so the frontend can include it in the
+            # activity-log PATCH that fires after the stream ends.
+            usage_payload = {
+                k: stream_metadata[k]
+                for k in ("llm_model", "prompt_tokens", "completion_tokens")
+                if k in stream_metadata
+            }
+            if usage_payload:
+                completion_data["usage"] = usage_payload
             yield f"data: {json.dumps(completion_data)}\n\n"
 
         except Exception as e:

@@ -12,6 +12,7 @@ import uuid as uuid_mod
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage
 
 from ui.backend.services.assistant_graph import (
@@ -19,6 +20,7 @@ from ui.backend.services.assistant_graph import (
     build_deep_research_agent,
     build_research_agent,
 )
+from ui.backend.services.llm_service import summarize_usage_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ def _get_langsmith_trace_url(run_id: uuid_mod.UUID) -> Optional[str]:
 
 def _build_conversation_messages(
     query: str,
-    conversation_messages: Optional[List[Dict[str, str]]] = None,
+    conversation_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> List:
     """Build LangChain message objects from conversation history."""
     messages: List = []
@@ -63,8 +65,41 @@ def _build_conversation_messages(
     return messages
 
 
-def _build_done_event(run_id: uuid_mod.UUID) -> Dict[str, Any]:
-    """Build the completion event with optional LangSmith trace URL."""
+def _extract_prior_sources(
+    conversation_messages: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """Collect every cited source from prior assistant turns, deduped by index.
+
+    Sources are stored per-message in the SSE/persistence shape and carry
+    a stable ``index`` (the global citation number). Merging by index keeps
+    one entry per citation across the whole thread so a follow-up turn can
+    re-use those numbers without renumbering.
+    """
+    if not conversation_messages:
+        return []
+    by_idx: Dict[int, Dict[str, Any]] = {}
+    for msg in conversation_messages:
+        if msg.get("role") != "assistant":
+            continue
+        for src in msg.get("sources") or []:
+            idx = src.get("index")
+            if isinstance(idx, int):
+                by_idx[idx] = src
+    return [by_idx[k] for k in sorted(by_idx.keys())]
+
+
+def _build_done_event(
+    run_id: uuid_mod.UUID,
+    usage_handler: Optional[UsageMetadataCallbackHandler] = None,
+    model_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build the completion event with optional LangSmith trace URL.
+
+    When *usage_handler* is provided, attach the accumulated token usage
+    (summed across every LLM hop the agent took) and the configured
+    ``model_key`` so the frontend can include them in the activity log
+    POST.
+    """
     done_event: Dict[str, Any] = {
         "type": "done",
         "messageId": str(uuid_mod.uuid4()),
@@ -72,6 +107,10 @@ def _build_done_event(run_id: uuid_mod.UUID) -> Dict[str, Any]:
     langsmith_url = _get_langsmith_trace_url(run_id)
     if langsmith_url:
         done_event["langsmith_trace_url"] = langsmith_url
+    if usage_handler is not None:
+        usage = summarize_usage_metadata(usage_handler, model_key)
+        if usage:
+            done_event["usage"] = usage
     return done_event
 
 
@@ -105,17 +144,82 @@ def _has_any_tool_calls(msg) -> bool:
     return bool(getattr(msg, "tool_calls", None))
 
 
+# Vertex / Gemini populates these keys on AIMessage.response_metadata; OpenAI
+# and Anthropic never do. Used to gate Gemini-specific message handling so
+# other providers retain their existing behavior.
+_GEMINI_METADATA_MARKERS = ("safety_ratings", "is_blocked", "prompt_feedback")
+
+
+def _is_gemini_message(msg: Any) -> bool:
+    """Detect a LangChain AIMessage produced by a Vertex / Gemini model."""
+    rmeta = getattr(msg, "response_metadata", None)
+    if not isinstance(rmeta, dict):
+        return False
+    return any(key in rmeta for key in _GEMINI_METADATA_MARKERS)
+
+
+def _extract_finish_diagnostics(msg: Any) -> Dict[str, Any]:
+    """Pull finish reason / safety / usage from an AIMessage's response metadata.
+
+    LangChain stores Gemini's per-response metadata on
+    ``AIMessage.response_metadata`` and token usage on ``AIMessage.usage_metadata``.
+    When Vertex returns 200 OK with an empty candidate (safety filter, recitation,
+    MAX_TOKENS at zero output, etc.) the only signal lives here — no exception
+    is raised — so we capture it explicitly for diagnosis.
+    """
+    diag: Dict[str, Any] = {}
+    rmeta = getattr(msg, "response_metadata", None) or {}
+    if isinstance(rmeta, dict):
+        for key in (
+            "finish_reason",
+            "stop_reason",
+            "is_blocked",
+            "block_reason",
+            "safety_ratings",
+            "prompt_feedback",
+        ):
+            if key in rmeta and rmeta[key] not in (None, [], {}):
+                diag[key] = rmeta[key]
+    umeta = getattr(msg, "usage_metadata", None)
+    if isinstance(umeta, dict) and umeta:
+        diag["usage"] = {
+            k: umeta.get(k)
+            for k in ("input_tokens", "output_tokens", "total_tokens")
+            if k in umeta
+        }
+    return diag
+
+
+def _summarize_message(msg: Any) -> Dict[str, Any]:
+    """Build a compact per-message diagnostic record for logging."""
+    tc_names: List[str] = []
+    if hasattr(msg, "tool_calls") and msg.tool_calls:
+        tc_names = [tc.get("name", "?") for tc in msg.tool_calls]
+    content = getattr(msg, "content", "") or ""
+    summary: Dict[str, Any] = {
+        "type": type(msg).__name__,
+        "tool_calls": tc_names,
+        "content_len": len(content) if isinstance(content, str) else -1,
+    }
+    diag = _extract_finish_diagnostics(msg)
+    if diag:
+        summary["finish"] = diag
+    return summary
+
+
 def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
     """Process output from the model node.
 
-    Only treat a message as final response text if it has NO tool calls.
-    The deepagents framework has built-in tools (write_todos, etc.) that
-    produce tool calls we don't surface, but their presence means the
-    model is still working, not producing the final answer.
+    For OpenAI / Anthropic, a message with tool calls is never the final
+    answer — the model first emits tool calls, then later emits a separate
+    text-only message. We skip tool-call messages for those providers.
 
-    In deep research mode, the coordinator delegates via the ``task``
-    tool.  We surface these as ``task_delegations`` so the UI can show
-    a "researching" phase.
+    Gemini (Vertex) is different: it routinely emits the final synthesis
+    text alongside a closing ``write_todos`` tool call in the same message,
+    and then returns an empty message on the next iteration. If we skipped
+    that message we'd lose the answer entirely (this was the cause of the
+    blank-screen / content_len=0 bug). For Gemini we therefore pick up
+    content even when tool calls are present.
     """
     result: Dict[str, Any] = {
         "tool_queries": [],
@@ -131,11 +235,23 @@ def _process_agent_output(node_output: Dict) -> Dict[str, Any]:
         task_delegations = _extract_task_delegations(msg)
         if task_delegations:
             result["task_delegations"].extend(task_delegations)
-        elif _has_any_tool_calls(msg):
-            # Model called non-search tools (write_todos, etc.) — skip
-            pass
-        elif hasattr(msg, "content") and msg.content:
+            continue
+        has_content = hasattr(msg, "content") and msg.content
+        if _has_any_tool_calls(msg):
+            # Gemini-only carve-out: the synthesis often rides along with
+            # a write_todos tool call in the same message.
+            if _is_gemini_message(msg) and has_content:
+                result["response_text"] = msg.content
+        elif has_content:
             result["response_text"] = msg.content
+    logger.info(
+        "[deepres] model-step: msgs=%d summary=%s queries=%d tasks=%d response_text_len=%d",
+        len(messages),
+        [_summarize_message(m) for m in messages],
+        len(result["tool_queries"]),
+        len(result["task_delegations"]),
+        len(result["response_text"]),
+    )
     return result
 
 
@@ -149,17 +265,24 @@ def _is_duplicate_or_subset(new_text: str, prev_text: str) -> bool:
 
 
 async def _yield_sources_and_done(
-    tracker: Any, run_id: uuid_mod.UUID
+    tracker: Any,
+    run_id: uuid_mod.UUID,
+    usage_handler: Optional[UsageMetadataCallbackHandler] = None,
+    model_key: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Yield final sources (if any) followed by the done event."""
     sources = tracker.get_sources()
     if sources:
         yield {"type": "sources", "sources": sources}
-    yield _build_done_event(run_id)
+    yield _build_done_event(run_id, usage_handler=usage_handler, model_key=model_key)
 
 
 async def _handle_stream_error(
-    exc: Exception, tracker: Any, run_id: uuid_mod.UUID
+    exc: Exception,
+    tracker: Any,
+    run_id: uuid_mod.UUID,
+    usage_handler: Optional[UsageMetadataCallbackHandler] = None,
+    model_key: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Yield error or graceful completion events for a stream exception."""
     is_recursion = "recursion" in str(exc).lower()
@@ -169,7 +292,9 @@ async def _handle_stream_error(
         logger.error("Research stream error: %s", exc, exc_info=True)
 
     if is_recursion and tracker and tracker.all_results:
-        async for event in _yield_sources_and_done(tracker, run_id):
+        async for event in _yield_sources_and_done(
+            tracker, run_id, usage_handler=usage_handler, model_key=model_key
+        ):
             yield event
     else:
         yield {"type": "error", "error": str(exc)}
@@ -206,6 +331,14 @@ async def stream_research_response(
     """
     run_id = uuid_mod.uuid4()
     tracker = None
+    usage_handler = UsageMetadataCallbackHandler()
+    logger.info(
+        "[deepres] stream start: run_id=%s deep=%s model=%s data_source=%s",
+        run_id,
+        deep_research,
+        model_key,
+        data_source,
+    )
 
     try:
         llm = _get_llm(
@@ -213,6 +346,7 @@ async def stream_research_response(
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        prior_sources = _extract_prior_sources(conversation_messages)
         builder = build_deep_research_agent if deep_research else build_research_agent
         agent, tracker = builder(
             llm,
@@ -220,8 +354,15 @@ async def stream_research_response(
             reranker_model,
             search_settings,
             system_prompt_override=system_prompt_override,
+            prior_sources=prior_sources,
         )
         messages = _build_conversation_messages(query, conversation_messages)
+        if prior_sources:
+            logger.info(
+                "[deepres] prior_sources: count=%d max_index=%d",
+                len(prior_sources),
+                max((s.get("index") or 0) for s in prior_sources),
+            )
         cfg = _get_assistant_config()
         if deep_research:
             deep_cfg = cfg.get("deep_research", {})
@@ -233,20 +374,24 @@ async def stream_research_response(
 
         if deep_research:
             async for event in _stream_deep_research(
-                agent, tracker, messages, run_id, recursion_limit
+                agent, tracker, messages, run_id, recursion_limit, usage_handler
             ):
                 yield event
         else:
             async for event in _stream_normal_research(
-                agent, tracker, messages, run_id, recursion_limit
+                agent, tracker, messages, run_id, recursion_limit, usage_handler
             ):
                 yield event
 
-        async for event in _yield_sources_and_done(tracker, run_id):
+        async for event in _yield_sources_and_done(
+            tracker, run_id, usage_handler=usage_handler, model_key=model_key
+        ):
             yield event
 
     except Exception as exc:
-        async for event in _handle_stream_error(exc, tracker, run_id):
+        async for event in _handle_stream_error(
+            exc, tracker, run_id, usage_handler=usage_handler, model_key=model_key
+        ):
             yield event
 
 
@@ -256,12 +401,17 @@ async def _stream_normal_research(
     messages: List,
     run_id: uuid_mod.UUID,
     recursion_limit: int,
+    usage_handler: UsageMetadataCallbackHandler,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Stream events from a normal (non-deep) research agent."""
     token_buffer = ""
     async for step_output in agent.astream(
         {"messages": messages},
-        config={"run_id": str(run_id), "recursion_limit": recursion_limit},
+        config={
+            "run_id": str(run_id),
+            "recursion_limit": recursion_limit,
+            "callbacks": [usage_handler],
+        },
         stream_mode="updates",
     ):
         for event in _events_from_step(step_output, tracker):
@@ -288,6 +438,7 @@ async def _stream_deep_research(
     messages: List,
     run_id: uuid_mod.UUID,
     recursion_limit: int,
+    usage_handler: UsageMetadataCallbackHandler,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Stream deep research events with real-time search progress.
 
@@ -311,6 +462,7 @@ async def _stream_deep_research(
                 config={
                     "run_id": str(run_id),
                     "recursion_limit": recursion_limit,
+                    "callbacks": [usage_handler],
                 },
                 stream_mode="updates",
             ):
@@ -324,6 +476,7 @@ async def _stream_deep_research(
     agent_task = asyncio.create_task(_run_agent())
 
     token_buffer = ""
+    token_event_count = 0
     try:
         while True:
             event = await event_queue.get()
@@ -332,6 +485,7 @@ async def _stream_deep_research(
             etype = event.get("type")
             if etype == "token":
                 new_text = event["token"]
+                token_event_count += 1
                 if not _is_duplicate_or_subset(new_text, token_buffer):
                     token_buffer = new_text
             else:
@@ -344,6 +498,16 @@ async def _stream_deep_research(
 
     if token_buffer:
         yield {"type": "token", "token": token_buffer}
+
+    logger.info(
+        "[deepres] stream end: run_id=%s token_events=%d final_buffer_len=%d "
+        "sources=%d agent_error=%s",
+        run_id,
+        token_event_count,
+        len(token_buffer),
+        len(tracker.all_results) if tracker is not None else 0,
+        ("%s: %s" % (type(agent_error).__name__, agent_error) if agent_error else None),
+    )
 
     if agent_error is not None:
         raise agent_error

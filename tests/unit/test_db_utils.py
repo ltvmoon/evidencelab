@@ -6,6 +6,7 @@ from pipeline.db import (
     core_to_source_field,
     get_application_config,
     get_default_filter_fields,
+    get_src_field_mapping,
     source_to_core_field,
 )
 
@@ -88,3 +89,64 @@ def test_application_config_exists(configured_datasources):
 
     app_config = get_application_config()
     assert isinstance(app_config, dict)
+
+
+@pytest.fixture()
+def datasource_with_src_field_mapping(monkeypatch):
+    config = {
+        "datasources": {
+            "WFP Evaluation Reports": {
+                "data_subdir": "wfp",
+                "default_filter_fields": {
+                    "src_evaluation_category": "Evaluation Category",
+                },
+                "src_field_mapping": {
+                    "src_evaluation_category": "Evaluation category",
+                    "src_quality_rating": "Quality rating",
+                },
+            },
+            "Other Source": {
+                "data_subdir": "other",
+                "default_filter_fields": {},
+            },
+        }
+    }
+    monkeypatch.setattr(db, "_datasources_config", config, raising=False)
+    monkeypatch.setattr("pipeline.db.config.load_datasources_config", lambda: config)
+    return config
+
+
+def test_get_src_field_mapping_when_present(datasource_with_src_field_mapping):
+    mapping = get_src_field_mapping("wfp")
+    assert mapping == {
+        "src_evaluation_category": "Evaluation category",
+        "src_quality_rating": "Quality rating",
+    }
+
+
+def test_get_src_field_mapping_when_absent(datasource_with_src_field_mapping):
+    # 'other' has no src_field_mapping key.
+    assert get_src_field_mapping("other") == {}
+
+
+def test_get_src_field_mapping_unknown_data_source(datasource_with_src_field_mapping):
+    assert get_src_field_mapping("does_not_exist") == {}
+
+
+def test_get_src_field_mapping_drops_non_string_values(monkeypatch):
+    config = {
+        "datasources": {
+            "Source": {
+                "data_subdir": "src",
+                "src_field_mapping": {
+                    "src_a": "A",
+                    "src_b": 42,  # not a string -> dropped
+                    "src_c": None,  # not a string -> dropped
+                    "src_d": "D",
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(db, "_datasources_config", config, raising=False)
+    monkeypatch.setattr("pipeline.db.config.load_datasources_config", lambda: config)
+    assert get_src_field_mapping("src") == {"src_a": "A", "src_d": "D"}

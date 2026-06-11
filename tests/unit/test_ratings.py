@@ -5,7 +5,13 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from ui.backend.auth.schemas import VALID_RATING_TYPES, RatingCreate, RatingRead
+from ui.backend.auth.schemas import (
+    VALID_RATING_TYPES,
+    VALID_RESPONSE_STATUSES,
+    RatingCreate,
+    RatingRead,
+    RatingResponseUpdate,
+)
 
 
 class TestRatingCreate:
@@ -133,7 +139,7 @@ class TestRatingCreate:
 
     def test_context_jsonb_size_limit(self):
         """Extremely large context payload should be rejected."""
-        huge = {"data": "x" * 250_000}
+        huge = {"data": "x" * 1_100_000}
         with pytest.raises(ValidationError, match="size"):
             RatingCreate(
                 rating_type="search_result",
@@ -197,6 +203,7 @@ class TestValidRatingTypes:
             "chat",
             "assistant-basic",
             "assistant-deep-research",
+            "page_feedback",
         }
         assert VALID_RATING_TYPES == expected
 
@@ -204,3 +211,68 @@ class TestValidRatingTypes:
         """All types should be strings."""
         for t in VALID_RATING_TYPES:
             assert isinstance(t, str)
+
+
+class TestRatingResponseUpdate:
+    """Tests for the RatingResponseUpdate admin-triage schema."""
+
+    def test_accepts_all_valid_statuses(self):
+        """Every value in VALID_RESPONSE_STATUSES must be accepted."""
+        for status in VALID_RESPONSE_STATUSES:
+            payload = RatingResponseUpdate(response_status=status)
+            assert payload.response_status == status
+
+    def test_rejects_unknown_status(self):
+        """Unknown status values raise ValidationError."""
+        with pytest.raises(ValidationError) as exc:
+            RatingResponseUpdate(response_status="bogus")
+        assert "response_status must be one of" in str(exc.value)
+
+    def test_empty_string_normalized_to_none(self):
+        """Empty string status normalizes to None so callers can clear it."""
+        payload = RatingResponseUpdate(response_status="")
+        assert payload.response_status is None
+
+    def test_none_status_allowed(self):
+        """Explicitly passing None clears the status."""
+        payload = RatingResponseUpdate(response_status=None, response_notes=None)
+        assert payload.response_status is None
+        assert payload.response_notes is None
+
+    def test_notes_only_without_status(self):
+        """Notes can be set without a status (e.g. a quick comment)."""
+        payload = RatingResponseUpdate(response_notes="Need to follow up tomorrow")
+        assert payload.response_status is None
+        assert payload.response_notes == "Need to follow up tomorrow"
+
+    def test_status_and_notes_together(self):
+        """Both fields may be set in a single payload."""
+        payload = RatingResponseUpdate(
+            response_status="resolved",
+            response_notes="Fixed in v1.6 — closing.",
+        )
+        assert payload.response_status == "resolved"
+        assert payload.response_notes == "Fixed in v1.6 — closing."
+
+    def test_notes_max_length_enforced(self):
+        """Notes longer than 4000 chars are rejected."""
+        with pytest.raises(ValidationError):
+            RatingResponseUpdate(response_notes="x" * 4001)
+
+
+class TestValidResponseStatuses:
+    """Smoke check for the VALID_RESPONSE_STATUSES tuple."""
+
+    def test_expected_set(self):
+        """Must mirror the labels exposed to the frontend."""
+        assert set(VALID_RESPONSE_STATUSES) == {
+            "open",
+            "acknowledged",
+            "info_needed",
+            "resolved",
+            "wontfix",
+        }
+
+    def test_first_is_open(self):
+        """`open` is documented as the default ordering anchor."""
+        assert VALID_RESPONSE_STATUSES[0] == "open"

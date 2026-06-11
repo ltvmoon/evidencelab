@@ -62,8 +62,18 @@ export function useAuth(): AuthContextValue {
   return useContext(AuthContext);
 }
 
-/** Inactivity timeout — 1 hour. */
-const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
+/**
+ * Session timing defaults — used until the backend's /config/auth-status
+ * values arrive. The backend is the source of truth so the sliding-refresh
+ * cadence and idle timeout stay aligned with the server token lifetime.
+ */
+const DEFAULT_TOKEN_LIFETIME_MS = 60 * 60 * 1000; // 1 hour
+const DEFAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+/** Floor on the refresh cadence so we never hammer the endpoint. */
+const MIN_REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
+
+/** Events that count as "the user is still active". */
+const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const;
 
 /** Custom hook that provides auth state management. Use inside AuthProvider. */
 export function useAuthState(): AuthContextValue {
@@ -72,9 +82,20 @@ export function useAuthState(): AuthContextValue {
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
 
+  // Session timing, sourced from the backend (kept in sync with the server
+  // token lifetime). Seeded with defaults until /config/auth-status responds.
+  const [sessionConfig, setSessionConfig] = useState({
+    tokenLifetimeMs: DEFAULT_TOKEN_LIFETIME_MS,
+    idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
+  });
+
   // Track current auth state for use inside the interceptor closure
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  // Timestamp of the user's last interaction — drives both the sliding
+  // refresh and the idle-logout timer.
+  const lastActivityRef = useRef<number>(Date.now());
 
   // Promise-based coordination: when a 401 is caught, pending requests wait
   // on this promise until the user re-authenticates.
@@ -143,9 +164,11 @@ export function useAuthState(): AuthContextValue {
     };
   }, [getAuthPromise]);
 
-  // ---- Inactivity timeout (1 hour) ------------------------------------
-  // After 1 hour of no user interaction, expire the session and show the
-  // login modal.  The server-side cookie is also cleared (best-effort).
+  // ---- Idle logout ----------------------------------------------------
+  // After `idleTimeoutMs` with no user interaction, expire the session and
+  // show the login modal.  The server-side cookie is also cleared (best-
+  // effort).  Active users never reach this — the sliding-refresh effect
+  // below keeps their token fresh.
   useEffect(() => {
     if (!USER_MODULE || !state.isAuthenticated) return;
 
@@ -168,11 +191,11 @@ export function useAuthState(): AuthContextValue {
     };
 
     const resetTimer = () => {
+      lastActivityRef.current = Date.now();
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(handleTimeout, INACTIVITY_TIMEOUT_MS);
+      timeoutId = setTimeout(handleTimeout, sessionConfig.idleTimeoutMs);
     };
 
-    const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const;
     for (const evt of ACTIVITY_EVENTS) {
       window.addEventListener(evt, resetTimer, { passive: true });
     }
@@ -184,7 +207,37 @@ export function useAuthState(): AuthContextValue {
         window.removeEventListener(evt, resetTimer);
       }
     };
-  }, [state.isAuthenticated]);
+  }, [state.isAuthenticated, sessionConfig.idleTimeoutMs]);
+
+  // ---- Sliding-session refresh ----------------------------------------
+  // While authenticated, periodically re-issue the auth cookie so an active
+  // user's token never expires mid-session.  We only refresh when the user
+  // interacted within the last interval, so a genuinely idle session still
+  // lapses (and the idle-logout effect above clears it).  The interval is
+  // half the server token lifetime, guaranteeing a refresh before expiry.
+  useEffect(() => {
+    if (!USER_MODULE || !state.isAuthenticated) return;
+
+    const intervalMs = Math.max(
+      MIN_REFRESH_INTERVAL_MS,
+      Math.floor(sessionConfig.tokenLifetimeMs / 2)
+    );
+
+    const tick = async () => {
+      // Skip when idle (no activity within the last interval) — let the cookie
+      // lapse and the idle-logout fire.
+      if (Date.now() - lastActivityRef.current >= intervalMs) return;
+      try {
+        await axios.post(`${API_BASE_URL}/auth/refresh`);
+      } catch {
+        // Refresh failed (e.g. session already expired) — the 401 interceptor
+        // and idle-logout effect handle ending the session.
+      }
+    };
+
+    const intervalId = setInterval(tick, intervalMs);
+    return () => clearInterval(intervalId);
+  }, [state.isAuthenticated, sessionConfig.tokenLifetimeMs]);
 
   const clearVerificationMessage = useCallback(() => {
     setVerificationMessage(null);
@@ -208,6 +261,32 @@ export function useAuthState(): AuthContextValue {
   useEffect(() => {
     refreshUser();
   }, [refreshUser]);
+
+  // Load session timing from the backend so the refresh cadence and idle
+  // timeout match the server token lifetime. Keeps defaults if unavailable.
+  useEffect(() => {
+    let cancelled = false;
+    axios
+      .get<{ token_lifetime_seconds?: number; session_idle_timeout_seconds?: number }>(
+        `${API_BASE_URL}/config/auth-status`
+      )
+      .then((res) => {
+        if (cancelled) return;
+        const lifetime = Number(res.data?.token_lifetime_seconds);
+        const idle = Number(res.data?.session_idle_timeout_seconds);
+        setSessionConfig({
+          tokenLifetimeMs:
+            lifetime > 0 ? lifetime * 1000 : DEFAULT_TOKEN_LIFETIME_MS,
+          idleTimeoutMs: idle > 0 ? idle * 1000 : DEFAULT_IDLE_TIMEOUT_MS,
+        });
+      })
+      .catch(() => {
+        // Keep defaults — timing config is best-effort.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Handle ?verify=TOKEN from email verification links
   useEffect(() => {

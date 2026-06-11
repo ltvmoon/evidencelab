@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi_users.db import (
     SQLAlchemyBaseOAuthAccountTableUUID,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -188,6 +190,22 @@ class UserRating(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Admin response — superuser-only triage action stored alongside the
+    # rating so reviewers can record acknowledgement / resolution status
+    # and free-text follow-up notes without leaving the admin grid.
+    response_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    response_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    responded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    responded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -345,6 +363,12 @@ class UserActivity(Base):
     ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
     langsmith_trace_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=12, scale=6), nullable=True
+    )
     has_ratings: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )

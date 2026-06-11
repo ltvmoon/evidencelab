@@ -10,6 +10,9 @@ interface ResultsHeaderRowProps {
   query: string;
   /** AI summary text, if any. */
   aiSummary?: string;
+  /** True while the AI summary is still streaming — disables the export
+   *  button so users can't export a half-written summary. */
+  aiSummaryLoading?: boolean;
   /** Dataset name for the exported docx cover. */
   dataSource?: string;
   /** When true, render a small "dev fixture" badge next to the heading. */
@@ -28,6 +31,7 @@ export const ResultsHeaderRow: React.FC<ResultsHeaderRowProps> = ({
   results,
   query,
   aiSummary,
+  aiSummaryLoading,
   dataSource,
   showFixtureBadge,
 }) => {
@@ -46,6 +50,7 @@ export const ResultsHeaderRow: React.FC<ResultsHeaderRowProps> = ({
         results={results}
         query={query}
         aiSummary={aiSummary}
+        aiSummaryLoading={aiSummaryLoading}
         dataSource={dataSource}
         className="search-results-export"
       />

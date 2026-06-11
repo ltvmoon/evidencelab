@@ -20,6 +20,13 @@ interface ActivityRow {
   url: string | null;
   has_ratings: boolean;
   created_at: string;
+  llm_model: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  // Pydantic serialises NUMERIC as a JSON number or a numeric string,
+  // depending on the response model config. Accept either to avoid
+  // brittle display logic.
+  cost_usd: number | string | null;
 }
 
 interface ActivityResponse {
@@ -28,6 +35,30 @@ interface ActivityResponse {
   page: number;
   page_size: number;
 }
+
+// ---------------------------------------------------------------------------
+// Token usage column formatters
+// ---------------------------------------------------------------------------
+
+const NULL_CELL = '—';
+
+/** Render token counts as "prompt / completion" with thousands separators. */
+const formatTokens = (
+  prompt: number | null,
+  completion: number | null,
+): string => {
+  if (prompt == null && completion == null) return NULL_CELL;
+  const fmt = (n: number | null) => (n == null ? NULL_CELL : n.toLocaleString());
+  return `${fmt(prompt)} / ${fmt(completion)}`;
+};
+
+/** Render USD cost to 6 decimals (e.g. $0.000123) — keeps sub-cent values visible. */
+const formatCost = (cost: number | string | null): string => {
+  if (cost == null) return NULL_CELL;
+  const n = typeof cost === 'string' ? parseFloat(cost) : cost;
+  if (!Number.isFinite(n)) return NULL_CELL;
+  return `$${n.toFixed(6)}`;
+};
 
 const formatDate = (iso: string) => {
   try {
@@ -857,11 +888,17 @@ const ActivityManager: React.FC = () => {
                     onSort={handleSort} onFilterClick={handleFilterClick} hasActiveFilter={hasActiveFilter} />
                   <SortableHeader columnKey="heatmap_time" label="Heatmap" sortField={sortBy} sortDirection={order}
                     onSort={handleSort} onFilterClick={handleFilterClick} hasActiveFilter={hasActiveFilter} />
+                  <SortableHeader columnKey="llm_model" label="Model" sortField={sortBy} sortDirection={order}
+                    onSort={handleSort} onFilterClick={handleFilterClick} hasActiveFilter={hasActiveFilter} />
+                  <SortableHeader columnKey="total_tokens" label="Tokens (in/out)" sortField={sortBy} sortDirection={order}
+                    onSort={handleSort} onFilterClick={handleFilterClick} hasActiveFilter={hasActiveFilter} />
+                  <SortableHeader columnKey="cost_usd" label="Cost (USD)" sortField={sortBy} sortDirection={order}
+                    onSort={handleSort} onFilterClick={handleFilterClick} hasActiveFilter={hasActiveFilter} />
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
-                  <tr><td colSpan={9} style={{ textAlign: 'center', padding: '1.5rem', color: '#888' }}>No activity found</td></tr>
+                  <tr><td colSpan={12} style={{ textAlign: 'center', padding: '1.5rem', color: '#888' }}>No activity found</td></tr>
                 ) : (
                   filteredRows.map((r) => {
                     const isExpanded = expandedRows.has(r.id);
@@ -893,10 +930,19 @@ const ActivityManager: React.FC = () => {
                             {r.filters?.timing?.heatmap_duration_ms != null
                               ? (r.filters.timing.heatmap_duration_ms / 1000).toFixed(2) + 's' : '-'}
                           </td>
+                          <td style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                            {r.llm_model || NULL_CELL}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                            {formatTokens(r.prompt_tokens, r.completion_tokens)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                            {formatCost(r.cost_usd)}
+                          </td>
                         </tr>
                         {isExpanded && (
                           <tr className="admin-expanded-detail">
-                            <td colSpan={9} className="admin-expanded-cell">
+                            <td colSpan={12} className="admin-expanded-cell">
                               <ActivityContextPanel row={r} />
                             </td>
                           </tr>

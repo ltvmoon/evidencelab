@@ -2,10 +2,17 @@ import { API_KEY } from '../config';
 import { SummaryModelConfig, SourceReference, SearchToolCall } from '../types/api';
 import { SearchSettings } from '../types/auth';
 
-interface AssistantDoneData {
+export interface AssistantUsage {
+  llm_model?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+}
+
+export interface AssistantDoneData {
   threadId?: string;
   messageId?: string;
   langsmith_trace_url?: string;
+  usage?: AssistantUsage;
 }
 
 export interface AssistantStreamHandlers {
@@ -21,6 +28,9 @@ export interface AssistantStreamHandlers {
 interface ConversationMessage {
   role: string;
   content: string;
+  // Assistant messages also carry their previously emitted sources so the
+  // backend can re-use the same citation numbers in follow-up turns.
+  sources?: SourceReference[];
 }
 
 interface AssistantStreamOptions {
@@ -124,6 +134,7 @@ const handleStreamedData = (
         threadId: streamedData.threadId,
         messageId: streamedData.messageId,
         langsmith_trace_url: streamedData.langsmith_trace_url,
+        usage: streamedData.usage,
       });
       return fullText;
 

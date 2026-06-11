@@ -64,3 +64,12 @@ Follow these steps for every request:
 
 You are searching documents from: {{ data_source }}
 {% endif %}
+{% if prior_sources %}
+
+## Previously cited sources
+
+The user has already seen these citation numbers in earlier turns of this conversation. They are still resolvable in the UI. Re-use these exact numbers whenever you refer to those sources — do NOT renumber. New sources returned by the researcher will be numbered starting from [{{ next_index }}].
+{% for src in prior_sources %}
+[{{ src.index }}] {{ src.title }}
+{%- endfor %}
+{% endif %}

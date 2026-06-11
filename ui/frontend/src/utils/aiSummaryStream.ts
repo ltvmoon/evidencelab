@@ -1,8 +1,15 @@
 import { API_KEY } from '../config';
 import { SearchResult, SummaryModelConfig } from '../types/api';
 
+export interface AiSummaryUsage {
+  llm_model?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+}
+
 interface AiSummaryDoneData {
   langsmith_trace_url?: string;
+  usage?: AiSummaryUsage;
 }
 
 interface AiSummaryStreamHandlers {
@@ -81,6 +88,7 @@ const handleStreamedData = (
   if (streamedData.type === 'done') {
     handlers.onDone({
       langsmith_trace_url: streamedData.langsmith_trace_url,
+      usage: streamedData.usage,
     });
     return fullText;
   }

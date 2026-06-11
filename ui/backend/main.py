@@ -845,6 +845,7 @@ if USER_MODULE:
 
     from ui.backend.routes import activity as activity_routes
     from ui.backend.routes import api_keys as api_keys_routes
+    from ui.backend.routes import llm_usage as llm_usage_routes
     from ui.backend.routes import mcp_audit as mcp_audit_routes
     from ui.backend.routes import ratings as ratings_routes
     from ui.backend.routes import research as research_routes
@@ -854,6 +855,7 @@ if USER_MODULE:
     app.include_router(research_routes.router, prefix="/research", tags=["research"])
     app.include_router(api_keys_routes.router, prefix="/api-keys", tags=["api-keys"])
     app.include_router(mcp_audit_routes.router, prefix="/mcp-audit", tags=["mcp-audit"])
+    app.include_router(llm_usage_routes.router, prefix="/llm-usage", tags=["llm-usage"])
     logger.info("User module enabled (USER_MODULE=%s)", USER_MODULE_MODE)
 
     # Auto-promote first superuser on startup (if configured)

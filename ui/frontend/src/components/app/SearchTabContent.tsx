@@ -371,6 +371,20 @@ const isAiSummaryVisible = (
   return results.length > 0 || loading || Boolean(summary);
 };
 
+/** Resolve the AI-rating scope for a drilldown node id.
+ *
+ * The Map key for cached ratings uses ``''`` for the root summary (back-compat
+ * with ratings created before drilldown scoping), while the submit payload
+ * needs ``undefined`` for the root so it serialises to ``null`` server-side.
+ * Both shapes are derived here so the component body avoids the conditionals
+ * (keeps its cyclomatic complexity below the repo threshold). */
+const resolveAiRatingScope = (
+  drilldownNodeId: string | null | undefined,
+): { key: string; itemId: string | undefined } => ({
+  key: drilldownNodeId || '',
+  itemId: drilldownNodeId || undefined,
+});
+
 export const SearchTabContent: React.FC<SearchTabContentProps> = ({
   filtersExpanded,
   activeFiltersCount,
@@ -520,7 +534,11 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
 
   const [aiRatingModalOpen, setAiRatingModalOpen] = useState(false);
   const [aiRatingModalInitialScore, setAiRatingModalInitialScore] = useState(0);
-  const aiRating = aiSummaryRatings.get('');
+  // Scope ratings to the currently-viewed summary node so each drilldown summary
+  // is rated independently. Root summary keeps item_id=null/'' for back-compat
+  // with ratings created before drilldown scoping existed.
+  const aiRatingScope = resolveAiRatingScope(aiDrilldownCurrentNodeId);
+  const aiRating = aiSummaryRatings.get(aiRatingScope.key);
 
   // Score-filtered results (same threshold used throughout)
   const visibleResults = useMemo(() =>
@@ -843,6 +861,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
                 submitAiRating({
                   ratingType: 'ai_summary',
                   referenceId: searchId,
+                  itemId: aiRatingScope.itemId,
                   score,
                   comment,
                   context: {
@@ -862,6 +881,7 @@ export const SearchTabContent: React.FC<SearchTabContentProps> = ({
             results={effectiveResults}
             query={query}
             aiSummary={effectiveAiSummary}
+            aiSummaryLoading={aiSummaryLoading}
             dataSource={dataSource}
             showFixtureBadge={isFixtureActive}
           />

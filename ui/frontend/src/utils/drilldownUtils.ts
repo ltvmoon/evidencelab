@@ -1,6 +1,73 @@
 import type { DrilldownNode, SearchResult } from '../types/api';
 
 /**
+ * Compose a search query that inherits the parent context for a drilldown
+ * or find-out-more sub-query.
+ *
+ * Without this, "find out more" on a fact like *"improved food security"*
+ * inside a parent query *"cash transfers in Niger"* would search just the
+ * fact text — returning chunks about food security from anywhere — and only
+ * the summarisation prompt would mention the parent. Passing the parent
+ * context through to the search itself narrows retrieval to chunks that are
+ * relevant to *both* the leaf and the surrounding investigation.
+ *
+ * The included context mirrors what the summarisation prompt does:
+ *   - the root query is always included (broad framing),
+ *   - the immediate parent label is added when the user has drilled down
+ *     past the root (specificity),
+ *   - the deeper ancestor chain is intentionally omitted to avoid keyword
+ *     dilution at deep levels.
+ *
+ * The returned string is plain text suitable for both dense embedding and
+ * sparse keyword retrieval — no quotes or operators that the search backend
+ * would treat as syntax.
+ */
+export const buildContextualSearchQuery = (
+  leafQuery: string,
+  rootQuery: string,
+  parentLabel?: string | null,
+): string => {
+  const leaf = leafQuery.trim();
+  const root = rootQuery.trim();
+  // Empty root or root === leaf: just return the leaf — no useful context to add.
+  if (!root || root === leaf) return leaf;
+  const parts: string[] = [leaf, root];
+  // Only add the immediate parent if it's distinct from both leaf and root,
+  // matching how the summary prompt avoids redundant phrases.
+  const parent = (parentLabel || '').trim();
+  if (parent && parent !== leaf && parent !== root) {
+    parts.splice(1, 0, parent);
+  }
+  return parts.join(' ');
+};
+
+/**
+ * Resolve the ancestor-path labels from the tree root down to (and
+ * including) the node with id ``targetId``.
+ *
+ * Used by the AI-summary "Exploring: …" breadcrumb so the user can see
+ * the full investigation context, not just the leaf they're currently
+ * looking at. Returns an empty array if the tree is missing or the id
+ * isn't found anywhere in it.
+ */
+export const getAncestorLabels = (
+  tree: DrilldownNode | null | undefined,
+  targetId: string | null | undefined,
+): string[] => {
+  if (!tree || !targetId) return [];
+  const walk = (node: DrilldownNode, trail: string[]): string[] | null => {
+    const next = [...trail, node.label];
+    if (node.id === targetId) return next;
+    for (const child of node.children) {
+      const found = walk(child, next);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(tree, []) ?? [];
+};
+
+/**
  * Serialize a drilldown tree for activity/rating logging.
  * Strips heavy data (results arrays, summaries, prompts) to keep the payload small.
  * Preserves only the tree structure (ids + labels) so admins can see which

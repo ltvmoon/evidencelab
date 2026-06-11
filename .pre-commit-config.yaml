@@ -1,5 +1,14 @@
 # Pre-commit hooks for code quality
 # See https://pre-commit.com for more information
+
+# Pin Python hooks to 3.11 (the project runtime per CLAUDE.md). Without
+# this, pre-commit auto-selects whichever `python3` it finds on PATH first,
+# which on macOS dev machines is often the system 3.9 — and several hooks
+# (mypy, bandit) plus the codebase itself use PEP 604 union syntax that
+# only works on Python 3.10+.
+default_language_version:
+  python: python3.11
+
 repos:
   # General file formatting
   - repo: https://github.com/pre-commit/pre-commit-hooks

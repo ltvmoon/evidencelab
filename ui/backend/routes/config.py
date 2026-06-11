@@ -290,12 +290,19 @@ def get_auth_status():
         os.environ.get("OAUTH_MICROSOFT_CLIENT_ID")
         and os.environ.get("OAUTH_MICROSOFT_CLIENT_SECRET")
     )
+    # Session timing — exposed so the frontend can size its sliding-refresh
+    # cadence and idle timeout from the same source of truth as the backend,
+    # keeping the two caps aligned without a frontend rebuild.
+    token_lifetime = int(os.environ.get("AUTH_TOKEN_LIFETIME", "3600"))
+    idle_timeout = int(os.environ.get("AUTH_IDLE_TIMEOUT", "3600"))
     return {
         "user_module_enabled": _USER_MODULE,
         "user_module_mode": _USER_MODULE_MODE,
         "email_login_disabled": email_disabled,
         "google_oauth_enabled": google_enabled,
         "microsoft_oauth_enabled": microsoft_enabled,
+        "token_lifetime_seconds": token_lifetime,
+        "session_idle_timeout_seconds": idle_timeout,
     }
 
 

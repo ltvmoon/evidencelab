@@ -258,6 +258,39 @@ sudo apt-get update && sudo apt-get install -y google-cloud-sdk
 
 ### Scripts
 
+## 7. Global Environment Backup (No Secrets by Default)
+
+Use `scripts/sync/global/create_global_backup.sh` to build one portable bundle
+containing:
+- Postgres dump (via `scripts/sync/db/dump_postgres.py`)
+- Qdrant snapshots (via `scripts/sync/db/dump_qdrant.py`)
+- `data/<data_source>/`
+- Repo source snapshot (`repo/`) with secret files excluded by default
+
+### Example
+
+```bash
+scripts/sync/global/create_global_backup.sh \
+  --data-source wfp \
+  --output-dir /mnt/data/backup \
+  --gcp-bucket evidencelab-storage \
+  --gcp-prefix db/backups
+```
+
+This writes:
+- `/mnt/data/backup/evidencelab_global_<timestamp>/`
+- `/mnt/data/backup/evidencelab_global_<timestamp>.tar.gz`
+
+### Security defaults
+
+By default, the script excludes secrets from `repo/`:
+- `.env`
+- `gcp.key.json` and `gcp.key.json.*`
+- `*.pem`, `*.p12`
+
+To include `.env` intentionally, pass `--include-env` (it is saved as
+`credentials.env` in the bundle root).
+
 #### `files/sync_azure.py`
 
 **Goal**: Sync files between Azure and your local `~/mnt/azure/<share_name>` folder.

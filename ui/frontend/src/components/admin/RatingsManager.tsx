@@ -20,6 +20,12 @@ interface RatingRow {
   comment: string | null;
   context: Record<string, any> | null;
   url: string | null;
+  response_status: string | null;
+  response_notes: string | null;
+  responded_by_user_id: string | null;
+  responded_by_email: string | null;
+  responded_by_display_name: string | null;
+  responded_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -37,11 +43,37 @@ const RATING_TYPES = [
 ];
 const SCORE_OPTIONS = ['1', '2', '3', '4', '5'];
 
+// Must mirror VALID_RESPONSE_STATUSES in ui/backend/auth/schemas.py.
+const RESPONSE_STATUSES = [
+  'open', 'acknowledged', 'info_needed', 'resolved', 'wontfix',
+] as const;
+
+const RESPONSE_STATUS_LABELS: Record<string, string> = {
+  open: 'Open',
+  acknowledged: 'Acknowledged',
+  info_needed: 'Info needed',
+  resolved: 'Resolved',
+  wontfix: "Won't fix",
+};
+
+const RESPONSE_STATUS_COLORS: Record<string, { bg: string; fg: string; border: string }> = {
+  open:         { bg: '#f1f3f4', fg: '#3c4043', border: '#dadce0' },
+  acknowledged: { bg: '#e8f0fe', fg: '#1967d2', border: '#aecbfa' },
+  info_needed:  { bg: '#fef7e0', fg: '#b06000', border: '#fdd663' },
+  resolved:     { bg: '#e6f4ea', fg: '#1e8e3e', border: '#a8dab5' },
+  wontfix:      { bg: '#fce8e6', fg: '#a50e0e', border: '#f6aea9' },
+};
+
 // Static filter options — user_email is dynamic (computed from data)
 const STATIC_FILTER_OPTIONS: Record<string, string[]> = {
   rating_type: RATING_TYPES,
   score: SCORE_OPTIONS,
+  response_status: [...RESPONSE_STATUSES],
 };
+
+// Reused style tokens (extracted to satisfy sonarjs/no-duplicate-string).
+const INLINE_BLOCK = 'inline-block';
+const INPUT_BORDER = '1px solid #ccc';
 
 const formatDate = (iso: string) => {
   try {
@@ -90,6 +122,9 @@ const ChevronIcon: React.FC<{ expanded: boolean }> = ({ expanded }) => (
 // ---------------------------------------------------------------------------
 const isUrl = (val: string): boolean =>
   /^https?:\/\//i.test(val) || /^www\./i.test(val);
+
+const isImageDataUrl = (val: string): boolean =>
+  /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(val);
 
 /** Render a value as a clickable link if it looks like a URL */
 const AutoLink: React.FC<{ value: string; style?: React.CSSProperties }> = ({ value, style }) => {
@@ -362,6 +397,55 @@ const AiSummaryBlock: React.FC<{ summary: string; results?: any[] }> = ({ summar
   );
 };
 
+// Modern browsers (Chrome 60+, Firefox 59+) block top-frame navigation to
+// data: URLs as a phishing mitigation, so window.open(dataUrl) opens an empty
+// tab. Convert the data URL to a Blob URL — those are allowed.
+const openDataUrlInNewTab = (dataUrl: string): void => {
+  const [header, b64] = dataUrl.split(',', 2);
+  const mimeMatch = header.match(/^data:([^;]+)/);
+  const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  window.open(blobUrl, '_blank', 'noopener,noreferrer');
+  // Revoke after the new tab has had time to load the blob.
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+};
+
+/** Render a base64 data URL as a thumbnail; click opens full-size in new tab. */
+const DataUrlImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span style={{ color: '#a00', fontStyle: 'italic' }}>
+        [{alt}: image failed to render ({src.length.toLocaleString()} chars)]
+      </span>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      width={320}
+      onError={() => setFailed(true)}
+      onClick={(e) => {
+        e.stopPropagation();
+        openDataUrlInNewTab(src);
+      }}
+      style={{
+        display: INLINE_BLOCK,
+        verticalAlign: 'top',
+        maxWidth: '100%',
+        height: 'auto',
+        border: '1px solid #e0e0e0',
+        borderRadius: 4,
+        cursor: 'pointer',
+      }}
+    />
+  );
+};
+
 /** Display high-level context fields only (not chunk-level fields) */
 const ContextFields: React.FC<{ context: Record<string, any>; exclude?: string[] }> = ({
   context,
@@ -379,7 +463,9 @@ const ContextFields: React.FC<{ context: Record<string, any>; exclude?: string[]
         <React.Fragment key={key}>
           <span className="admin-context-key">{key.replace(/_/g, ' ')}:</span>
           <span className="admin-context-value">
-            {typeof val === 'string' && isUrl(val) ? (
+            {typeof val === 'string' && isImageDataUrl(val) ? (
+              <DataUrlImage src={val} alt={key} />
+            ) : typeof val === 'string' && isUrl(val) ? (
               <AutoLink value={val} />
             ) : typeof val === 'object' ? (
               JSON.stringify(val)
@@ -654,34 +740,234 @@ const FilterPopover: React.FC<FilterPopoverProps> = ({
 };
 
 // ---------------------------------------------------------------------------
+// Comment cell with per-row "See more" / "Show less" toggle so reviewers can
+// read long feedback without leaving the table row to open the row's context
+// panel. The collapsed view stays narrow and ellipsised; the expanded view
+// wraps to full width and preserves linebreaks.
+// ---------------------------------------------------------------------------
+const COMMENT_TRUNCATE_CHARS = 100;
+
+export const CommentCell: React.FC<{ comment: string | null }> = ({ comment }) => {
+  const [expanded, setExpanded] = useState(false);
+  const text = comment || '';
+  if (!text) {
+    return (
+      <td style={{ fontSize: '0.82rem', color: '#888' }}>-</td>
+    );
+  }
+  const isLong = text.length > COMMENT_TRUNCATE_CHARS;
+  if (!isLong) {
+    return (
+      <td style={{
+        fontSize: '0.82rem', maxWidth: '200px', overflow: 'hidden',
+        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }} title={text}>
+        {text}
+      </td>
+    );
+  }
+  if (expanded) {
+    return (
+      <td style={{
+        fontSize: '0.82rem', maxWidth: '320px', whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}>
+        {text}{' '}
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
+          className="admin-show-more-btn"
+          style={{ display: 'inline', padding: 0, marginLeft: 4 }}
+          aria-label="Show less of this comment"
+        >
+          Show less
+        </button>
+      </td>
+    );
+  }
+  return (
+    <td style={{
+      fontSize: '0.82rem', maxWidth: '200px', whiteSpace: 'nowrap',
+    }} title={text}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: INLINE_BLOCK, maxWidth: 'calc(100% - 70px)', verticalAlign: 'bottom' }}>
+        {text.slice(0, COMMENT_TRUNCATE_CHARS).trimEnd()}…
+      </span>{' '}
+      <button
+        onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+        className="admin-show-more-btn"
+        style={{ display: 'inline', padding: 0, marginLeft: 4 }}
+        aria-label="See full comment"
+      >
+        See more
+      </button>
+    </td>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Response status chip — color-coded pill rendered in the Response column.
+// A null/unset status renders as a muted em-dash so reviewers can spot
+// untriaged rows at a glance.
+// ---------------------------------------------------------------------------
+const ResponseChip: React.FC<{ status: string | null }> = ({ status }) => {
+  if (!status) {
+    return <span style={{ color: '#9aa0a6', fontSize: '0.82rem' }}>—</span>;
+  }
+  const colors = RESPONSE_STATUS_COLORS[status]
+    || { bg: '#f1f3f4', fg: '#3c4043', border: '#dadce0' };
+  const label = RESPONSE_STATUS_LABELS[status] || status;
+  return (
+    <span style={{
+      display: INLINE_BLOCK, padding: '2px 8px', borderRadius: 999,
+      fontSize: '0.75rem', fontWeight: 500, lineHeight: 1.4,
+      background: colors.bg, color: colors.fg, border: `1px solid ${colors.border}`,
+      whiteSpace: 'nowrap',
+    }}>{label}</span>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Inline response editor — rendered inside the expanded row above the
+// context panel. Admins pick a status, optionally add notes, and click
+// Save to PATCH /ratings/{id}/response. The audit footer shows who last
+// updated the response and when.
+// ---------------------------------------------------------------------------
+interface ResponseEditFormProps {
+  rating: RatingRow;
+  onSave: (id: string, status: string | null, notes: string | null) => Promise<void>;
+}
+
+const ResponseEditForm: React.FC<ResponseEditFormProps> = ({ rating, onSave }) => {
+  const [status, setStatus] = useState<string>(rating.response_status || '');
+  const [notes, setNotes] = useState<string>(rating.response_notes || '');
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  // Reset local state when the row's saved values change (e.g. after a
+  // refetch). Without this the form would keep stale local edits after
+  // the parent reloads the list.
+  useEffect(() => {
+    setStatus(rating.response_status || '');
+    setNotes(rating.response_notes || '');
+  }, [rating.id, rating.response_status, rating.response_notes]);
+
+  const isDirty =
+    status !== (rating.response_status || '') ||
+    notes !== (rating.response_notes || '');
+
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave(rating.id, status || null, notes || null);
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1500);
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Failed to save response';
+      setSaveError(typeof msg === 'string' ? msg : 'Failed to save response');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="admin-response-form"
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        marginBottom: 12, padding: '10px 12px', borderRadius: 6,
+        border: '1px solid #e0e0e0', background: '#fafafa',
+      }}>
+      <div className="admin-context-label" style={{ marginBottom: 6 }}>Admin Response</div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          aria-label="Response status"
+          style={{
+            padding: '0.35rem 0.5rem', fontSize: '0.85rem',
+            border: INPUT_BORDER, borderRadius: 4, minWidth: 150,
+          }}>
+          <option value="">— No status —</option>
+          {RESPONSE_STATUSES.map((s) => (
+            <option key={s} value={s}>{RESPONSE_STATUS_LABELS[s]}</option>
+          ))}
+        </select>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Optional follow-up notes…"
+          aria-label="Response notes"
+          rows={2}
+          maxLength={4000}
+          style={{
+            flex: '1 1 280px', minWidth: 240, padding: '0.4rem 0.5rem',
+            fontSize: '0.85rem', border: INPUT_BORDER, borderRadius: 4,
+            fontFamily: 'inherit', resize: 'vertical',
+          }}/>
+        <button
+          type="button"
+          className="btn-sm"
+          onClick={handleSave}
+          disabled={saving || !isDirty}
+          style={{ padding: '0.4rem 0.9rem', alignSelf: 'flex-start' }}>
+          {saving ? 'Saving…' : savedFlash ? 'Saved ✓' : 'Save'}
+        </button>
+      </div>
+      {saveError && (
+        <div style={{ marginTop: 6, color: '#a50e0e', fontSize: '0.78rem' }}>{saveError}</div>
+      )}
+      {rating.responded_at && (
+        <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#666' }}>
+          Last updated by{' '}
+          <strong>{rating.responded_by_email || rating.responded_by_display_name || 'an admin'}</strong>
+          {' '}on {formatDate(rating.responded_at)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Rating table row (extracted to reduce cyclomatic complexity)
 // ---------------------------------------------------------------------------
 const hasContext = (r: RatingRow) => r.context && Object.keys(r.context).length > 0;
 
 const RatingTableRow: React.FC<{
-  rating: RatingRow; isExpanded: boolean; onToggle: (id: string) => void;
-}> = ({ rating, isExpanded, onToggle }) => {
-  const expandable = hasContext(rating);
+  rating: RatingRow;
+  isExpanded: boolean;
+  onToggle: (id: string) => void;
+  onSaveResponse: (id: string, status: string | null, notes: string | null) => Promise<void>;
+}> = ({ rating, isExpanded, onToggle, onSaveResponse }) => {
+  // Every row is now expandable so admins can record a response even
+  // when there's no context payload to show.
+  const expandable = true;
   return (
     <React.Fragment>
       <tr className={`${expandable ? 'admin-expandable-row' : ''} ${isExpanded ? 'admin-expanded-parent' : ''}`}
-        onClick={() => expandable && onToggle(rating.id)}>
+        onClick={() => onToggle(rating.id)}>
         <td style={{ textAlign: 'center', padding: '0.4rem' }}>
-          {expandable ? <span className="admin-expand-icon"><ChevronIcon expanded={isExpanded} /></span> : ''}
+          <span className="admin-expand-icon"><ChevronIcon expanded={isExpanded} /></span>
         </td>
         <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{formatDate(rating.created_at)}</td>
         <td style={{ fontSize: '0.82rem' }}>{rating.user_email || rating.user_display_name || '-'}</td>
         <td style={{ fontSize: '0.82rem' }}>{rating.rating_type.replace(/_/g, ' ')}</td>
         <td style={{ color: '#d4a017', fontSize: '0.9rem', letterSpacing: '1px' }}>{renderStars(rating.score)}</td>
-        <td style={{ fontSize: '0.82rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rating.comment || ''}>{rating.comment || '-'}</td>
+        <CommentCell comment={rating.comment} />
+        <td style={{ fontSize: '0.82rem' }}>
+          <ResponseChip status={rating.response_status} />
+        </td>
         <td style={{ fontSize: '0.82rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rating.url || ''}>
           {rating.url ? <a href={rating.url} target="_blank" rel="noopener noreferrer" style={{ color: '#1a73e8' }} onClick={(e) => e.stopPropagation()}>link</a> : '-'}
         </td>
       </tr>
       {isExpanded && (
         <tr className="admin-expanded-detail">
-          <td colSpan={7} className="admin-expanded-cell">
-            <RatingContextPanel rating={rating} />
+          <td colSpan={8} className="admin-expanded-cell">
+            <ResponseEditForm rating={rating} onSave={onSaveResponse} />
+            {hasContext(rating)
+              ? <RatingContextPanel rating={rating} />
+              : <span className="admin-no-data">No context data</span>}
           </td>
         </tr>
       )}
@@ -737,6 +1023,8 @@ const RatingsManager: React.FC = () => {
       if (filterType !== 'all') params.rating_type = filterType;
       const uf = columnFilters['user_email'];
       if (uf) params.user_email = uf;
+      const rs = columnFilters['response_status'];
+      if (rs) params.response_status = rs;
       const resp = await axios.get<RatingsResponse>(`${API_BASE_URL}/ratings/all`, { params });
       setRatings(resp.data.items);
       setTotal(resp.data.total);
@@ -746,6 +1034,20 @@ const RatingsManager: React.FC = () => {
       setLoading(false);
     }
   }, [page, pageSize, search, sortBy, order, filterType, columnFilters]);
+
+  // PATCH the rating's response and merge the server's updated row back
+  // into local state so the chip + audit footer refresh without a full
+  // refetch. A failed call bubbles up so the inline form can display it.
+  const handleSaveResponse = useCallback(
+    async (id: string, status: string | null, notes: string | null) => {
+      const resp = await axios.patch<RatingRow>(
+        `${API_BASE_URL}/ratings/${id}/response`,
+        { response_status: status, response_notes: notes },
+      );
+      setRatings((prev) => prev.map((r) => (r.id === id ? resp.data : r)));
+    },
+    [],
+  );
 
   useEffect(() => { fetchRatings(); }, [fetchRatings]);
   useEffect(() => { setExpandedRows(new Set()); }, [page, filterType, search, sortBy, order]);
@@ -768,6 +1070,8 @@ const RatingsManager: React.FC = () => {
     try {
       const params: Record<string, string> = {};
       if (filterType !== 'all') params.rating_type = filterType;
+      const rs = columnFilters['response_status'];
+      if (rs) params.response_status = rs;
       const resp = await axios.get<Blob>(`${API_BASE_URL}/ratings/export`, { params, responseType: 'blob' });
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement('a');
@@ -793,7 +1097,7 @@ const RatingsManager: React.FC = () => {
   );
 
   // Server-side filter columns trigger a page reset + re-fetch
-  const SERVER_FILTER_COLUMNS = new Set(['rating_type', 'user_email']);
+  const SERVER_FILTER_COLUMNS = new Set(['rating_type', 'user_email', 'response_status']);
 
   const handleApplyFilter = useCallback((column: string, value: string) => {
     if (column === 'rating_type') {
@@ -850,7 +1154,7 @@ const RatingsManager: React.FC = () => {
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '0.5rem' }}>
           <input type="text" placeholder="Search by email, reference, or comment..." value={searchInput}
             onChange={handleSearchInputChange} className="admin-search-input"
-            style={{ minWidth: '250px', padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.85rem' }} />
+            style={{ minWidth: '250px', padding: '0.4rem 0.6rem', borderRadius: '4px', border: INPUT_BORDER, fontSize: '0.85rem' }} />
           <button type="submit" className="btn-sm" style={{ padding: '0.4rem 0.8rem' }}>Search</button>
         </form>
         <button className="admin-download-button" onClick={handleExport} disabled={exporting} style={{ marginLeft: 'auto' }}>
@@ -885,15 +1189,23 @@ const RatingsManager: React.FC = () => {
                   <SortableHeader columnKey="score" label="Score" filterable sortField={sortBy} sortDirection={order}
                     onSort={handleSort} onFilterClick={handleFilterClick} hasActiveFilter={hasActiveFilter} />
                   <th>Comment</th>
+                  <SortableHeader columnKey="response_status" label="Response" filterable sortField={sortBy} sortDirection={order}
+                    onSort={handleSort} onFilterClick={handleFilterClick} hasActiveFilter={hasActiveFilter} />
                   <th>URL</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRatings.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '1.5rem', color: '#888' }}>No ratings found</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '1.5rem', color: '#888' }}>No ratings found</td></tr>
                 ) : (
                   filteredRatings.map((r) => (
-                    <RatingTableRow key={r.id} rating={r} isExpanded={expandedRows.has(r.id)} onToggle={toggleRow} />
+                    <RatingTableRow
+                      key={r.id}
+                      rating={r}
+                      isExpanded={expandedRows.has(r.id)}
+                      onToggle={toggleRow}
+                      onSaveResponse={handleSaveResponse}
+                    />
                   ))
                 )}
               </tbody>

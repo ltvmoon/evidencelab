@@ -872,6 +872,37 @@ def _format_facet_list(core_field: str, counter: Counter) -> List[Dict[str, Any]
     return facets_list
 
 
+def _facet_counter_for_field(
+    core_field: str,
+    storage_field: str,
+    unique_docs: List[Dict[str, Any]],
+    doc_ids: List[str],
+    pg: Optional[PostgresClient],
+    src_field_mapping: Dict[str, str],
+) -> Counter:
+    """Pick the correct counting strategy per field.
+
+    - ``sys_language`` reads from PG ``docs.sys_language`` for matching docs.
+    - ``src_*`` fields with a configured raw key read the value out of
+      ``docs.src_doc_raw_metadata`` JSONB for matching docs (so counts are
+      complete, not limited to chunks that happened to denormalise the field).
+    - Everything else aggregates the chunk/doc Qdrant payloads in memory.
+    """
+    from ui.backend.utils.facet_helpers import (  # noqa: PLC0415
+        count_src_jsonb_field_for_doc_ids,
+        count_sys_field_for_doc_ids,
+    )
+
+    if storage_field == "sys_language" and pg is not None:
+        return count_sys_field_for_doc_ids(pg, "sys_language", doc_ids)
+    raw_key = src_field_mapping.get(storage_field)
+    if storage_field.startswith("src_") and pg is not None and raw_key:
+        return count_src_jsonb_field_for_doc_ids(pg, raw_key, doc_ids)
+    return _accumulate_facet_counts(
+        core_field, unique_docs, storage_field=storage_field
+    )
+
+
 def get_search_facets(
     query: str,
     filters: Optional[dict] = None,
@@ -892,12 +923,16 @@ def get_search_facets(
     source = data_source or "uneg"
     db = _get_search_db(None, source)
     filter_fields_config = get_default_filter_fields(source)
-    from pipeline.db import get_taxonomy_filter_fields  # noqa: PLC0415
+    from pipeline.db import (  # noqa: PLC0415
+        get_src_field_mapping,
+        get_taxonomy_filter_fields,
+    )
 
     filter_fields_config = {
         **filter_fields_config,
         **get_taxonomy_filter_fields(source),
     }
+    src_field_mapping = get_src_field_mapping(source)
 
     # 1. Determine which fields we need to fetch
     needed_fields = ["doc_id", "sys_doc_id"]  # Include sys_doc_id for deduplication
@@ -934,38 +969,30 @@ def get_search_facets(
     # We should deduplicate by doc_id to get Document counts.
 
     unique_docs = _collect_unique_doc_payloads(results)
-    doc_ids = [
-        doc.get("doc_id") or doc.get("sys_doc_id")
+    doc_ids: List[str] = [
+        str(doc.get("doc_id") or doc.get("sys_doc_id"))
         for doc in unique_docs
         if doc.get("doc_id") or doc.get("sys_doc_id")
     ]
+    pg = (
+        getattr(db, "pg", None)
+        if isinstance(getattr(db, "pg", None), PostgresClient)
+        else None
+    )
 
     for core_field in filter_fields_config.keys():
         if core_field == "title":
             # Skip title faceting as it's too high cardinality
             pass
         storage_field = _resolve_storage_field(core_field, source)
-        if storage_field == "sys_language" and isinstance(
-            getattr(db, "pg", None), PostgresClient
-        ):
-            if doc_ids:
-                placeholders = ", ".join(["%s"] * len(doc_ids))
-                sql = f"""
-                    SELECT sys_language
-                    FROM {db.pg.docs_table}
-                    WHERE doc_id IN ({placeholders})
-                """
-                with db.pg._get_conn() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(sql, doc_ids)
-                        rows = cur.fetchall()
-                counter = Counter(row[0] for row in rows if row[0] not in (None, ""))
-            else:
-                counter = Counter()
-        else:
-            counter = _accumulate_facet_counts(
-                core_field, unique_docs, storage_field=storage_field
-            )
+        counter = _facet_counter_for_field(
+            core_field,
+            storage_field,
+            unique_docs,
+            doc_ids,
+            pg,
+            src_field_mapping,
+        )
         facets_data[core_field] = _format_facet_list(core_field, counter)
 
     return facets_data

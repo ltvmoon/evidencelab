@@ -4,6 +4,19 @@ import API_BASE_URL from '../config';
 import type { SearchResult } from '../types/api';
 
 /**
+ * LLM usage payload threaded into activity log POST/PATCH calls.
+ *
+ * Fields are optional because providers vary in what they report. The
+ * backend recomputes `cost_usd` from `llm_model` + token counts so the
+ * cost cannot be tampered with from the client.
+ */
+export interface ActivityUsage {
+  llm_model?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+}
+
+/**
  * Return a stable anonymous session ID (persisted in localStorage).
  * Used to correlate activity records for non-authenticated visitors.
  */
@@ -48,6 +61,7 @@ export function useActivityLogging() {
       results: SearchResult[],
       extra?: Record<string, any>,
       aiSummary?: string,
+      usage?: ActivityUsage,
     ) => {
       if (loggedSearchIds.current.has(searchId)) return;
       loggedSearchIds.current.add(searchId);
@@ -78,6 +92,7 @@ export function useActivityLogging() {
           url: window.location.href,
           session_id: getSessionId(),
           ...(aiSummary ? { ai_summary: aiSummary } : {}),
+          ...(usage || {}),
         })
         .catch((err) => {
           // Silently fail — activity logging may be unavailable
@@ -98,16 +113,19 @@ export function useActivityLogging() {
       summaryText?: string,
       summaryDurationMs?: number,
       drilldownTree?: Record<string, any>,
+      usage?: ActivityUsage,
     ) => {
       if (!searchId) return;
+      const hasUsage = !!usage && Object.keys(usage).length > 0;
       // Must have at least one field to update
-      if (!summaryText && summaryDurationMs == null && !drilldownTree) return;
+      if (!summaryText && summaryDurationMs == null && !drilldownTree && !hasUsage) return;
 
       axios
         .patch(`${API_BASE_URL}/activity/${searchId}/summary`, {
           ...(summaryText ? { ai_summary: summaryText } : {}),
           ...(summaryDurationMs != null ? { summary_duration_ms: summaryDurationMs } : {}),
           ...(drilldownTree ? { drilldown_tree: drilldownTree } : {}),
+          ...(usage || {}),
           session_id: getSessionId(),
         })
         .catch((err) => {
