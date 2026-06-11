@@ -2,6 +2,56 @@
 
 All notable changes to Evidence Lab will be documented in this file.
 
+## [1.5.0] - 2026-06-11
+
+Evidence Lab v1.5.0 is a feature release focused on admin observability, research and assistant quality, and operational tooling. It adds LLM token/cost tracking and an admin usage dashboard, a page feedback button with screenshot capture, a polished Word export, sliding auth sessions, and a number of search/facet/research fixes.
+
+### Admin & Observability
+- Added an **LLM Usage** admin tab with per-user and per-group token and cost rollups (#310)
+- Tracked LLM model, token usage, and cost in the admin Activity tab (#310)
+- Added an admin response field to ratings for triage tracking (#308)
+- Added a **See more / Show less** toggle to the ratings comment column (#300)
+- Rendered screenshot data URLs as images in the activity table, robust to inline span layout (#292)
+
+### Feedback & Export
+- Added a page feedback button with screenshot capture — captures viewport only and freezes animations during capture, excludes modal/loading overlays (#284, #292)
+- Polished the Word export: bigger blue H1, numbered references, clickable citations, and a gated export button (#293, #295)
+
+### Research & Assistant
+- Split drilldown into **sub-topic** vs **new-topic** modes — new-topic resets the drilldown chain instead of nesting, and the breadcrumb now shows the full ancestor path (#299)
+- Inherited parent context into the search query (not just the summary) for "find out more" drilldowns (#299)
+- Preserved assistant citations across follow-up turns (#303)
+- Picked up Gemini synthesis when emitted alongside `write_todos` in the deep-research path (#294)
+
+### Search & Facets
+- Resolved `src_*` filter values and counts via Postgres JSONB on query-narrowed search (#298)
+- Used backend query-narrowed counts for the sidebar facets instead of re-counting visible results (#296)
+- Collapsed `en` and `English` into a single Language facet entry (#296)
+- Fell back to no-rerank when the Vertex Discovery Engine returns 503 (#301)
+
+### Authentication
+- Added sliding session refresh — active users are re-issued their auth cookie every half-lifetime (`POST /auth/refresh`) so they are never logged out mid-session; idle sessions still lapse at `AUTH_TOKEN_LIFETIME` (#328)
+- Preserved search URL params across the OAuth login round-trip (#303)
+
+### Operational Tooling & Data
+- Added a global backup orchestration script (#283)
+- Validated the Postgres dump archive with `pg_restore` before declaring a backup successful (#307)
+- Added a `fix_duplicate_countries` cleanup script (#327)
+- Scripted rename of country `Syria` to `Syrian Arab Republic` (#297)
+
+### CI & Dependencies
+- Auto-merge Dependabot patch and minor bumps (#326)
+- Updated dependabot target-branch to `rc/v1.5.0`
+- Dependency bumps: sqlalchemy 2.0.49 (#277), uvicorn 0.44.0 (#282), ajv 8.20.0 (#289, #320), @playwright/test 1.60.0 (#279, #314), @typescript-eslint/parser (#287, #321), pytest-playwright 0.8.0 (#316), google-cloud-aiplatform (#313), langgraph-checkpoint-postgres (#312), gitleaks-action v3 (#311)
+
+### Upgrade Notes
+- **Database migration required.** This release adds new Alembic migrations (`0026_add_activity_token_usage`, `0026_add_rating_response`, merged by `0027_merge_0026_heads`). Run `alembic upgrade head` after deploying.
+- **New optional env vars** (defaults preserve current behaviour): `AUTH_TOKEN_LIFETIME` (default 3600s) and `AUTH_IDLE_TIMEOUT` (default 3600s) — see `.env.example`.
+
+**Full diff:** https://github.com/dividor/evidencelab/compare/v1.4.0...v1.5.0
+
+---
+
 ## [1.4.0] - 2026-04-12
 
 Evidence Lab v1.4.0 is a security and authentication release. It fixes a SQL injection vulnerability in the documents API, adds conditional OAuth login buttons, and improves deployment configuration for OAuth callbacks.
