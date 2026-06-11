@@ -45,7 +45,7 @@ Evidence Lab v1.5.0 is a feature release focused on admin observability, researc
 - Dependency bumps: sqlalchemy 2.0.49 (#277), uvicorn 0.44.0 (#282), ajv 8.20.0 (#289, #320), @playwright/test 1.60.0 (#279, #314), @typescript-eslint/parser (#287, #321), pytest-playwright 0.8.0 (#316), google-cloud-aiplatform (#313), langgraph-checkpoint-postgres (#312), gitleaks-action v3 (#311)
 
 ### Upgrade Notes
-- **Database migration required.** This release adds new Alembic migrations (`0026_add_activity_token_usage`, `0026_add_rating_response`, merged by `0027_merge_0026_heads`). Run `alembic upgrade head` after deploying.
+- **Database migrations apply automatically on deploy.** The API container runs `alembic upgrade head` on startup (before uvicorn), so redeploying picks up this release's new migrations (`0026_add_activity_token_usage`, `0026_add_rating_response`, merged by `0027_merge_0026_heads`) — no manual step required.
 - **New optional env vars** (defaults preserve current behaviour): `AUTH_TOKEN_LIFETIME` (default 3600s) and `AUTH_IDLE_TIMEOUT` (default 3600s) — see `.env.example`.
 
 **Full diff:** https://github.com/dividor/evidencelab/compare/v1.4.0...v1.5.0
